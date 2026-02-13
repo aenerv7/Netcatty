@@ -331,17 +331,19 @@ export const useVaultState = () => {
       );
 
       if (savedHosts) {
-        // Decrypt (handles both plaintext and encrypted via enc:v1: sentinel)
-        const decrypted = await decryptHosts(savedHosts);
-        const sanitized = decrypted.map(sanitizeHost);
-        setHosts(sanitized);
-        // Re-encrypt to migrate any plaintext values (use version check to
-        // avoid overwriting a newer write that happened during the async gap)
+        // Capture version before the async gap so that any write occurring
+        // during decryption (storage event, user edit) advances the counter
+        // and causes this stale result to be discarded.
         const ver = ++hostsWriteVersion.current;
-        encryptHosts(sanitized).then((enc) => {
-          if (ver === hostsWriteVersion.current)
-            localStorageAdapter.write(STORAGE_KEY_HOSTS, enc);
-        });
+        const decrypted = await decryptHosts(savedHosts);
+        if (ver === hostsWriteVersion.current) {
+          const sanitized = decrypted.map(sanitizeHost);
+          setHosts(sanitized);
+          encryptHosts(sanitized).then((enc) => {
+            if (ver === hostsWriteVersion.current)
+              localStorageAdapter.write(STORAGE_KEY_HOSTS, enc);
+          });
+        }
       } else {
         updateHosts(INITIAL_HOSTS);
       }
@@ -365,28 +367,30 @@ export const useVaultState = () => {
         }
 
         // Decrypt sensitive fields (passphrase, privateKey)
-        const decryptedKeys = await decryptKeys(migratedKeys);
-        setKeys(decryptedKeys);
-        // Re-encrypt to migrate any plaintext values (use version check)
         const keyVer = ++keysWriteVersion.current;
-        encryptKeys(decryptedKeys).then((enc) => {
-          if (keyVer === keysWriteVersion.current)
-            localStorageAdapter.write(STORAGE_KEY_KEYS, enc);
-        });
+        const decryptedKeys = await decryptKeys(migratedKeys);
+        if (keyVer === keysWriteVersion.current) {
+          setKeys(decryptedKeys);
+          encryptKeys(decryptedKeys).then((enc) => {
+            if (keyVer === keysWriteVersion.current)
+              localStorageAdapter.write(STORAGE_KEY_KEYS, enc);
+          });
+        }
         if (legacyKeys.length) {
           localStorageAdapter.write(STORAGE_KEY_LEGACY_KEYS, legacyKeys);
         }
       }
 
       if (savedIdentities) {
-        const decryptedIds = await decryptIdentities(savedIdentities);
-        setIdentities(decryptedIds);
-        // Re-encrypt to migrate any plaintext values (use version check)
         const idVer = ++identitiesWriteVersion.current;
-        encryptIdentities(decryptedIds).then((enc) => {
-          if (idVer === identitiesWriteVersion.current)
-            localStorageAdapter.write(STORAGE_KEY_IDENTITIES, enc);
-        });
+        const decryptedIds = await decryptIdentities(savedIdentities);
+        if (idVer === identitiesWriteVersion.current) {
+          setIdentities(decryptedIds);
+          encryptIdentities(decryptedIds).then((enc) => {
+            if (idVer === identitiesWriteVersion.current)
+              localStorageAdapter.write(STORAGE_KEY_IDENTITIES, enc);
+          });
+        }
       }
 
       if (savedSnippets) setSnippets(savedSnippets);
