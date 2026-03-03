@@ -51,6 +51,12 @@ export interface ProtocolConfig {
   theme?: string;
 }
 
+export interface SftpBookmark {
+  id: string;
+  path: string;
+  label: string;
+}
+
 export interface Host {
   id: string;
   label: string;
@@ -94,6 +100,7 @@ export interface Host {
   // SFTP specific configuration
   sftpSudo?: boolean; // Use sudo for SFTP operations (requires password)
   sftpEncoding?: SftpFilenameEncoding; // Filename encoding for SFTP operations
+  sftpBookmarks?: SftpBookmark[]; // Bookmarked SFTP paths for quick navigation
   // Managed source: if this host is managed by an external file (e.g., ~/.ssh/config)
   managedSourceId?: string; // Reference to ManagedSource.id
   // Host-level keyword highlighting (overrides/extends global settings)

@@ -48,9 +48,10 @@ interface SftpViewProps {
   hosts: Host[];
   keys: SSHKey[];
   identities: Identity[];
+  updateHosts: (hosts: Host[]) => void;
 }
 
-const SftpViewInner: React.FC<SftpViewProps> = ({ hosts, keys, identities }) => {
+const SftpViewInner: React.FC<SftpViewProps> = ({ hosts, keys, identities, updateHosts }) => {
   const { t } = useI18n();
   const isActive = useIsSftpActive();
   const {
@@ -213,6 +214,7 @@ const SftpViewInner: React.FC<SftpViewProps> = ({ hosts, keys, identities }) => 
   return (
     <SftpContextProvider
       hosts={hosts}
+      updateHosts={updateHosts}
       draggedFiles={draggedFiles}
       dragCallbacks={dragCallbacks}
       leftCallbacks={leftCallbacks}

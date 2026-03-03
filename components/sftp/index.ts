@@ -6,9 +6,9 @@
 
 // Utilities
 export {
-formatBytes,formatDate,
-formatSpeed,formatTransferBytes,getFileIcon,isNavigableDirectory,isWindowsHiddenFile,filterHiddenFiles,type ColumnWidths,type SortField,
-type SortOrder
+  formatBytes, formatDate,
+  formatSpeed, formatTransferBytes, getFileIcon, isNavigableDirectory, isWindowsHiddenFile, filterHiddenFiles, type ColumnWidths, type SortField,
+  type SortOrder
 } from './utils';
 
 // Context
@@ -18,6 +18,7 @@ export {
   useSftpPaneCallbacks,
   useSftpDrag,
   useSftpHosts,
+  useSftpUpdateHosts,
   useSftpShowHiddenFiles,
   useActiveTabId,
   useIsPaneActive,

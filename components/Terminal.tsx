@@ -1657,6 +1657,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
           }}
           initialPath={sftpInitialPath}
           initialEntriesToUpload={pendingUploadEntries}
+          onUpdateHost={onUpdateHost}
         />
       </div>
     </TerminalContextMenu>

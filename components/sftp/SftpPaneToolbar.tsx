@@ -1,12 +1,13 @@
 import React from "react";
-import { ChevronLeft, FilePlus, Folder, FolderPlus, Home, RefreshCw, Search, X } from "lucide-react";
+import { Bookmark, Check, ChevronLeft, FilePlus, Folder, FolderPlus, Home, Languages, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../../lib/utils";
 import { SftpBreadcrumb } from "./index";
 import type { SftpFilenameEncoding } from "../../types";
 import type { SftpPane } from "../../application/state/sftp/types";
+import type { SftpBookmark } from "../../domain/models";
 
 interface SftpPaneToolbarProps {
   t: (key: string, params?: Record<string, unknown>) => string;
@@ -39,6 +40,12 @@ interface SftpPaneToolbarProps {
   setFileNameError: (value: string | null) => void;
   setShowNewFileDialog: (open: boolean) => void;
   setShowNewFolderDialog: (open: boolean) => void;
+  // Bookmark props
+  bookmarks: SftpBookmark[];
+  isCurrentPathBookmarked: boolean;
+  onToggleBookmark: () => void;
+  onNavigateToBookmark: (path: string) => void;
+  onDeleteBookmark: (id: string) => void;
 }
 
 export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = ({
@@ -72,6 +79,11 @@ export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = ({
   setFileNameError,
   setShowNewFileDialog,
   setShowNewFolderDialog,
+  bookmarks,
+  isCurrentPathBookmarked,
+  onToggleBookmark,
+  onNavigateToBookmark,
+  onDeleteBookmark,
 }) => (
   <>
     {/* Toolbar - always visible when connected */}
@@ -154,21 +166,113 @@ export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = ({
         </div>
       )}
 
+      {/* Bookmark button with dropdown */}
+      {!pane.connection?.isLocal && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-5 w-5 shrink-0", isCurrentPathBookmarked && "text-yellow-500")}
+              title={isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}
+              onClick={(e) => {
+                // If not bookmarked, toggle directly instead of opening popover
+                if (!isCurrentPathBookmarked && bookmarks.length === 0) {
+                  e.preventDefault();
+                  onToggleBookmark();
+                }
+              }}
+            >
+              <Bookmark size={12} fill={isCurrentPathBookmarked ? "currentColor" : "none"} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-0" align="start">
+            <div className="p-2 border-b border-border/40">
+              <Button
+                variant={isCurrentPathBookmarked ? "secondary" : "ghost"}
+                size="sm"
+                className="w-full justify-start text-xs h-7"
+                onClick={onToggleBookmark}
+              >
+                <Bookmark size={12} fill={isCurrentPathBookmarked ? "currentColor" : "none"} className={cn("mr-2", isCurrentPathBookmarked && "text-yellow-500")} />
+                {isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}
+              </Button>
+            </div>
+            {bookmarks.length > 0 ? (
+              <div className="max-h-48 overflow-auto py-1">
+                {bookmarks.map((bm) => (
+                  <div
+                    key={bm.id}
+                    className="flex items-center gap-1 px-2 py-1 hover:bg-secondary/60 group"
+                  >
+                    <button
+                      type="button"
+                      className="flex-1 text-left text-xs truncate font-mono"
+                      onClick={() => onNavigateToBookmark(bm.path)}
+                      title={bm.path}
+                    >
+                      {bm.label}
+                      <span className="ml-1.5 text-muted-foreground text-[10px]">{bm.path}</span>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteBookmark(bm.id);
+                      }}
+                    >
+                      <Trash2 size={10} />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-3 text-xs text-muted-foreground text-center">
+                {t("sftp.bookmark.empty")}
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+      )}
+
       <div className="ml-auto flex items-center gap-0.5">
         {!pane.connection?.isLocal && (
-          <Select
-            value={pane.filenameEncoding}
-            onValueChange={(value) => onSetFilenameEncoding(value as SftpFilenameEncoding)}
-          >
-            <SelectTrigger className="h-6 w-[120px] text-[10px]" title={t("sftp.encoding.label")}>
-              <SelectValue placeholder={t("sftp.encoding.label")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">{t("sftp.encoding.auto")}</SelectItem>
-              <SelectItem value="utf-8">{t("sftp.encoding.utf8")}</SelectItem>
-              <SelectItem value="gb18030">{t("sftp.encoding.gb18030")}</SelectItem>
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                title={t("sftp.encoding.label")}
+              >
+                <Languages size={14} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-36 p-1" align="end">
+              {(["auto", "utf-8", "gb18030"] as const).map((encoding) => (
+                <PopoverClose asChild key={encoding}>
+                  <button
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-secondary transition-colors",
+                      pane.filenameEncoding === encoding && "bg-secondary"
+                    )}
+                    onClick={() => onSetFilenameEncoding(encoding)}
+                  >
+                    <Check
+                      size={12}
+                      className={cn(
+                        "shrink-0",
+                        pane.filenameEncoding === encoding ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    {t(`sftp.encoding.${encoding === "utf-8" ? "utf8" : encoding}`)}
+                  </button>
+                </PopoverClose>
+              ))}
+            </PopoverContent>
+          </Popover>
         )}
         <Button
           variant="ghost"

@@ -88,6 +88,8 @@ export const useIsPaneActive = (side: "left" | "right", paneId: string): boolean
 export interface SftpContextValue {
     // Hosts list for connection picker
     hosts: Host[];
+    // Host updater for bookmark persistence
+    updateHosts: (hosts: Host[]) => void;
 
     // Drag state (shared between panes)
     draggedFiles: { name: string; isDirectory: boolean; side: "left" | "right" }[] | null;
@@ -132,6 +134,12 @@ export const useSftpHosts = () => {
     return context.hosts;
 };
 
+// Hook to get host updater
+export const useSftpUpdateHosts = () => {
+    const context = useSftpContext();
+    return context.updateHosts;
+};
+
 // Hook to get showHiddenFiles setting
 export const useSftpShowHiddenFiles = (): boolean => {
     const context = useSftpContext();
@@ -140,6 +148,7 @@ export const useSftpShowHiddenFiles = (): boolean => {
 
 interface SftpContextProviderProps {
     hosts: Host[];
+    updateHosts: (hosts: Host[]) => void;
     draggedFiles: { name: string; isDirectory: boolean; side: "left" | "right" }[] | null;
     dragCallbacks: SftpDragCallbacks;
     leftCallbacks: SftpPaneCallbacks;
@@ -150,6 +159,7 @@ interface SftpContextProviderProps {
 
 export const SftpContextProvider: React.FC<SftpContextProviderProps> = ({
     hosts,
+    updateHosts,
     draggedFiles,
     dragCallbacks,
     leftCallbacks,
@@ -162,13 +172,14 @@ export const SftpContextProvider: React.FC<SftpContextProviderProps> = ({
     const value = useMemo<SftpContextValue>(
         () => ({
             hosts,
+            updateHosts,
             draggedFiles,
             dragCallbacks,
             leftCallbacks,
             rightCallbacks,
             showHiddenFiles,
         }),
-        [hosts, draggedFiles, dragCallbacks, leftCallbacks, rightCallbacks, showHiddenFiles],
+        [hosts, updateHosts, draggedFiles, dragCallbacks, leftCallbacks, rightCallbacks, showHiddenFiles],
     );
 
     return <SftpContext.Provider value={value}>{children}</SftpContext.Provider>;

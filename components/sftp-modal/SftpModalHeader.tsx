@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { ArrowUp, Check, ChevronRight, FilePlus, FolderPlus, FolderUp, Home, Languages, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
+import { ArrowUp, Bookmark, Check, ChevronRight, FilePlus, FolderPlus, FolderUp, Home, Languages, MoreHorizontal, RefreshCw, Trash2, Upload } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { Host, SftpFilenameEncoding } from "../../types";
+import { useSftpBookmarks } from "../sftp/hooks/useSftpBookmarks";
 import { DistroAvatar } from "../DistroAvatar";
 import { Button } from "../ui/button";
 import { DialogHeader, DialogTitle } from "../ui/dialog";
@@ -50,6 +51,8 @@ interface SftpModalHeaderProps {
   onCreateFile: () => void;
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onFolderSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onUpdateHost?: (host: Host) => void;
+  onNavigateToBookmark?: (path: string) => void;
 }
 
 export const SftpModalHeader: React.FC<SftpModalHeaderProps> = ({
@@ -88,10 +91,24 @@ export const SftpModalHeader: React.FC<SftpModalHeaderProps> = ({
   onCreateFile,
   onFileSelect,
   onFolderSelect,
+  onUpdateHost,
+  onNavigateToBookmark,
 }) => {
   // Delay tooltip activation to prevent flickering when modal opens
   const [tooltipsReady, setTooltipsReady] = useState(false);
   const [openTooltip, setOpenTooltip] = useState<string | null>(null);
+
+  // Bookmarks
+  const {
+    bookmarks,
+    isCurrentPathBookmarked,
+    toggleBookmark,
+    deleteBookmark,
+  } = useSftpBookmarks({
+    host,
+    currentPath,
+    onUpdateHost,
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setTooltipsReady(true), 500);
@@ -169,6 +186,82 @@ export const SftpModalHeader: React.FC<SftpModalHeaderProps> = ({
             </TooltipTrigger>
             <TooltipContent>{t("sftp.nav.refresh")}</TooltipContent>
           </Tooltip>
+          {/* Bookmark button */}
+          {onUpdateHost && (
+            <Popover>
+              <Tooltip open={openTooltip === 'bookmark'} onOpenChange={handleTooltipOpenChange('bookmark')}>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                    >
+                      <Bookmark
+                        size={14}
+                        className={cn(
+                          isCurrentPathBookmarked && "fill-yellow-500 text-yellow-500"
+                        )}
+                      />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}
+                </TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-56 p-1" align="start">
+                {/* Toggle button */}
+                <button
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-secondary transition-colors"
+                  onClick={toggleBookmark}
+                >
+                  <Bookmark
+                    size={12}
+                    className={cn(
+                      "shrink-0",
+                      isCurrentPathBookmarked && "fill-yellow-500 text-yellow-500"
+                    )}
+                  />
+                  {isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}
+                </button>
+                {/* Divider + list */}
+                {bookmarks.length > 0 && (
+                  <>
+                    <div className="my-1 border-t border-border/60" />
+                    {bookmarks.map((bm) => (
+                      <div
+                        key={bm.id}
+                        className="group flex items-center gap-1 px-2 py-1.5 text-xs rounded-sm hover:bg-secondary transition-colors cursor-pointer"
+                        onClick={() => onNavigateToBookmark?.(bm.path)}
+                        title={bm.path}
+                      >
+                        <Bookmark size={10} className="shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate">{bm.label}</span>
+                        <span className="flex-1 truncate text-muted-foreground text-[10px]">{bm.path}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteBookmark(bm.id);
+                          }}
+                        >
+                          <Trash2 size={10} />
+                        </Button>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {bookmarks.length === 0 && (
+                  <div className="p-2 text-xs text-muted-foreground text-center">
+                    {t("sftp.bookmark.empty")}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          )}
           {showEncoding && (
             <Popover>
               <Tooltip open={openTooltip === 'encoding'} onOpenChange={handleTooltipOpenChange('encoding')}>

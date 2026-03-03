@@ -1209,7 +1209,7 @@ function App({ settings }: { settings: SettingsState }) {
           />
         </VaultViewContainer>
 
-        <SftpViewMount hosts={hosts} keys={keys} identities={identities} />
+        <SftpViewMount hosts={hosts} keys={keys} identities={identities} updateHosts={updateHosts} />
 
         <TerminalLayerMount
           hosts={hosts}

@@ -50,6 +50,8 @@ interface SFTPModalProps {
   initialPath?: string;
   /** Initial entries to upload when SFTP modal opens. Used for drag-and-drop to terminal. */
   initialEntriesToUpload?: DropEntry[];
+  /** Callback to update the host (e.g. for bookmark persistence). */
+  onUpdateHost?: (host: Host) => void;
 }
 
 const SFTPModal: React.FC<SFTPModalProps> = ({
@@ -59,6 +61,7 @@ const SFTPModal: React.FC<SFTPModalProps> = ({
   onClose,
   initialPath,
   initialEntriesToUpload,
+  onUpdateHost,
 }) => {
   const {
     openSftp,
@@ -680,6 +683,8 @@ const SFTPModal: React.FC<SFTPModalProps> = ({
           onCreateFile={handleCreateFile}
           onFileSelect={handleFileSelect}
           onFolderSelect={handleFolderSelect}
+          onUpdateHost={onUpdateHost}
+          onNavigateToBookmark={(path) => setCurrentPath(path)}
         />
 
         <SftpModalFileList
