@@ -376,6 +376,8 @@ const api = {
   closeSession: (sessionId) => {
     ipcRenderer.send("netcatty:close", { sessionId });
   },
+  setSessionEncoding: (sessionId, encoding) =>
+    ipcRenderer.invoke("netcatty:ssh:setEncoding", { sessionId, encoding }),
   onSessionData: (sessionId, cb) => {
     if (!dataListeners.has(sessionId)) dataListeners.set(sessionId, new Set());
     dataListeners.get(sessionId).add(cb);

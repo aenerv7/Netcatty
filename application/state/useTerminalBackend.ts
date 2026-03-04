@@ -78,6 +78,12 @@ export const useTerminalBackend = () => {
     bridge?.closeSession?.(sessionId);
   }, []);
 
+  const setSessionEncoding = useCallback(async (sessionId: string, encoding: string) => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.setSessionEncoding) return { ok: false, encoding };
+    return bridge.setSessionEncoding(sessionId, encoding);
+  }, []);
+
   const onSessionData = useCallback((sessionId: string, cb: (data: string) => void) => {
     const bridge = netcattyBridge.get();
     if (!bridge?.onSessionData) throw new Error("onSessionData unavailable");
@@ -148,6 +154,7 @@ export const useTerminalBackend = () => {
     writeToSession,
     resizeSession,
     closeSession,
+    setSessionEncoding,
     onSessionData,
     onSessionExit,
     onChainProgress,

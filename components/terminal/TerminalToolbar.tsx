@@ -2,12 +2,13 @@
  * Terminal Toolbar
  * Displays SFTP, Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
  */
-import { FolderInput, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, FolderInput, Languages, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Snippet, Host } from '../../types';
 import { Button } from '../ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { cn } from '../../lib/utils';
 import { ScrollArea } from '../ui/scroll-area';
 import ThemeCustomizeModal from './ThemeCustomizeModal';
 import HostKeywordHighlightPopover from './HostKeywordHighlightPopover';
@@ -35,6 +36,9 @@ export interface TerminalToolbarProps {
     // Compose bar
     isComposeBarOpen?: boolean;
     onToggleComposeBar?: () => void;
+    // Terminal encoding
+    terminalEncoding?: 'utf-8' | 'gb18030';
+    onSetTerminalEncoding?: (encoding: 'utf-8' | 'gb18030') => void;
 }
 
 export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
@@ -58,6 +62,8 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onToggleSearch,
     isComposeBarOpen,
     onToggleComposeBar,
+    terminalEncoding,
+    onSetTerminalEncoding,
 }) => {
     const { t } = useI18n();
     const [themeModalOpen, setThemeModalOpen] = useState(false);
@@ -116,6 +122,44 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 >
                     <FolderInput size={12} />
                 </Button>
+            )}
+
+            {!hidesSftp && onSetTerminalEncoding && (
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="secondary"
+                            size="icon"
+                            className={buttonBase}
+                            title={t("terminal.toolbar.encoding")}
+                            aria-label={t("terminal.toolbar.encoding")}
+                        >
+                            <Languages size={12} />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-36 p-1" align="start">
+                        {(["utf-8", "gb18030"] as const).map((enc) => (
+                            <PopoverClose asChild key={enc}>
+                                <button
+                                    className={cn(
+                                        "w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-secondary transition-colors",
+                                        terminalEncoding === enc && "font-medium"
+                                    )}
+                                    onClick={() => onSetTerminalEncoding(enc)}
+                                >
+                                    <Check
+                                        size={12}
+                                        className={cn(
+                                            "shrink-0",
+                                            terminalEncoding === enc ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    {t(`terminal.toolbar.encoding.${enc === "utf-8" ? "utf8" : enc}`)}
+                                </button>
+                            </PopoverClose>
+                        ))}
+                    </PopoverContent>
+                </Popover>
             )}
 
             <Popover open={isScriptsOpen} onOpenChange={setIsScriptsOpen}>

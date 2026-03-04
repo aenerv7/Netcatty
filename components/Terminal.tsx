@@ -266,7 +266,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   snippetsRef.current = snippets;
 
   const terminalBackend = useTerminalBackend();
-  const { resizeSession } = terminalBackend;
+  const { resizeSession, setSessionEncoding } = terminalBackend;
 
 
 
@@ -297,6 +297,10 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const dragCounterRef = useRef(0);
   const [pendingUploadEntries, setPendingUploadEntries] = useState<DropEntry[]>([]);
   const [isComposeBarOpen, setIsComposeBarOpen] = useState(false);
+  const [terminalEncoding, setTerminalEncoding] = useState<'utf-8' | 'gb18030'>(() => {
+    if (host?.charset && /^gb/i.test(String(host.charset).trim())) return 'gb18030';
+    return 'utf-8';
+  });
 
   const terminalSearch = useTerminalSearch({ searchAddonRef, termRef });
   const {
@@ -909,6 +913,13 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     termRef.current?.writeln("\r\n[No active SSH session]");
   };
 
+  const handleSetTerminalEncoding = (encoding: 'utf-8' | 'gb18030') => {
+    setTerminalEncoding(encoding);
+    if (sessionRef.current) {
+      setSessionEncoding(sessionRef.current, encoding);
+    }
+  };
+
   const handleOpenSFTP = async () => {
     // If SFTP is already open, toggle it off
     if (showSFTP) {
@@ -1113,6 +1124,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onToggleSearch={handleToggleSearch}
       isComposeBarOpen={inWorkspace ? isWorkspaceComposeBarOpen : isComposeBarOpen}
       onToggleComposeBar={inWorkspace ? onToggleComposeBar : () => setIsComposeBarOpen(prev => !prev)}
+      terminalEncoding={terminalEncoding}
+      onSetTerminalEncoding={handleSetTerminalEncoding}
     />
   );
 
