@@ -567,9 +567,14 @@ async function startSSHSession(event, options) {
     // If no primary auth method configured, try ssh-agent first, then ALL default keys
     if (!connectOpts.privateKey && !connectOpts.password && !connectOpts.agent) {
       // First, try to use ssh-agent if available (this is what regular SSH does)
-      const sshAgentSocket = process.platform === "win32"
-        ? "\\\\.\\pipe\\openssh-ssh-agent"
-        : process.env.SSH_AUTH_SOCK;
+      let sshAgentSocket;
+      if (process.platform === "win32") {
+        const agentStatus = await checkWindowsSshAgent();
+        log("Windows SSH Agent check", agentStatus);
+        sshAgentSocket = agentStatus.running ? "\\\\.\\pipe\\openssh-ssh-agent" : null;
+      } else {
+        sshAgentSocket = process.env.SSH_AUTH_SOCK;
+      }
 
       if (sshAgentSocket) {
         log("No auth method configured, trying ssh-agent first", { agentSocket: sshAgentSocket });
@@ -599,7 +604,11 @@ async function startSSHSession(event, options) {
       connectOpts.agentForward = true;
       if (!connectOpts.agent) {
         if (process.platform === "win32") {
-          connectOpts.agent = "\\\\.\\pipe\\openssh-ssh-agent";
+          const agentStatus = await checkWindowsSshAgent();
+          log("Windows SSH Agent check (agentForwarding)", agentStatus);
+          if (agentStatus.running) {
+            connectOpts.agent = "\\\\.\\pipe\\openssh-ssh-agent";
+          }
         } else {
           connectOpts.agent = process.env.SSH_AUTH_SOCK;
         }
