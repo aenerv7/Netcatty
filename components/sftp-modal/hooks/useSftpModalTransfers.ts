@@ -131,6 +131,9 @@ export const useSftpModalTransfers = ({
   // Track cancelled transfer IDs to detect cancellation in bridge wrapper
   const cancelledTransferIdsRef = useRef<Set<string>>(new Set());
 
+  // Track active child transfer IDs for directory downloads (parentId -> childId)
+  const activeChildTransferIdsRef = useRef<Map<string, string>>(new Map());
+
   // Create upload bridge that adapts the modal's functions to the service interface
   const createUploadBridge = useMemo((): UploadBridge => {
     return {
@@ -439,6 +442,14 @@ export const useSftpModalTransfers = ({
 
           // Track the currently active child transfer ID for cancellation
           let activeChildTransferId: string | null = null;
+          const setActiveChild = (childId: string | null) => {
+            activeChildTransferId = childId;
+            if (childId) {
+              activeChildTransferIdsRef.current.set(transferId, childId);
+            } else {
+              activeChildTransferIdsRef.current.delete(transferId);
+            }
+          };
 
           // Create download task for progress display
           const downloadTask: TransferTask = {
@@ -522,6 +533,7 @@ export const useSftpModalTransfers = ({
                   // Download individual file
                   const childTransferId = `download-${Date.now()}-${Math.random().toString(36).slice(2)}`;
                   activeChildTransferId = childTransferId;
+                  setActiveChild(childTransferId);
                   const entrySize = typeof entry.size === 'number' ? entry.size : parseInt(String(entry.size), 10) || 0;
 
                   await new Promise<void>((resolve, reject) => {
@@ -567,21 +579,21 @@ export const useSftpModalTransfers = ({
                       // onComplete
                       () => {
                         completedBytes += entrySize;
-                        activeChildTransferId = null;
+                        setActiveChild(null);
                         resolve();
                       },
                       // onError
                       (error) => {
-                        activeChildTransferId = null;
+                        setActiveChild(null);
                         reject(new Error(error));
                       }
                     ).then((result) => {
                       // Handle resolved result with error (e.g. cancellation)
                       if (result === undefined) {
-                        activeChildTransferId = null;
+                        setActiveChild(null);
                         reject(new Error('Stream transfer unavailable'));
                       } else if (result?.error) {
-                        activeChildTransferId = null;
+                        setActiveChild(null);
                         reject(new Error(result.error));
                       }
                     }).catch(reject);
@@ -1013,6 +1025,16 @@ export const useSftpModalTransfers = ({
           await cancelTransfer(taskId);
         } catch {
           // Ignore cancellation errors
+        }
+        // Also cancel the active child transfer for directory downloads
+        const activeChildId = activeChildTransferIdsRef.current.get(taskId);
+        if (activeChildId) {
+          try {
+            await cancelTransfer(activeChildId);
+          } catch {
+            // Ignore cancellation errors
+          }
+          activeChildTransferIdsRef.current.delete(taskId);
         }
       }
       // Mark task as cancelled
