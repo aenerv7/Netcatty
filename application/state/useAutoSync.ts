@@ -16,6 +16,8 @@ import {
   findSyncPayloadEncryptedCredentialPaths,
 } from '../../domain/credentials';
 import type { SyncPayload } from '../../domain/sync';
+import { STORAGE_KEY_PORT_FORWARDING } from '../../infrastructure/config/storageKeys';
+import { localStorageAdapter } from '../../infrastructure/persistence/localStorageAdapter';
 import { toast } from '../../components/ui/toast';
 
 interface AutoSyncConfig {
@@ -51,13 +53,29 @@ export const useAutoSync = (config: AutoSyncConfig) => {
   
   // Build sync payload
   const buildPayload = useCallback((): SyncPayload => {
+    // If port-forwarding hook state is still [] (async init in progress),
+    // fall back to localStorage to avoid uploading an empty array that
+    // overwrites the cloud snapshot.
+    let effectivePFRules = config.portForwardingRules;
+    if (!effectivePFRules || effectivePFRules.length === 0) {
+      const stored = localStorageAdapter.read<SyncPayload['portForwardingRules']>(
+        STORAGE_KEY_PORT_FORWARDING,
+      );
+      if (stored && Array.isArray(stored) && stored.length > 0) {
+        effectivePFRules = stored.map((rule) => ({
+          ...rule,
+          status: 'inactive' as const,
+          error: undefined,
+        }));
+      }
+    }
     return {
       hosts: config.hosts,
       keys: config.keys,
       identities: config.identities,
       snippets: config.snippets,
       customGroups: config.customGroups,
-      portForwardingRules: config.portForwardingRules,
+      portForwardingRules: effectivePFRules,
       knownHosts: config.knownHosts,
       syncedAt: Date.now(),
     };
@@ -65,13 +83,27 @@ export const useAutoSync = (config: AutoSyncConfig) => {
   
   // Create a hash of current data for comparison
   const getDataHash = useCallback(() => {
+    // Same fallback as buildPayload
+    let effectivePFRules = config.portForwardingRules;
+    if (!effectivePFRules || effectivePFRules.length === 0) {
+      const stored = localStorageAdapter.read<SyncPayload['portForwardingRules']>(
+        STORAGE_KEY_PORT_FORWARDING,
+      );
+      if (stored && Array.isArray(stored) && stored.length > 0) {
+        effectivePFRules = stored.map((rule) => ({
+          ...rule,
+          status: 'inactive' as const,
+          error: undefined,
+        }));
+      }
+    }
     const data = {
       hosts: config.hosts,
       keys: config.keys,
       identities: config.identities,
       snippets: config.snippets,
       customGroups: config.customGroups,
-      portForwardingRules: config.portForwardingRules,
+      portForwardingRules: effectivePFRules,
       knownHosts: config.knownHosts,
     };
     return JSON.stringify(data);

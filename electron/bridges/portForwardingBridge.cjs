@@ -100,6 +100,9 @@ async function startPortForward(event, payload) {
   }));
 
   return new Promise((resolve, reject) => {
+    // Track whether the Promise has been settled so conn.on('close')
+    // can reject if the tunnel was killed during SSH handshake.
+    let settled = false;
 
     conn.on('ready', () => {
       console.log(`[PortForward] SSH connection ready for tunnel ${tunnelId}`);
@@ -131,6 +134,7 @@ async function startPortForward(event, payload) {
           sendStatus('error', err.message);
           conn.end();
           portForwardingTunnels.delete(tunnelId);
+          settled = true;
           reject(err);
         });
 
@@ -144,6 +148,7 @@ async function startPortForward(event, payload) {
             webContentsId: sender.id
           });
           sendStatus('active');
+          settled = true;
           resolve({ tunnelId, success: true });
         });
 
@@ -154,6 +159,7 @@ async function startPortForward(event, payload) {
             console.error(`[PortForward] Remote forward error:`, err.message);
             sendStatus('error', err.message);
             conn.end();
+            settled = true;
             reject(err);
             return;
           }
@@ -166,6 +172,7 @@ async function startPortForward(event, payload) {
             webContentsId: sender.id
           });
           sendStatus('active');
+          settled = true;
           resolve({ tunnelId, success: true });
         });
 
@@ -267,6 +274,7 @@ async function startPortForward(event, payload) {
           sendStatus('error', err.message);
           conn.end();
           portForwardingTunnels.delete(tunnelId);
+          settled = true;
           reject(err);
         });
 
@@ -280,9 +288,11 @@ async function startPortForward(event, payload) {
             webContentsId: sender.id
           });
           sendStatus('active');
+          settled = true;
           resolve({ tunnelId, success: true });
         });
       } else {
+        settled = true;
         reject(new Error(`Unknown forwarding type: ${type}`));
       }
     });
@@ -291,6 +301,7 @@ async function startPortForward(event, payload) {
       console.error(`[PortForward] SSH error:`, err.message);
       sendStatus('error', err.message);
       portForwardingTunnels.delete(tunnelId);
+      settled = true;
       reject(err);
     });
 
@@ -303,6 +314,13 @@ async function startPortForward(event, payload) {
         }
         sendStatus('inactive');
         portForwardingTunnels.delete(tunnelId);
+      }
+      // If the Promise was never settled (tunnel killed during
+      // handshake by stopPortForwardByRuleId), reject so callers
+      // don't hang indefinitely in pendingOperations.
+      if (!settled) {
+        settled = true;
+        reject(new Error(`Tunnel ${tunnelId} closed before connection established`));
       }
     });
 
