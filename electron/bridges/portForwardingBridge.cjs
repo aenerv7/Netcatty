@@ -407,18 +407,22 @@ function stopAllPortForwards() {
   console.log(`[PortForward] Stopping all ${portForwardingTunnels.size} active tunnels...`);
   for (const [tunnelId, tunnel] of portForwardingTunnels) {
     try {
+      // Mark as cancelled so conn.on('close') resolves gracefully
+      // instead of rejecting with an error for in-flight handshakes.
+      tunnel.cancelled = true;
       if (tunnel.server) {
         tunnel.server.close();
       }
       if (tunnel.conn) {
         tunnel.conn.end();
       }
+      // Don't delete here — let conn.on('close') handle cleanup
+      // so it can read the cancelled flag.
       console.log(`[PortForward] Stopped tunnel ${tunnelId}`);
     } catch (err) {
       console.warn(`[PortForward] Failed to stop tunnel ${tunnelId}:`, err.message);
     }
   }
-  portForwardingTunnels.clear();
   console.log('[PortForward] All tunnels stopped');
 }
 
