@@ -132,7 +132,7 @@ const SettingsSystemTab: React.FC<SettingsSystemTabProps> = ({
       setUpdateError(result.error ?? t('settings.update.downloadError'));
       setUpdateStatus('error');
     }
-    // Success is handled by onDownloaded event
+    // Success path: autoDownloadStatus prop transitions to 'ready' via useUpdateCheck
   }, [t]);
 
   const handleInstallUpdate = useCallback(() => {

@@ -338,7 +338,7 @@ function App({ settings }: { settings: SettingsState }) {
       t('update.readyToInstall.message', { version }),
       {
         title: t('update.readyToInstall.title'),
-        duration: Infinity,
+        duration: 0,
         actionLabel: t('update.restartNow'),
         onClick: () => installUpdate(),
       }
