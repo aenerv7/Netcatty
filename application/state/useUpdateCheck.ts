@@ -129,8 +129,8 @@ export function useUpdateCheck(): UseUpdateCheckResult {
           autoDownloadStatus: snapshot.status,
           downloadPercent: snapshot.percent,
           downloadError: snapshot.error,
-          // Provide minimal release info so the UI can display version
-          latestRelease: prev.latestRelease ?? (snapshot.version ? {
+          // Use snapshot version if no release data or if versions differ
+          latestRelease: (!prev.latestRelease || (snapshot.version && prev.latestRelease.version !== snapshot.version)) ? (snapshot.version ? {
             version: snapshot.version,
             tagName: `v${snapshot.version}`,
             name: `v${snapshot.version}`,
@@ -138,7 +138,7 @@ export function useUpdateCheck(): UseUpdateCheckResult {
             htmlUrl: '',
             publishedAt: new Date().toISOString(),
             assets: [],
-          } : null),
+          } : prev.latestRelease) : prev.latestRelease,
         };
       });
     });
@@ -325,14 +325,11 @@ export function useUpdateCheck(): UseUpdateCheckResult {
     // Skip check for dev/invalid builds (demo mode overrides to '0.0.1' inside performCheck)
     const effectiveVersion = IS_UPDATE_DEMO_MODE ? '0.0.1' : currentVersionRef.current;
     if (!effectiveVersion || effectiveVersion === '0.0.0') {
+      // Dev/invalid build — can't determine update status, reset to idle
       setUpdateState((prev) => ({
         ...prev,
-        manualCheckStatus: 'up-to-date',
+        manualCheckStatus: 'idle',
       }));
-      // Auto-reset after 5s so the badge doesn't stay forever
-      manualCheckResetTimeoutRef.current = setTimeout(() => {
-        setUpdateState((prev) => ({ ...prev, manualCheckStatus: 'idle' }));
-      }, 5000);
       return null;
     }
 
