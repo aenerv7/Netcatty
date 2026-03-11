@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] - 2026-03-11
+
+### 功能
+- 修复自动更新 IPC 事件仅发送到单个窗口的问题，改为广播所有窗口（主窗口 + 设置窗口均可收到）
+- 统一手动检查更新与自动更新的状态机，消除三套并行状态
+- "检查更新"按钮现在通过 electron-updater 触发，与自动下载流程一致
+- 设置窗口中点击"检查更新"后，下载进度可实时反映在 UI 中
+
+### 设计原理
+- `broadcastToAllWindows` 替换 `getSenderWindow` 单点发送，保证所有窗口都能收到 IPC 事件
+- `manualCheckStatus` 字段追踪手动检查 UI 状态（idle/checking/available/up-to-date/error），与 `autoDownloadStatus` 在 UI 层按优先级渲染
+- `SettingsSystemTab` 不再持有本地 update state，单向接收 `useUpdateCheck` 统一数据
+
+### 接口变更（SettingsSystemTabProps）
+- 移除：`autoDownloadStatus`、`downloadPercent`
+- 新增：`updateState`（完整 UpdateState）、`checkNow`、`installUpdate`、`openReleasePage`
+
+### 注意事项
+- `checkNow` 语义变更：原来调用 GitHub API（`performCheck`），现在调用 `netcatty:update:check` IPC（electron-updater）以触发自动下载；不支持 auto-update 的平台（Linux deb/rpm）自动降级到 GitHub API
+
 ## [Unreleased] - feat/auto-update
 
 ### 功能
