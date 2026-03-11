@@ -72,7 +72,7 @@ const SettingsSyncTabWithVault: React.FC = () => {
 const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }) => {
     const { t } = useI18n();
     const { notifyRendererReady, closeSettingsWindow } = useWindowControls();
-    const { updateState } = useUpdateCheck();
+    const { updateState, checkNow, installUpdate, openReleasePage } = useUpdateCheck();
     const [activeTab, setActiveTab] = useState("application");
     const [mountedTabs, setMountedTabs] = useState(() => new Set(["application"]));
 
@@ -239,8 +239,10 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
                             closeToTray={settings.closeToTray}
                             setCloseToTray={settings.setCloseToTray}
                             hotkeyRegistrationError={settings.hotkeyRegistrationError}
-                            autoDownloadStatus={updateState.autoDownloadStatus}
-                            downloadPercent={updateState.downloadPercent}
+                            updateState={updateState}
+                            checkNow={checkNow}
+                            installUpdate={installUpdate}
+                            openReleasePage={openReleasePage}
                         />
                     )}
                 </div>
