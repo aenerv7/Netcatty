@@ -34,6 +34,9 @@ let _autoUpdater = null;
 
 /** Guard against duplicate listener registration */
 let _listenersRegistered = false;
+
+/** Track whether a download is in progress to distinguish download errors from check errors */
+let _isDownloading = false;
 function getAutoUpdater() {
   if (_autoUpdater) return _autoUpdater;
   try {
@@ -62,6 +65,8 @@ function setupGlobalListeners() {
   _listenersRegistered = true;
 
   updater.on("update-available", (info) => {
+    // autoDownload=true means the download begins immediately after this event
+    _isDownloading = true;
     broadcastToAllWindows("netcatty:update:update-available", {
       version: info.version || "",
       releaseNotes: typeof info.releaseNotes === "string" ? info.releaseNotes : "",
@@ -79,10 +84,18 @@ function setupGlobalListeners() {
   });
 
   updater.on("update-downloaded", () => {
+    _isDownloading = false;
     broadcastToAllWindows("netcatty:update:downloaded");
   });
 
   updater.on("error", (err) => {
+    // Only broadcast download-phase errors; check-phase errors (e.g. network failures
+    // during checkForUpdates) are not download failures and must not set autoDownloadStatus.
+    if (!_isDownloading) {
+      console.warn("[AutoUpdate] Check-phase error (not broadcast to renderer):", err?.message || err);
+      return;
+    }
+    _isDownloading = false;
     broadcastToAllWindows("netcatty:update:error", {
       error: err?.message || "Unknown update error",
     });
