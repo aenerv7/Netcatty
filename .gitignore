@@ -37,7 +37,7 @@ coverage
 
 # Claude Code local settings
 /.claude/settings.local.json
-CLAUDE.md
+/CLAUDE.md
 
 # AI / Superpowers generated docs (local only)
 /docs/superpowers/

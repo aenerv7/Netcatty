@@ -131,21 +131,6 @@ function init(deps) {
   setupGlobalListeners();
 }
 
-/** Get the focused or first available BrowserWindow to send events to. */
-function getSenderWindow() {
-  try {
-    const { BrowserWindow } = _deps?.electronModule || {};
-    if (!BrowserWindow) return null;
-    const focused = BrowserWindow.getFocusedWindow();
-    if (focused && !focused.isDestroyed()) return focused;
-    const all = BrowserWindow.getAllWindows();
-    for (const win of all) {
-      if (!win.isDestroyed()) return win;
-    }
-  } catch {}
-  return null;
-}
-
 /**
  * Broadcast an IPC event to all non-destroyed BrowserWindows.
  * Replaces single-target getSenderWindow() for auto-update events,
