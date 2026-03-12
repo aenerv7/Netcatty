@@ -17,7 +17,8 @@ interface SftpModalFileListProps {
   t: (key: string, params?: Record<string, unknown>) => string;
   currentPath: string;
   isLocalSession: boolean;
-  files: RemoteFile[];
+  hasFiles: boolean;
+  hasDisplayFiles: boolean;
   selectedFiles: Set<string>;
   dragActive: boolean;
   loading: boolean;
@@ -60,7 +61,8 @@ export const SftpModalFileList: React.FC<SftpModalFileListProps> = ({
   t,
   currentPath,
   isLocalSession,
-  files,
+  hasFiles,
+  hasDisplayFiles,
   selectedFiles,
   dragActive,
   loading,
@@ -169,7 +171,7 @@ export const SftpModalFileList: React.FC<SftpModalFileListProps> = ({
         </div>
       )}
 
-      {loading && files.length === 0 && (
+      {loading && !hasFiles && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/80">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -200,7 +202,7 @@ export const SftpModalFileList: React.FC<SftpModalFileListProps> = ({
         </div>
       )}
 
-      {files.length === 0 && !loading && (
+      {!hasDisplayFiles && !loading && (
         <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
           <Folder size={48} className="mb-3 opacity-50" />
           <div className="text-sm font-medium">{t("sftp.emptyDirectory")}</div>

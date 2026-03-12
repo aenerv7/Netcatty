@@ -544,6 +544,8 @@ const SFTPModal: React.FC<SFTPModalProps> = ({
 
     return parentEntry ? [parentEntry, ...sorted] : sorted;
   }, [displayFiles, sortField, sortOrder]);
+  const hasFiles = files.length > 0;
+  const hasDisplayFiles = sortedFiles.length > 0;
   const {
     fileListRef,
     handleFileListScroll,
@@ -700,7 +702,8 @@ const SFTPModal: React.FC<SFTPModalProps> = ({
           t={t}
           currentPath={currentPath}
           isLocalSession={isLocalSession}
-          files={files}
+          hasFiles={hasFiles}
+          hasDisplayFiles={hasDisplayFiles}
           selectedFiles={selectedFiles}
           dragActive={dragActive}
           loading={loading}
