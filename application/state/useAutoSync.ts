@@ -52,12 +52,8 @@ export const useAutoSync = (config: AutoSyncConfig) => {
   const lastSyncedDataRef = useRef<string>('');
   const hasCheckedRemoteRef = useRef(false);
   const isInitializedRef = useRef(false);
-  
-  // Build sync payload
-  const buildPayload = useCallback((): SyncPayload => {
-    // If port-forwarding hook state is still [] (async init in progress),
-    // fall back to localStorage to avoid uploading an empty array that
-    // overwrites the cloud snapshot.
+
+  const getSyncSnapshot = useCallback(() => {
     let effectivePFRules = config.portForwardingRules;
     if (!effectivePFRules || effectivePFRules.length === 0) {
       const stored = localStorageAdapter.read<SyncPayload['portForwardingRules']>(
@@ -72,6 +68,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         }));
       }
     }
+
     return {
       hosts: config.hosts,
       keys: config.keys,
@@ -81,39 +78,30 @@ export const useAutoSync = (config: AutoSyncConfig) => {
       snippetPackages: config.snippetPackages,
       portForwardingRules: effectivePFRules,
       knownHosts: config.knownHosts,
+    };
+  }, [
+    config.hosts,
+    config.keys,
+    config.identities,
+    config.snippets,
+    config.customGroups,
+    config.snippetPackages,
+    config.portForwardingRules,
+    config.knownHosts,
+  ]);
+  
+  // Build sync payload
+  const buildPayload = useCallback((): SyncPayload => {
+    return {
+      ...getSyncSnapshot(),
       syncedAt: Date.now(),
     };
-  }, [config.hosts, config.keys, config.identities, config.snippets, config.customGroups, config.snippetPackages, config.portForwardingRules, config.knownHosts]);
+  }, [getSyncSnapshot]);
   
   // Create a hash of current data for comparison
   const getDataHash = useCallback(() => {
-    // Same fallback as buildPayload
-    let effectivePFRules = config.portForwardingRules;
-    if (!effectivePFRules || effectivePFRules.length === 0) {
-      const stored = localStorageAdapter.read<SyncPayload['portForwardingRules']>(
-        STORAGE_KEY_PORT_FORWARDING,
-      );
-      if (stored && Array.isArray(stored) && stored.length > 0) {
-        effectivePFRules = stored.map((rule) => ({
-          ...rule,
-          status: 'inactive' as const,
-          error: undefined,
-          lastUsedAt: undefined,
-        }));
-      }
-    }
-    const data = {
-      hosts: config.hosts,
-      keys: config.keys,
-      identities: config.identities,
-      snippets: config.snippets,
-      customGroups: config.customGroups,
-      snippetPackages: config.snippetPackages,
-      portForwardingRules: effectivePFRules,
-      knownHosts: config.knownHosts,
-    };
-    return JSON.stringify(data);
-  }, [config.hosts, config.keys, config.identities, config.snippets, config.customGroups, config.snippetPackages, config.portForwardingRules, config.knownHosts]);
+    return JSON.stringify(getSyncSnapshot());
+  }, [getSyncSnapshot]);
   
   // Sync now handler - get fresh state directly from manager
   const syncNow = useCallback(async (options?: SyncNowOptions) => {
@@ -130,6 +118,10 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         throw new Error(t('sync.autoSync.noProvider'));
       }
       if (syncing) {
+        if (trigger === 'auto') {
+          console.info('[AutoSync] Skipping overlapping auto-sync because another sync is already running.');
+          return;
+        }
         throw new Error(t('sync.autoSync.alreadySyncing'));
       }
 
@@ -151,6 +143,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         throw new Error(t('sync.autoSync.vaultLocked'));
       }
 
+      const dataHash = getDataHash();
       const payload = buildPayload();
       const encryptedCredentialPaths = findSyncPayloadEncryptedCredentialPaths(payload);
       if (encryptedCredentialPaths.length > 0) {
@@ -169,7 +162,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         }
       }
 
-      lastSyncedDataRef.current = getDataHash();
+      lastSyncedDataRef.current = dataHash;
     } catch (error) {
       if (trigger === 'manual') {
         throw error;
@@ -236,6 +229,12 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     if (currentHash === lastSyncedDataRef.current) {
       return;
     }
+
+    // Wait for the current sync to finish, then this effect will re-run
+    // because sync.isSyncing changed.
+    if (sync.isSyncing) {
+      return;
+    }
     
     // Clear existing timeout
     if (syncTimeoutRef.current) {
@@ -253,7 +252,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, getDataHash, syncNow]);
+  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, sync.isSyncing, getDataHash, syncNow]);
   
   // Check remote version on startup/unlock
   useEffect(() => {
