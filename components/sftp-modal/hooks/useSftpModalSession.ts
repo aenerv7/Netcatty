@@ -89,6 +89,7 @@ export const useSftpModalSession = ({
   const sftpIdRef = useRef<string | null>(null);
   const closingPromiseRef = useRef<Promise<void> | null>(null);
   const initializedRef = useRef(false);
+  const initializingRef = useRef(false);
   const lastInitialPathRef = useRef<string | undefined>(undefined);
   const localHomeRef = useRef<string | null>(null);
 
@@ -316,92 +317,109 @@ export const useSftpModalSession = ({
     if (open) {
       if (!initializedRef.current || lastInitialPathRef.current !== initialPath) {
         initializedRef.current = true;
+        initializingRef.current = true;
         lastInitialPathRef.current = initialPath;
         onClearSelection();
         setLoading(true);
 
         if (isLocalSession) {
           (async () => {
-            const homePath = await getHomeDir();
-            localHomeRef.current = homePath ?? null;
-            const startPath = initialPath || homePath || "/";
             try {
-              const list = await listLocalDir(startPath);
-              setCurrentPath(startPath);
-              setFiles(list);
-              dirCacheRef.current.set(`${host.id}::${startPath}`, {
-                files: list,
-                timestamp: Date.now(),
-              });
-            } catch (e) {
-              toast.error(
-                e instanceof Error ? e.message : t("sftp.error.loadFailed"),
-                "SFTP",
-              );
+              const homePath = await getHomeDir();
+              localHomeRef.current = homePath ?? null;
+              const startPath = initialPath || homePath || "/";
+              try {
+                const list = await listLocalDir(startPath);
+                setCurrentPath(startPath);
+                setFiles(list);
+                dirCacheRef.current.set(`${host.id}::${startPath}`, {
+                  files: list,
+                  timestamp: Date.now(),
+                });
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : t("sftp.error.loadFailed"),
+                  "SFTP",
+                );
+              } finally {
+                setLoading(false);
+              }
             } finally {
-              setLoading(false);
+              initializingRef.current = false;
             }
           })();
           return;
         }
 
         (async () => {
-          const homePath = await getHomeDir();
-          localHomeRef.current = homePath ?? null;
-          if (initialPath) {
-            try {
-              const sftpId = await ensureSftp();
-              const list = await listSftp(sftpId, initialPath);
-              setCurrentPath(initialPath);
-              setFiles(list);
-              dirCacheRef.current.set(`${host.id}::${initialPath}`, {
-                files: list,
-                timestamp: Date.now(),
-              });
-              setLoading(false);
-              return;
-            } catch {
-              logger.warn(
-                `[SFTP] Initial path ${initialPath} not accessible, falling back to home`,
-              );
-            }
-          }
-
           try {
-            const sftpId = await ensureSftp();
-            const list = await listSftp(sftpId, homePath || "/");
-            setCurrentPath(homePath || "/");
-            setFiles(list);
-            dirCacheRef.current.set(`${host.id}::${homePath || "/"}`, {
-              files: list,
-              timestamp: Date.now(),
-            });
-            setLoading(false);
-          } catch {
-            logger.warn(`[SFTP] Home ${homePath} not accessible, using /`);
+            const homePath = await getHomeDir();
+            localHomeRef.current = homePath ?? null;
+            if (initialPath) {
+              try {
+                const sftpId = await ensureSftp();
+                const list = await listSftp(sftpId, initialPath);
+                setCurrentPath(initialPath);
+                setFiles(list);
+                dirCacheRef.current.set(`${host.id}::${initialPath}`, {
+                  files: list,
+                  timestamp: Date.now(),
+                });
+                setLoading(false);
+                return;
+              } catch {
+                logger.warn(
+                  `[SFTP] Initial path ${initialPath} not accessible, falling back to home`,
+                );
+              }
+            }
+
             try {
               const sftpId = await ensureSftp();
-              const list = await listSftp(sftpId, "/");
-              setCurrentPath("/");
+              const list = await listSftp(sftpId, homePath || "/");
+              setCurrentPath(homePath || "/");
               setFiles(list);
-              dirCacheRef.current.set(`${host.id}::/`, {
+              dirCacheRef.current.set(`${host.id}::${homePath || "/"}`, {
                 files: list,
                 timestamp: Date.now(),
               });
-            } catch (e) {
-              logger.error("[SFTP] Failed to load root directory", e);
-              toast.error(t("sftp.error.loadFailed"), "SFTP");
-            } finally {
               setLoading(false);
+            } catch {
+              logger.warn(`[SFTP] Home ${homePath} not accessible, using /`);
+              try {
+                const sftpId = await ensureSftp();
+                const list = await listSftp(sftpId, "/");
+                setCurrentPath("/");
+                setFiles(list);
+                dirCacheRef.current.set(`${host.id}::/`, {
+                  files: list,
+                  timestamp: Date.now(),
+                });
+              } catch (e) {
+                logger.error("[SFTP] Failed to load root directory", e);
+                toast.error(t("sftp.error.loadFailed"), "SFTP");
+              } finally {
+                setLoading(false);
+              }
             }
+          } finally {
+            initializingRef.current = false;
           }
         })();
         return;
       }
-      void loadFiles(currentPath);
+      // Skip redundant loadFiles while async initialization is still in flight.
+      // Without this guard, dependency changes (e.g. loadFiles recreation from
+      // files.length change) can re-trigger this effect and call loadFiles with
+      // the stale currentPath before the initialization IIFE has resolved and
+      // updated currentPathRef — causing uploads to target the wrong directory.
+      if (!initializingRef.current) {
+        void loadFiles(currentPath);
+      }
     } else {
       loadSeqRef.current += 1;
       initializedRef.current = false;
+      initializingRef.current = false;
     }
   }, [
     closeSftpSession,
