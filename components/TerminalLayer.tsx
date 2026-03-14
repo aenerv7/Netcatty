@@ -1,4 +1,4 @@
-import { Circle, FolderTree, LayoutGrid, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
+import { Bot, Circle, FolderTree, LayoutGrid, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveTabId } from '../application/state/activeTabStore';
 import { useTerminalBackend } from '../application/state/useTerminalBackend';
@@ -15,13 +15,15 @@ import Terminal from './Terminal';
 import { SftpSidePanel } from './SftpSidePanel';
 import { ScriptsSidePanel } from './ScriptsSidePanel';
 import { ThemeSidePanel } from './terminal/ThemeSidePanel';
+import { AIChatSidePanel } from './AIChatSidePanel';
+import { useAIState } from '../application/state/useAIState';
 import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 import { TERMINAL_THEMES } from '../infrastructure/config/terminalThemes';
 import { useCustomThemes } from '../application/state/customThemeStore';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 
-type SidePanelTab = 'sftp' | 'scripts' | 'theme';
+type SidePanelTab = 'sftp' | 'scripts' | 'theme' | 'ai';
 
 type WorkspaceRect = { x: number; y: number; w: number; h: number };
 
@@ -844,6 +846,11 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     handleSwitchSidePanelTab('theme');
   }, [handleSwitchSidePanelTab]);
 
+  // Open AI chat side panel
+  const handleOpenAI = useCallback(() => {
+    handleSwitchSidePanelTab('ai');
+  }, [handleSwitchSidePanelTab]);
+
   // Execute snippet on the focused terminal session
   const handleSnippetClickForFocusedSession = useCallback((command: string) => {
     const sessionId = activeWorkspace?.focusedSessionId ?? activeSession?.id;
@@ -905,6 +912,30 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const focusedThemeId = focusedHost?.theme ?? terminalTheme.id;
   const focusedFontFamilyId = focusedHost?.fontFamily ?? terminalFontFamilyId;
   const focusedFontSize = focusedHost?.fontSize ?? fontSize;
+
+  // AI Chat state
+  const aiState = useAIState();
+
+  // Build terminal session context for the AI chat panel
+  const aiTerminalSessions = useMemo(() => {
+    const sessionIds = activeWorkspace
+      ? collectSessionIds(activeWorkspace.tree)
+      : activeSession ? [activeSession.id] : [];
+
+    return sessionIds.map(sid => {
+      const s = sessions.find(s => s.id === sid);
+      const host = s?.hostId ? hosts.find(h => h.id === s.hostId) : undefined;
+      return {
+        sessionId: sid,
+        hostId: s?.hostId || '',
+        hostname: host?.hostname || '',
+        label: host?.label || s?.hostLabel || '',
+        os: host?.os,
+        username: host?.username,
+        connected: s?.status === 'connected',
+      };
+    });
+  }, [sessions, hosts, activeWorkspace, activeSession]);
 
   // Subscribe to custom theme changes so editing triggers re-render
   const customThemes = useCustomThemes();
@@ -1163,6 +1194,21 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                     >
                       <Palette size={14} />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "h-6 w-6 rounded-md p-0",
+                        activeSidePanelTab === 'ai'
+                          ? "text-foreground opacity-100"
+                          : "text-muted-foreground opacity-70 hover:opacity-100",
+                        "hover:bg-transparent",
+                      )}
+                      onClick={handleOpenAI}
+                      title="AI Chat"
+                    >
+                      <Bot size={14} />
+                    </Button>
                     <div className="flex-1" />
                     <Button
                       variant="ghost"
@@ -1244,6 +1290,40 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                         onThemeChange={handleThemeChangeForFocusedSession}
                         onFontFamilyChange={handleFontFamilyChangeForFocusedSession}
                         onFontSizeChange={handleFontSizeChangeForFocusedSession}
+                      />
+                    </div>
+                  )}
+
+                  {/* AI Chat sub-panel */}
+                  {activeSidePanelTab === 'ai' && (
+                    <div className="absolute inset-0 z-10">
+                      <AIChatSidePanel
+                        sessions={aiState.sessions}
+                        activeSessionId={aiState.activeSessionId}
+                        setActiveSessionId={aiState.setActiveSessionId}
+                        createSession={aiState.createSession}
+                        deleteSession={aiState.deleteSession}
+                        updateSessionTitle={aiState.updateSessionTitle}
+                        addMessageToSession={aiState.addMessageToSession}
+                        updateLastMessage={aiState.updateLastMessage}
+                        providers={aiState.providers}
+                        activeProviderId={aiState.activeProviderId}
+                        activeModelId={aiState.activeModelId}
+                        defaultAgentId={aiState.defaultAgentId}
+                        externalAgents={aiState.externalAgents}
+                        globalPermissionMode={aiState.globalPermissionMode}
+                        commandBlocklist={aiState.commandBlocklist}
+                        scopeType={activeWorkspace ? 'workspace' : 'terminal'}
+                        scopeTargetId={activeWorkspace?.id ?? activeSession?.id}
+                        scopeHostIds={activeWorkspace
+                          ? collectSessionIds(activeWorkspace.tree).map(sid => {
+                              const s = sessions.find(s => s.id === sid);
+                              return s?.hostId;
+                            }).filter((id): id is string => !!id)
+                          : activeSession?.hostId ? [activeSession.hostId] : []
+                        }
+                        scopeLabel={activeWorkspace?.name ?? activeSession?.label ?? ''}
+                        terminalSessions={aiTerminalSessions}
                       />
                     </div>
                   )}

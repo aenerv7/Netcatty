@@ -63,6 +63,13 @@ export default defineConfig(() => {
                 '@xterm/addon-web-links',
                 '@xterm/addon-webgl',
               ],
+              'vendor-ai': [
+                'ai',
+                '@ai-sdk/openai',
+                '@ai-sdk/anthropic',
+                '@ai-sdk/google',
+                'zod',
+              ],
             },
           },
         },

@@ -966,6 +966,77 @@ const api = {
     updateErrorListeners.add(cb);
     return () => updateErrorListeners.delete(cb);
   },
+
+  // ── AI Bridge ──
+  aiChatStream: async (requestId, url, headers, body) => {
+    return ipcRenderer.invoke("netcatty:ai:chat:stream", { requestId, url, headers, body });
+  },
+  aiChatCancel: async (requestId) => {
+    return ipcRenderer.invoke("netcatty:ai:chat:cancel", { requestId });
+  },
+  aiFetch: async (url, method, headers, body) => {
+    return ipcRenderer.invoke("netcatty:ai:fetch", { url, method, headers, body });
+  },
+  aiExec: async (sessionId, command) => {
+    return ipcRenderer.invoke("netcatty:ai:exec", { sessionId, command });
+  },
+  aiTerminalWrite: async (sessionId, data) => {
+    return ipcRenderer.invoke("netcatty:ai:terminal:write", { sessionId, data });
+  },
+  aiDiscoverAgents: async () => {
+    return ipcRenderer.invoke("netcatty:ai:agents:discover");
+  },
+  aiSpawnAgent: async (agentId, command, args, env) => {
+    return ipcRenderer.invoke("netcatty:ai:agent:spawn", { agentId, command, args, env });
+  },
+  aiWriteToAgent: async (agentId, data) => {
+    return ipcRenderer.invoke("netcatty:ai:agent:write", { agentId, data });
+  },
+  aiKillAgent: async (agentId) => {
+    return ipcRenderer.invoke("netcatty:ai:agent:kill", { agentId });
+  },
+  onAiStreamData: (requestId, cb) => {
+    const handler = (_event, payload) => {
+      if (payload.requestId === requestId) cb(payload.data);
+    };
+    ipcRenderer.on("netcatty:ai:stream:data", handler);
+    return () => ipcRenderer.removeListener("netcatty:ai:stream:data", handler);
+  },
+  onAiStreamEnd: (requestId, cb) => {
+    const handler = (_event, payload) => {
+      if (payload.requestId === requestId) cb();
+    };
+    ipcRenderer.on("netcatty:ai:stream:end", handler);
+    return () => ipcRenderer.removeListener("netcatty:ai:stream:end", handler);
+  },
+  onAiStreamError: (requestId, cb) => {
+    const handler = (_event, payload) => {
+      if (payload.requestId === requestId) cb(payload.error);
+    };
+    ipcRenderer.on("netcatty:ai:stream:error", handler);
+    return () => ipcRenderer.removeListener("netcatty:ai:stream:error", handler);
+  },
+  onAiAgentStdout: (agentId, cb) => {
+    const handler = (_event, payload) => {
+      if (payload.agentId === agentId) cb(payload.data);
+    };
+    ipcRenderer.on("netcatty:ai:agent:stdout", handler);
+    return () => ipcRenderer.removeListener("netcatty:ai:agent:stdout", handler);
+  },
+  onAiAgentStderr: (agentId, cb) => {
+    const handler = (_event, payload) => {
+      if (payload.agentId === agentId) cb(payload.data);
+    };
+    ipcRenderer.on("netcatty:ai:agent:stderr", handler);
+    return () => ipcRenderer.removeListener("netcatty:ai:agent:stderr", handler);
+  },
+  onAiAgentExit: (agentId, cb) => {
+    const handler = (_event, payload) => {
+      if (payload.agentId === agentId) cb(payload.code);
+    };
+    ipcRenderer.on("netcatty:ai:agent:exit", handler);
+    return () => ipcRenderer.removeListener("netcatty:ai:agent:exit", handler);
+  },
 };
 
 // Merge with existing netcatty (if any) to avoid stale objects on hot reload

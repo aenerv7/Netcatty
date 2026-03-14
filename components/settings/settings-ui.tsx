@@ -38,9 +38,17 @@ interface SelectProps {
   onChange: (value: string) => void;
   className?: string;
   disabled?: boolean;
+  placeholder?: string;
 }
 
-export const Select: React.FC<SelectProps> = ({ value, options, onChange, className, disabled }) => {
+export const Select: React.FC<SelectProps> = ({
+  value,
+  options,
+  onChange,
+  className,
+  disabled,
+  placeholder,
+}) => {
   const selectedOption = options.find((opt) => opt.value === value);
   return (
     <SelectPrimitive.Root value={value} onValueChange={onChange} disabled={disabled}>
@@ -50,7 +58,9 @@ export const Select: React.FC<SelectProps> = ({ value, options, onChange, classN
           className,
         )}
       >
-        <SelectPrimitive.Value>{selectedOption?.label ?? value}</SelectPrimitive.Value>
+        <SelectPrimitive.Value placeholder={placeholder}>
+          {selectedOption?.label}
+        </SelectPrimitive.Value>
         <SelectPrimitive.Icon asChild>
           <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
         </SelectPrimitive.Icon>
@@ -120,4 +130,3 @@ export const SettingsTabContent: React.FC<{
     </ScrollArea>
   </TabsContent>
 );
-

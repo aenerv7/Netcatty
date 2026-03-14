@@ -83,6 +83,7 @@ const compressUploadBridge = require("./bridges/compressUploadBridge.cjs");
 const globalShortcutBridge = require("./bridges/globalShortcutBridge.cjs");
 const credentialBridge = require("./bridges/credentialBridge.cjs");
 const autoUpdateBridge = require("./bridges/autoUpdateBridge.cjs");
+const aiBridge = require("./bridges/aiBridge.cjs");
 const windowManager = require("./bridges/windowManager.cjs");
 
 // GPU settings
@@ -378,7 +379,8 @@ const registerBridges = (win) => {
   terminalBridge.init(deps);
   fileWatcherBridge.init(deps);
   globalShortcutBridge.init(deps);
-  
+  aiBridge.init(deps);
+
   // Initialize compress upload bridge with transferBridge dependency
   compressUploadBridge.init({
     ...deps,
@@ -408,6 +410,7 @@ const registerBridges = (win) => {
   credentialBridge.registerHandlers(ipcMain, electronModule);
   autoUpdateBridge.init(deps);
   autoUpdateBridge.registerHandlers(ipcMain);
+  aiBridge.registerHandlers(ipcMain);
 
   // Settings window handler
   ipcMain.handle("netcatty:settings:open", async () => {
@@ -860,6 +863,11 @@ if (!gotLock) {
       globalShortcutBridge.cleanup();
     } catch (err) {
       console.warn("Error during global shortcut cleanup:", err);
+    }
+    try {
+      aiBridge.cleanup();
+    } catch (err) {
+      console.warn("Error during AI bridge cleanup:", err);
     }
   });
 }

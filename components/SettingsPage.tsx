@@ -2,13 +2,14 @@
  * Settings Page - Standalone settings window content
  * This component is rendered in a separate Electron window
  */
-import { AppWindow, Cloud, FileType, HardDrive, Keyboard, Palette, TerminalSquare, X } from "lucide-react";
+import { AppWindow, Bot, Cloud, FileType, HardDrive, Keyboard, Palette, TerminalSquare, X } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettingsState } from "../application/state/useSettingsState";
 import { usePortForwardingState } from "../application/state/usePortForwardingState";
 import { useVaultState } from "../application/state/useVaultState";
 import { useWindowControls } from "../application/state/useWindowControls";
 import { useUpdateCheck } from "../application/state/useUpdateCheck";
+import { useAIState } from "../application/state/useAIState";
 import { I18nProvider, useI18n } from "../application/i18n/I18nProvider";
 import SettingsApplicationTab from "./SettingsApplicationTab";
 import SettingsAppearanceTab from "./settings/tabs/SettingsAppearanceTab";
@@ -16,6 +17,7 @@ import SettingsFileAssociationsTab from "./settings/tabs/SettingsFileAssociation
 import SettingsShortcutsTab from "./settings/tabs/SettingsShortcutsTab";
 import SettingsTerminalTab from "./settings/tabs/SettingsTerminalTab";
 import SettingsSystemTab from "./settings/tabs/SettingsSystemTab";
+const SettingsAITab = React.lazy(() => import("./settings/tabs/SettingsAITab"));
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import type { TerminalFont } from "../infrastructure/config/fonts";
 
@@ -74,6 +76,7 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
     const { t } = useI18n();
     const { notifyRendererReady, closeSettingsWindow } = useWindowControls();
     const { updateState, checkNow, installUpdate, openReleasePage } = useUpdateCheck();
+    const aiState = useAIState();
     const [activeTab, setActiveTab] = useState("application");
     const [mountedTabs, setMountedTabs] = useState(() => new Set(["application"]));
 
@@ -153,6 +156,12 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
                             <FileType size={14} /> {t("settings.tab.sftpFileAssociations")}
                         </TabsTrigger>
                         <TabsTrigger
+                            value="ai"
+                            className="w-full justify-start gap-2 px-3 py-2 text-sm data-[state=active]:bg-background hover:bg-background/60 rounded-md transition-colors"
+                        >
+                            <Bot size={14} /> AI
+                        </TabsTrigger>
+                        <TabsTrigger
                             value="sync"
                             className="w-full justify-start gap-2 px-3 py-2 text-sm data-[state=active]:bg-background hover:bg-background/60 rounded-md transition-colors"
                         >
@@ -226,6 +235,31 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
 
                     {mountedTabs.has("file-associations") && (
                         <SettingsFileAssociationsTab />
+                    )}
+
+                    {mountedTabs.has("ai") && (
+                        <React.Suspense fallback={null}>
+                        <SettingsAITab
+                            providers={aiState.providers}
+                            addProvider={aiState.addProvider}
+                            updateProvider={aiState.updateProvider}
+                            removeProvider={aiState.removeProvider}
+                            activeProviderId={aiState.activeProviderId}
+                            setActiveProviderId={aiState.setActiveProviderId}
+                            activeModelId={aiState.activeModelId}
+                            setActiveModelId={aiState.setActiveModelId}
+                            globalPermissionMode={aiState.globalPermissionMode}
+                            setGlobalPermissionMode={aiState.setGlobalPermissionMode}
+                            externalAgents={aiState.externalAgents}
+                            setExternalAgents={aiState.setExternalAgents}
+                            defaultAgentId={aiState.defaultAgentId}
+                            setDefaultAgentId={aiState.setDefaultAgentId}
+                            commandTimeout={aiState.commandTimeout}
+                            setCommandTimeout={aiState.setCommandTimeout}
+                            maxIterations={aiState.maxIterations}
+                            setMaxIterations={aiState.setMaxIterations}
+                        />
+                        </React.Suspense>
                     )}
 
                     {mountedTabs.has("sync") && (

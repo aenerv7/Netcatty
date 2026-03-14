@@ -71,3 +71,16 @@ export const STORAGE_KEY_CLOSE_TO_TRAY = 'netcatty_close_to_tray_v1';
 
 // Custom Terminal Themes
 export const STORAGE_KEY_CUSTOM_THEMES = 'netcatty_custom_themes_v1';
+
+// AI Settings
+export const STORAGE_KEY_AI_PROVIDERS = 'netcatty_ai_providers_v1';
+export const STORAGE_KEY_AI_ACTIVE_PROVIDER = 'netcatty_ai_active_provider_v1';
+export const STORAGE_KEY_AI_ACTIVE_MODEL = 'netcatty_ai_active_model_v1';
+export const STORAGE_KEY_AI_PERMISSION_MODE = 'netcatty_ai_permission_mode_v1';
+export const STORAGE_KEY_AI_HOST_PERMISSIONS = 'netcatty_ai_host_permissions_v1';
+export const STORAGE_KEY_AI_EXTERNAL_AGENTS = 'netcatty_ai_external_agents_v1';
+export const STORAGE_KEY_AI_DEFAULT_AGENT = 'netcatty_ai_default_agent_v1';
+export const STORAGE_KEY_AI_COMMAND_BLOCKLIST = 'netcatty_ai_command_blocklist_v1';
+export const STORAGE_KEY_AI_COMMAND_TIMEOUT = 'netcatty_ai_command_timeout_v1';
+export const STORAGE_KEY_AI_MAX_ITERATIONS = 'netcatty_ai_max_iterations_v1';
+export const STORAGE_KEY_AI_SESSIONS = 'netcatty_ai_sessions_v1';
