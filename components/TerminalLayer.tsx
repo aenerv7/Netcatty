@@ -916,6 +916,28 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   // AI Chat state
   const aiState = useAIState();
 
+  // Clean up AI sessions when terminal sessions or workspaces are removed
+  const prevSessionIdsRef = useRef(new Set(sessions.map(s => s.id)));
+  const prevWorkspaceIdsRef = useRef(new Set(workspaces.map(w => w.id)));
+  useEffect(() => {
+    const currentSessionIds = new Set(sessions.map(s => s.id));
+    const currentWorkspaceIds = new Set(workspaces.map(w => w.id));
+    // Detect removed terminal sessions
+    for (const id of prevSessionIdsRef.current) {
+      if (!currentSessionIds.has(id)) {
+        aiState.deleteSessionsByTarget('terminal', id);
+      }
+    }
+    // Detect removed workspaces
+    for (const id of prevWorkspaceIdsRef.current) {
+      if (!currentWorkspaceIds.has(id)) {
+        aiState.deleteSessionsByTarget('workspace', id);
+      }
+    }
+    prevSessionIdsRef.current = currentSessionIds;
+    prevWorkspaceIdsRef.current = currentWorkspaceIds;
+  }, [sessions, workspaces, aiState.deleteSessionsByTarget]);
+
   // Build terminal session context for the AI chat panel
   const aiTerminalSessions = useMemo(() => {
     const sessionIds = activeWorkspace

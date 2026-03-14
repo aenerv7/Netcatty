@@ -171,9 +171,9 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   const historySessions = useMemo(
     () =>
       sessions
-        .filter((s) => s.scope.type === scopeType)
+        .filter((s) => s.scope.type === scopeType && s.scope.targetId === scopeTargetId)
         .sort((a, b) => b.updatedAt - a.updatedAt),
-    [sessions, scopeType],
+    [sessions, scopeType, scopeTargetId],
   );
 
   // -------------------------------------------------------------------
@@ -622,9 +622,14 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   const handleSelectSession = useCallback(
     (sessionId: string) => {
       setActiveSessionId(sessionId);
+      // Restore agent selector to match the session's bound agent
+      const session = sessions.find((s) => s.id === sessionId);
+      if (session) {
+        setCurrentAgentId(session.agentId);
+      }
       setShowHistory(false);
     },
-    [setActiveSessionId],
+    [setActiveSessionId, sessions],
   );
 
   const handleDeleteSession = useCallback(
@@ -642,7 +647,9 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
 
   const handleAgentChange = useCallback((agentId: string) => {
     setCurrentAgentId(agentId);
-  }, []);
+    // Switching agent deactivates current session; a new one is created on next send
+    setActiveSessionId(null);
+  }, [setActiveSessionId]);
 
   const handleExport = useCallback((format: 'md' | 'json' | 'txt') => {
     if (!activeSession) return;

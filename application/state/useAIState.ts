@@ -165,6 +165,20 @@ export function useAIState() {
     setActiveSessionId(prev => prev === sessionId ? null : prev);
   }, [persistSessions]);
 
+  const deleteSessionsByTarget = useCallback((scopeType: 'terminal' | 'workspace', targetId: string) => {
+    const deletedIds = new Set<string>();
+    setSessionsRaw(prev => {
+      const next = prev.filter(s => {
+        const match = s.scope.type === scopeType && s.scope.targetId === targetId;
+        if (match) deletedIds.add(s.id);
+        return !match;
+      });
+      persistSessions(next);
+      return next;
+    });
+    setActiveSessionId(prev => (prev && deletedIds.has(prev)) ? null : prev);
+  }, [persistSessions]);
+
   const updateSessionTitle = useCallback((sessionId: string, title: string) => {
     setSessionsRaw(prev => {
       const next = prev.map(s => s.id === sessionId ? { ...s, title, updatedAt: Date.now() } : s);
@@ -271,6 +285,7 @@ export function useAIState() {
     activeSession,
     createSession,
     deleteSession,
+    deleteSessionsByTarget,
     updateSessionTitle,
     addMessageToSession,
     updateLastMessage,
