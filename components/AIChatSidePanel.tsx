@@ -259,8 +259,15 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     if (stored && agentModelPresets.some(p => stored === p.id || stored.startsWith(p.id + '/'))) {
       return stored;
     }
-    // Default to first preset if available
-    return agentModelPresets.length > 0 ? agentModelPresets[0].id : undefined;
+    // Default to first preset; for models with thinking levels, use the default level
+    if (agentModelPresets.length > 0) {
+      const first = agentModelPresets[0];
+      if (first.thinkingLevels?.length) {
+        return `${first.id}/${first.thinkingLevels[first.thinkingLevels.length - 1]}`;
+      }
+      return first.id;
+    }
+    return undefined;
   }, [currentAgentId, agentModelMap, agentModelPresets]);
 
   const handleAgentModelSelect = useCallback((modelId: string) => {
