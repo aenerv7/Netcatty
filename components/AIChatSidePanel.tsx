@@ -396,13 +396,14 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
               arguments: (chunk as unknown as { input?: unknown; args?: unknown }).input ?? (chunk as unknown as { args?: unknown }).args,
             }],
             executionStatus: 'running',
+            statusText: undefined,
           }));
           break;
         case 'tool-result': {
           // Mark the assistant message's tool execution as completed (mirrors external agent path)
           updateLastMessage(streamSessionId, msg =>
             msg.role === 'assistant' && msg.executionStatus === 'running'
-              ? { ...msg, executionStatus: 'completed' } : msg,
+              ? { ...msg, executionStatus: 'completed', statusText: undefined } : msg,
           );
           const toolOutput = (chunk as unknown as { output?: unknown; result?: unknown }).output ?? (chunk as unknown as { result?: unknown }).result;
           addMessageToSession(streamSessionId, {
@@ -622,12 +623,13 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
               ...msg,
               toolCalls: [...(msg.toolCalls || []), { id: `tc_${Date.now()}`, name: toolName, arguments: args }],
               executionStatus: 'running',
+              statusText: undefined,
             }));
           },
           onToolResult: (toolCallId: string, result: string) => {
             updateLastMessage(sessionId, msg =>
               msg.role === 'assistant' && msg.executionStatus === 'running'
-                ? { ...msg, executionStatus: 'completed' } : msg,
+                ? { ...msg, executionStatus: 'completed', statusText: undefined } : msg,
             );
             addMessageToSession(sessionId, {
               id: generateId(), role: 'tool', content: '',
