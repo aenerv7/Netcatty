@@ -375,6 +375,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const [osc52ReadPromptVisible, setOsc52ReadPromptVisible] = useState(false);
   const osc52ReadResolverRef = useRef<((allowed: boolean) => void) | null>(null);
   const handleOsc52ReadRequest = useCallback((): Promise<boolean> => {
+    // Reject if terminal is not visible (background tab) — user can't see the prompt
+    if (!isVisibleRef.current) return Promise.resolve(false);
     // Reject if another prompt is already pending (avoid resolver overwrite)
     if (osc52ReadResolverRef.current) return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -386,6 +388,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     setOsc52ReadPromptVisible(false);
     osc52ReadResolverRef.current?.(allowed);
     osc52ReadResolverRef.current = null;
+    // Restore focus to terminal
+    termRef.current?.focus();
   }, []);
 
   // Subscribe to custom theme changes so editing triggers re-render
