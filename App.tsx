@@ -293,10 +293,12 @@ function App({ settings }: { settings: SettingsState }) {
     snippetPackages,
     portForwardingRules: portForwardingRulesForSync,
     knownHosts,
+    settingsVersion: settings.settingsVersion,
     onApplyPayload: (payload) => {
       applySyncPayload(payload, {
         importVaultData: importDataFromString,
         importPortForwardingRules,
+        onSettingsApplied: settings.rehydrateAllFromStorage,
       });
     },
   });

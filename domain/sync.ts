@@ -172,13 +172,30 @@ export interface SyncPayload {
   
   // Settings
   settings?: {
+    // Theme & Appearance
     theme?: 'light' | 'dark' | 'system';
-    accentColor?: string;
+    lightUiThemeId?: string;
+    darkUiThemeId?: string;
+    accentMode?: 'theme' | 'custom';
+    customAccent?: string;
+    uiFontFamilyId?: string;
+    uiLanguage?: string;
+    customCSS?: string;
+    // Terminal
     terminalTheme?: string;
     terminalFontFamily?: string;
     terminalFontSize?: number;
-    hotkeyScheme?: string;
+    terminalSettings?: Record<string, unknown>;
+    customTerminalThemes?: Array<{ id: string; name: string; colors: Record<string, string> }>;
+    // Keyboard
     customKeyBindings?: Record<string, { mac?: string; pc?: string }>;
+    // Editor
+    editorWordWrap?: boolean;
+    // SFTP
+    sftpDoubleClickBehavior?: 'open' | 'transfer';
+    sftpAutoSync?: boolean;
+    sftpShowHiddenFiles?: boolean;
+    sftpUseCompressedUpload?: boolean;
   };
   
   // Sync metadata

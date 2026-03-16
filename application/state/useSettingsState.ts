@@ -32,7 +32,7 @@ import {
 } from '../../infrastructure/config/storageKeys';
 import { DEFAULT_UI_LOCALE, resolveSupportedLocale } from '../../infrastructure/config/i18n';
 import { TERMINAL_THEMES } from '../../infrastructure/config/terminalThemes';
-import { useCustomThemes } from '../state/customThemeStore';
+import { customThemeStore, useCustomThemes } from '../state/customThemeStore';
 import { DEFAULT_FONT_SIZE } from '../../infrastructure/config/fonts';
 import { DARK_UI_THEMES, LIGHT_UI_THEMES, UiThemeTokens, getUiThemeById } from '../../infrastructure/config/uiThemes';
 import { UI_FONTS, DEFAULT_UI_FONT_ID } from '../../infrastructure/config/uiFonts';
@@ -343,6 +343,60 @@ export const useSettingsState = () => {
     const storedCss = localStorageAdapter.readString(STORAGE_KEY_CUSTOM_CSS) || '';
     setCustomCSS((prev) => (prev === storedCss ? prev : storedCss));
   }, []);
+
+  const rehydrateAllFromStorage = useCallback(() => {
+    // Theme & appearance (already have helper)
+    syncAppearanceFromStorage();
+    syncCustomCssFromStorage();
+
+    // UI Font
+    const storedFont = readStoredString(STORAGE_KEY_UI_FONT_FAMILY);
+    if (storedFont) setUiFontFamilyId(storedFont);
+
+    // Language
+    const storedLang = readStoredString(STORAGE_KEY_UI_LANGUAGE);
+    if (storedLang) setUiLanguage(storedLang as UILanguage);
+
+    // Terminal
+    const storedTermTheme = readStoredString(STORAGE_KEY_TERM_THEME);
+    if (storedTermTheme) setTerminalThemeId(storedTermTheme);
+    const storedTermFont = readStoredString(STORAGE_KEY_TERM_FONT_FAMILY);
+    if (storedTermFont) setTerminalFontFamilyId(storedTermFont);
+    const storedTermSize = localStorageAdapter.readNumber(STORAGE_KEY_TERM_FONT_SIZE);
+    if (storedTermSize != null) setTerminalFontSize(storedTermSize);
+    const storedTermSettings = readStoredString(STORAGE_KEY_TERM_SETTINGS);
+    if (storedTermSettings) {
+      try {
+        const parsed = JSON.parse(storedTermSettings);
+        setTerminalSettings(parsed);
+      } catch { /* ignore */ }
+    }
+
+    // Keyboard
+    const storedKb = readStoredString(STORAGE_KEY_CUSTOM_KEY_BINDINGS);
+    if (storedKb) {
+      try {
+        setCustomKeyBindings(JSON.parse(storedKb));
+      } catch { /* ignore */ }
+    }
+
+    // Editor
+    const storedWrap = readStoredString(STORAGE_KEY_EDITOR_WORD_WRAP);
+    if (storedWrap === 'true' || storedWrap === 'false') setEditorWordWrapState(storedWrap === 'true');
+
+    // SFTP
+    const storedDblClick = readStoredString(STORAGE_KEY_SFTP_DOUBLE_CLICK_BEHAVIOR);
+    if (storedDblClick === 'open' || storedDblClick === 'transfer') setSftpDoubleClickBehavior(storedDblClick);
+    const storedAutoSync = readStoredString(STORAGE_KEY_SFTP_AUTO_SYNC);
+    if (storedAutoSync === 'true' || storedAutoSync === 'false') setSftpAutoSync(storedAutoSync === 'true');
+    const storedHidden = readStoredString(STORAGE_KEY_SFTP_SHOW_HIDDEN_FILES);
+    if (storedHidden === 'true' || storedHidden === 'false') setSftpShowHiddenFiles(storedHidden === 'true');
+    const storedCompress = readStoredString(STORAGE_KEY_SFTP_USE_COMPRESSED_UPLOAD);
+    if (storedCompress === 'true' || storedCompress === 'false') setSftpUseCompressedUpload(storedCompress === 'true');
+
+    // Custom terminal themes
+    customThemeStore.loadFromStorage();
+  }, [syncAppearanceFromStorage, syncCustomCssFromStorage]);
 
   useLayoutEffect(() => {
     const tokens = getUiThemeById(resolvedTheme, resolvedTheme === 'dark' ? darkUiThemeId : lightUiThemeId).tokens;
@@ -991,5 +1045,16 @@ export const useSettingsState = () => {
     hotkeyRegistrationError,
     globalHotkeyEnabled,
     setGlobalHotkeyEnabled,
+    rehydrateAllFromStorage,
+    // Opaque version that changes when any synced setting changes, used by useAutoSync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    settingsVersion: useMemo(() => Math.random(), [
+      theme, lightUiThemeId, darkUiThemeId, accentMode, customAccent,
+      uiFontFamilyId, uiLanguage, customCSS,
+      terminalThemeId, terminalFontFamilyId, terminalFontSize, terminalSettings,
+      customKeyBindings, editorWordWrap,
+      sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles, sftpUseCompressedUpload,
+      customThemes,
+    ]),
   };
 };

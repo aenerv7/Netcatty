@@ -16,6 +16,7 @@ import {
   findSyncPayloadEncryptedCredentialPaths,
 } from '../../domain/credentials';
 import { isProviderReadyForSync, type CloudProvider, type SyncPayload } from '../../domain/sync';
+import { collectSyncableSettings } from '../../domain/syncPayload';
 import { STORAGE_KEY_PORT_FORWARDING } from '../../infrastructure/config/storageKeys';
 import { localStorageAdapter } from '../../infrastructure/persistence/localStorageAdapter';
 import { getEffectiveKnownHosts } from '../../infrastructure/syncHelpers';
@@ -31,7 +32,9 @@ interface AutoSyncConfig {
   snippetPackages?: SyncPayload['snippetPackages'];
   portForwardingRules?: SyncPayload['portForwardingRules'];
   knownHosts?: SyncPayload['knownHosts'];
-  
+  /** Opaque token that changes whenever a synced setting changes. */
+  settingsVersion?: number;
+
   // Callbacks
   onApplyPayload: (payload: SyncPayload) => void;
 }
@@ -97,13 +100,14 @@ export const useAutoSync = (config: AutoSyncConfig) => {
   const buildPayload = useCallback((): SyncPayload => {
     return {
       ...getSyncSnapshot(),
+      settings: collectSyncableSettings(),
       syncedAt: Date.now(),
     };
   }, [getSyncSnapshot]);
   
-  // Create a hash of current data for comparison
+  // Create a hash of current data for comparison (includes settings)
   const getDataHash = useCallback(() => {
-    return JSON.stringify(getSyncSnapshot());
+    return JSON.stringify({ ...getSyncSnapshot(), settings: collectSyncableSettings() });
   }, [getSyncSnapshot]);
   
   // Sync now handler - get fresh state directly from manager
@@ -255,7 +259,8 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, sync.isSyncing, getDataHash, syncNow]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- settingsVersion intentionally triggers re-evaluation
+  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, sync.isSyncing, getDataHash, syncNow, config.settingsVersion]);
   
   // Check remote version on startup/unlock
   useEffect(() => {
