@@ -161,7 +161,17 @@ async function renameLocalFile(event, payload) {
  * Create a local directory
  */
 async function mkdirLocal(event, payload) {
-  await fs.promises.mkdir(payload.path, { recursive: true });
+  try {
+    await fs.promises.mkdir(payload.path, { recursive: true });
+  } catch (err) {
+    // On Windows, mkdir on drive roots (e.g. "E:\") throws EPERM.
+    // If the directory already exists, that's fine — ignore the error.
+    try {
+      const stat = await fs.promises.stat(payload.path);
+      if (stat.isDirectory()) return true;
+    } catch { /* stat failed, re-throw original */ }
+    throw err;
+  }
   return true;
 }
 

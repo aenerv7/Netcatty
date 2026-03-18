@@ -8,6 +8,24 @@ const path = require("node:path");
 const os = require("node:os");
 const { encodePathForSession, ensureRemoteDirForSession, requireSftpChannel } = require("./sftpBridge.cjs");
 
+/**
+ * Safely ensure a local directory exists.
+ * On Windows, `mkdir("E:\\", { recursive: true })` throws EPERM for drive roots.
+ * We catch that and verify the directory already exists before re-throwing.
+ */
+async function ensureLocalDir(dir) {
+  try {
+    await fs.promises.mkdir(dir, { recursive: true });
+  } catch (err) {
+    // If the directory already exists, ignore the error (covers EPERM on drive roots)
+    try {
+      const stat = await fs.promises.stat(dir);
+      if (stat.isDirectory()) return;
+    } catch { /* stat failed, re-throw original */ }
+    throw err;
+  }
+}
+
 // ── Transfer performance tuning ──────────────────────────────────────────────
 // ssh2's fastPut/fastGet send multiple SFTP read/write requests in parallel,
 // dramatically improving throughput over sequential stream piping.
@@ -430,14 +448,14 @@ async function startTransfer(event, payload, onProgress) {
       if (!client) throw new Error("Source SFTP session not found");
 
       const dir = path.dirname(targetPath);
-      await fs.promises.mkdir(dir, { recursive: true });
+      await ensureLocalDir(dir);
 
       const encodedSourcePath = encodePathForSession(sourceSftpId, sourcePath, sourceEncoding);
       await downloadFile(encodedSourcePath, targetPath, client, fileSize, transfer, sendProgress);
 
     } else if (sourceType === 'local' && targetType === 'local') {
       const dir = path.dirname(targetPath);
-      await fs.promises.mkdir(dir, { recursive: true });
+      await ensureLocalDir(dir);
 
       await new Promise((resolve, reject) => {
         const readStream = fs.createReadStream(sourcePath, { highWaterMark: TRANSFER_CHUNK_SIZE });
