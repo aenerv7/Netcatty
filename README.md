@@ -129,7 +129,10 @@ Work in multiple sessions at once with split panes. Keep related tasks side-by-s
 ### SFTP: drag & drop + built-in editor
 Move files with drag & drop, then edit quickly using the built-in editor without leaving the app.
 
-![SFTP: drag & drop + built-in editor](screenshots/gifs/sftpview-with-drag-and-built-in-editor.gif)
+https://github.com/user-attachments/assets/18e98116-e1cb-496d-b9a1-119f597c7183
+
+
+
 
 ### Drag file upload
 Drop files into the app to kick off uploads without hunting through dialogs.
