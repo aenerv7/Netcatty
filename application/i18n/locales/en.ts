@@ -1060,6 +1060,7 @@ const en: Messages = {
   'terminal.progress.disconnected': 'Disconnected',
   'terminal.progress.cancelling': 'Cancelling...',
   'terminal.progress.startOver': 'Start over',
+  'terminal.connection.dismissDisconnectedDialog': 'Dismiss disconnected notice',
   'terminal.connection.chainOf': 'Chain {current} of {total}',
   'terminal.connection.showLogs': 'Show logs',
   'terminal.connection.hideLogs': 'Hide logs',

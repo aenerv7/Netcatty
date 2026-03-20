@@ -2,7 +2,7 @@
  * Terminal Connection Dialog
  * Full connection overlay with host info, progress indicator, and auth/progress content
  */
-import { Loader2, TerminalSquare, User } from 'lucide-react';
+import { Loader2, Plug, TerminalSquare, X } from 'lucide-react';
 import React from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
@@ -30,6 +30,7 @@ export interface TerminalConnectionDialogProps {
     // Auth dialog props
     authProps: Omit<TerminalAuthDialogProps, 'keys'>;
     keys: SSHKey[];
+    onDismissDisconnected?: () => void;
     // Progress props
     progressProps: Omit<TerminalConnectionProgressProps, 'status' | 'error' | 'showLogs'>;
 }
@@ -68,11 +69,13 @@ export const TerminalConnectionDialog: React.FC<TerminalConnectionDialogProps> =
     _setShowLogs: setShowLogs, // Rename back to setShowLogs for internal use
     authProps,
     keys,
+    onDismissDisconnected,
     progressProps,
 }) => {
     const { t } = useI18n();
     const hasError = Boolean(error);
     const isConnecting = status === 'connecting';
+    const canDismissDisconnected = status === 'disconnected' && !needsAuth && !!onDismissDisconnected;
     const protocolInfo = getProtocolInfo(host);
 
     return (
@@ -80,12 +83,11 @@ export const TerminalConnectionDialog: React.FC<TerminalConnectionDialogProps> =
             "absolute inset-0 z-20 flex items-center justify-center",
             needsAuth ? "bg-black" : "bg-black/30"
         )}>
-            <div className="w-[560px] max-w-[90vw] bg-background/95 border border-border/60 rounded-2xl shadow-xl p-6 space-y-4">
+            <div className="w-[560px] max-w-[90vw] bg-background/95 border border-border/60 rounded-xl shadow-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <DistroAvatar host={host} fallback={host.label.slice(0, 2).toUpperCase()} className="h-10 w-10" />
+                        <DistroAvatar host={host} fallback={host.label.slice(0, 2).toUpperCase()} className="h-10 w-10 rounded-lg" />
                         <div>
-                            {/* Show chain progress if available */}
                             {chainProgress ? (
                                 <>
                                     <div className="text-sm font-semibold">
@@ -104,7 +106,7 @@ export const TerminalConnectionDialog: React.FC<TerminalConnectionDialogProps> =
                                 </>
                             ) : (
                                 <>
-                                    <div className="text-sm font-semibold">{host.label}</div>
+                                    <div className="text-lg font-semibold">{host.label}</div>
                                     <div className="text-[11px] text-muted-foreground font-mono">
                                         {t(protocolInfo.i18nKey)} {protocolInfo.showPort ? `${host.hostname}:${protocolInfo.port}` : host.hostname}
                                     </div>
@@ -112,32 +114,56 @@ export const TerminalConnectionDialog: React.FC<TerminalConnectionDialogProps> =
                             )}
                         </div>
                     </div>
-                    {!needsAuth && (
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 text-xs"
-                            onClick={() => setShowLogs(!showLogs)}
-                        >
-                            {showLogs ? t('terminal.connection.hideLogs') : t('terminal.connection.showLogs')}
-                        </Button>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {!needsAuth && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs"
+                                onClick={() => setShowLogs(!showLogs)}
+                            >
+                                {showLogs ? t('terminal.connection.hideLogs') : t('terminal.connection.showLogs')}
+                            </Button>
+                        )}
+                        {status === 'connecting' && !needsAuth && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs"
+                                onClick={progressProps.onCancelConnect}
+                                disabled={progressProps.isCancelling}
+                            >
+                                {progressProps.isCancelling ? t('terminal.progress.cancelling') : t('common.close')}
+                            </Button>
+                        )}
+                        {canDismissDisconnected && (
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                aria-label={t('terminal.connection.dismissDisconnectedDialog')}
+                                title={t('terminal.connection.dismissDisconnectedDialog')}
+                                onClick={onDismissDisconnected}
+                            >
+                                <X size={14} />
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
-                {/* Progress indicator - icons with progress bar below */}
                 <div className="space-y-2">
                     <div className="flex items-center gap-3">
                         <div className={cn(
-                            "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
+                            "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0",
                             needsAuth
                                 ? "bg-primary text-primary-foreground"
                                 : hasError
                                     ? "bg-destructive/20 text-destructive"
-                                    : isConnecting
+                                : isConnecting
                                         ? "bg-primary/15 text-primary"
                                         : "bg-muted text-muted-foreground"
                         )}>
-                            <User size={14} />
+                            <Plug size={14} />
                         </div>
                         <div className="flex-1 h-1.5 rounded-full bg-border/60 overflow-hidden relative">
                             <div
@@ -151,7 +177,7 @@ export const TerminalConnectionDialog: React.FC<TerminalConnectionDialogProps> =
                             />
                         </div>
                         <div className={cn(
-                            "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
+                            "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0",
                             hasError ? "bg-destructive/20 text-destructive" : "bg-muted text-muted-foreground"
                         )}>
                             {isConnecting ? (
