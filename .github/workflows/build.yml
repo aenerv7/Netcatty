@@ -122,10 +122,13 @@ jobs:
           npm pkg set version="${VERSION}"
 
       - name: Prepare node-pty Linux runtime
+        env:
+          npm_config_arch: x64
         run: bash scripts/ensure-node-pty-linux.sh prepare x64
 
       - name: Build package
         env:
+          npm_config_arch: x64
           ELECTRON_BUILDER_PUBLISH: "never"
         run: npm run pack:linux-x64
 
