@@ -48,8 +48,10 @@ function cleanupAcpSessions(sessionIds: string[]) {
 }
 
 export function cleanupOrphanedAISessions(activeTargetIds: Set<string>) {
-  const storedSessions = localStorageAdapter.read<AISession[]>(STORAGE_KEY_AI_SESSIONS) ?? [];
-  const removedSessionIds = storedSessions
+  const currentSessions = latestAISessionsSnapshot
+    ?? localStorageAdapter.read<AISession[]>(STORAGE_KEY_AI_SESSIONS)
+    ?? [];
+  const removedSessionIds = currentSessions
     .filter((session) => session.scope.targetId && !activeTargetIds.has(session.scope.targetId))
     .map((session) => session.id);
 
@@ -57,26 +59,31 @@ export function cleanupOrphanedAISessions(activeTargetIds: Set<string>) {
 
   cleanupAcpSessions(removedSessionIds);
 
-  const nextSessions = storedSessions.filter((session) => {
+  const removedSessionIdSet = new Set(removedSessionIds);
+
+  const nextSessions = currentSessions.filter((session) => {
     if (!session.scope.targetId) return true;
     return activeTargetIds.has(session.scope.targetId);
   });
+  setLatestAISessionsSnapshot(nextSessions);
   localStorageAdapter.write(STORAGE_KEY_AI_SESSIONS, pruneSessionsForStorage(nextSessions));
   emitAIStateChanged(STORAGE_KEY_AI_SESSIONS);
 
-  const activeSessionIdMap =
-    localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP) ?? {};
+  const activeSessionIdMap = latestAIActiveSessionMapSnapshot
+    ?? localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP)
+    ?? {};
   let activeSessionMapChanged = false;
   const nextActiveSessionIdMap = { ...activeSessionIdMap };
 
   for (const [scopeKey, sessionId] of Object.entries(activeSessionIdMap)) {
-    if (sessionId && removedSessionIds.includes(sessionId)) {
+    if (sessionId && removedSessionIdSet.has(sessionId)) {
       nextActiveSessionIdMap[scopeKey] = null;
       activeSessionMapChanged = true;
     }
   }
 
   if (activeSessionMapChanged) {
+    setLatestAIActiveSessionMapSnapshot(nextActiveSessionIdMap);
     localStorageAdapter.write(STORAGE_KEY_AI_ACTIVE_SESSION_MAP, nextActiveSessionIdMap);
     emitAIStateChanged(STORAGE_KEY_AI_ACTIVE_SESSION_MAP);
   }
@@ -106,6 +113,17 @@ function pruneSessionsForStorage(sessions: AISession[]): AISession[] {
     }
     return s;
   });
+}
+
+let latestAISessionsSnapshot: AISession[] | null = null;
+let latestAIActiveSessionMapSnapshot: Record<string, string | null> | null = null;
+
+function setLatestAISessionsSnapshot(sessions: AISession[]) {
+  latestAISessionsSnapshot = sessions;
+}
+
+function setLatestAIActiveSessionMapSnapshot(activeSessionIdMap: Record<string, string | null>) {
+  latestAIActiveSessionMapSnapshot = activeSessionIdMap;
 }
 
 export function useAIState() {
@@ -173,9 +191,18 @@ export function useAIState() {
     localStorageAdapter.read<WebSearchConfig>(STORAGE_KEY_AI_WEB_SEARCH) ?? null
   );
 
+  useEffect(() => {
+    setLatestAISessionsSnapshot(sessions);
+  }, [sessions]);
+
+  useEffect(() => {
+    setLatestAIActiveSessionMapSnapshot(activeSessionIdMap);
+  }, [activeSessionIdMap]);
+
   const setActiveSessionId = useCallback((scopeKey: string, id: string | null) => {
     setActiveSessionIdMapRaw(prev => {
       const next = { ...prev, [scopeKey]: id };
+      setLatestAIActiveSessionMapSnapshot(next);
       localStorageAdapter.write(STORAGE_KEY_AI_ACTIVE_SESSION_MAP, next);
       emitAIStateChanged(STORAGE_KEY_AI_ACTIVE_SESSION_MAP);
       return next;
@@ -352,12 +379,22 @@ export function useAIState() {
             setHostPermissionsRaw(perms ?? []);
             break;
           }
+          case STORAGE_KEY_AI_SESSIONS: {
+            const nextSessions = localStorageAdapter.read<AISession[]>(STORAGE_KEY_AI_SESSIONS) ?? [];
+            setLatestAISessionsSnapshot(nextSessions);
+            setSessionsRaw(nextSessions);
+            break;
+          }
           case STORAGE_KEY_AI_AGENT_MODEL_MAP:
             setAgentModelMapRaw(localStorageAdapter.read<Record<string, string>>(STORAGE_KEY_AI_AGENT_MODEL_MAP) ?? {});
             break;
-          case STORAGE_KEY_AI_ACTIVE_SESSION_MAP:
-            setActiveSessionIdMapRaw(localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP) ?? {});
+          case STORAGE_KEY_AI_ACTIVE_SESSION_MAP: {
+            const nextActiveSessionIdMap =
+              localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP) ?? {};
+            setLatestAIActiveSessionMapSnapshot(nextActiveSessionIdMap);
+            setActiveSessionIdMapRaw(nextActiveSessionIdMap);
             break;
+          }
           case STORAGE_KEY_AI_WEB_SEARCH:
             setWebSearchConfigRaw(localStorageAdapter.read<WebSearchConfig>(STORAGE_KEY_AI_WEB_SEARCH) ?? null);
             break;
@@ -436,6 +473,7 @@ export function useAIState() {
     };
     setSessionsRaw(prev => {
       const next = [session, ...prev];
+      setLatestAISessionsSnapshot(next);
       persistSessions(next);
       return next;
     });
@@ -452,6 +490,7 @@ export function useAIState() {
     }
     setSessionsRaw(prev => {
       const next = prev.filter(s => s.id !== sessionId);
+      setLatestAISessionsSnapshot(next);
       persistSessions(next);
       return next;
     });
@@ -459,6 +498,7 @@ export function useAIState() {
       setActiveSessionIdMapRaw(prev => {
         if (prev[scopeKey] === sessionId) {
           const next = { ...prev, [scopeKey]: null };
+          setLatestAIActiveSessionMapSnapshot(next);
           localStorageAdapter.write(STORAGE_KEY_AI_ACTIVE_SESSION_MAP, next);
           emitAIStateChanged(STORAGE_KEY_AI_ACTIVE_SESSION_MAP);
           return next;
@@ -481,6 +521,7 @@ export function useAIState() {
       const next = prev.filter(s => {
         return !(s.scope.type === scopeType && s.scope.targetId === targetId);
       });
+      setLatestAISessionsSnapshot(next);
       persistSessions(next);
       return next;
     });
@@ -488,6 +529,7 @@ export function useAIState() {
     setActiveSessionIdMapRaw(prev => {
       if (prev[scopeKey] != null) {
         const next = { ...prev, [scopeKey]: null };
+        setLatestAIActiveSessionMapSnapshot(next);
         localStorageAdapter.write(STORAGE_KEY_AI_ACTIVE_SESSION_MAP, next);
         emitAIStateChanged(STORAGE_KEY_AI_ACTIVE_SESSION_MAP);
         return next;
@@ -499,6 +541,7 @@ export function useAIState() {
   const updateSessionTitle = useCallback((sessionId: string, title: string) => {
     setSessionsRaw(prev => {
       const next = prev.map(s => s.id === sessionId ? { ...s, title, updatedAt: Date.now() } : s);
+      setLatestAISessionsSnapshot(next);
       persistSessions(next);
       return next;
     });
@@ -511,6 +554,7 @@ export function useAIState() {
           ? { ...s, externalSessionId, updatedAt: Date.now() }
           : s
       ));
+      setLatestAISessionsSnapshot(next);
       debouncedPersistSessions();
       return next;
     });
@@ -534,6 +578,7 @@ export function useAIState() {
         }
         return { ...s, messages: msgs, updatedAt: Date.now() };
       });
+      setLatestAISessionsSnapshot(next);
       debouncedPersistSessions();
       return next;
     });
@@ -547,6 +592,7 @@ export function useAIState() {
         msgs[msgs.length - 1] = updater(msgs[msgs.length - 1]);
         return { ...s, messages: msgs, updatedAt: Date.now() };
       });
+      setLatestAISessionsSnapshot(next);
       debouncedPersistSessions();
       return next;
     });
@@ -562,6 +608,7 @@ export function useAIState() {
         msgs[idx] = updater(msgs[idx]);
         return { ...s, messages: msgs, updatedAt: Date.now() };
       });
+      setLatestAISessionsSnapshot(next);
       debouncedPersistSessions();
       return next;
     });
@@ -574,6 +621,7 @@ export function useAIState() {
     }
     setSessionsRaw(prev => {
       const next = prev.map(s => s.id === sessionId ? { ...s, messages: [], updatedAt: Date.now() } : s);
+      setLatestAISessionsSnapshot(next);
       persistSessions(next);
       return next;
     });
