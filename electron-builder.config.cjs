@@ -6,7 +6,12 @@ module.exports = {
     productName: 'Netcatty',
     artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
     icon: 'public/icon.png',
-    npmRebuild: false,
+    // npmRebuild must stay enabled for macOS and Windows builds — without it,
+    // node-pty's native module is not recompiled for the Electron ABI, causing
+    // "posix_spawnp failed" on macOS. Linux builds set npm_config_arch in CI
+    // and run ensure-node-pty-linux.sh before packaging, so the rebuild is
+    // redundant but harmless there.
+    npmRebuild: true,
     directories: {
         buildResources: 'build',
         output: 'release'
