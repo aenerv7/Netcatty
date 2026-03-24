@@ -560,9 +560,9 @@ const importFromSshConfig = (text: string): VaultImportResult => {
     else if (keyword === "proxyjump") current.proxyJump = value;
     else if (keyword === "identityfile") {
       if (!current.identityFiles) current.identityFiles = [];
-      // Expand ~ to home directory placeholder (resolved at runtime)
-      const expandedPath = value.startsWith("~/") ? value : value;
-      current.identityFiles.push(expandedPath);
+      // Remove surrounding quotes (ssh_config allows quoted paths with spaces)
+      const unquoted = value.replace(/^["']|["']$/g, "");
+      current.identityFiles.push(unquoted);
     }
   }
 

@@ -475,6 +475,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         authMethod: identity.authMethod,
         password: undefined,
         identityFileId: undefined,
+        identityFilePaths: undefined,
       }));
       setSelectedCredentialType(null);
       setCredentialPopoverOpen(false);

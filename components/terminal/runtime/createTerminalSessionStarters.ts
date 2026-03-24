@@ -492,7 +492,8 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
           jumpHosts: jumpHosts.length > 0 ? jumpHosts : undefined,
           keepaliveInterval: ctx.terminalSettings?.keepaliveInterval,
           sessionLog: ctx.sessionLog?.enabled ? ctx.sessionLog : undefined,
-          identityFilePaths: ctx.host.identityFilePaths,
+          // Only pass local key paths if no vault key is explicitly configured
+          identityFilePaths: attempt.key ? undefined : ctx.host.identityFilePaths,
         });
       };
 

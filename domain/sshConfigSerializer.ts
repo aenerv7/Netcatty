@@ -113,6 +113,15 @@ export const serializeHostsToSshConfig = (hosts: Host[], allHosts?: Host[]): str
       lines.push(`    Port ${host.port}`);
     }
 
+    // Serialize IdentityFile paths
+    if (host.identityFilePaths && host.identityFilePaths.length > 0) {
+      for (const keyPath of host.identityFilePaths) {
+        // Quote paths that contain spaces
+        const formatted = keyPath.includes(" ") ? `"${keyPath}"` : keyPath;
+        lines.push(`    IdentityFile ${formatted}`);
+      }
+    }
+
     // Serialize ProxyJump if host has a chain
     const proxyJumpValue = buildProxyJumpValue(host, hostsForLookup, managedHostIds);
     if (proxyJumpValue) {
