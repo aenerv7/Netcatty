@@ -20,6 +20,8 @@ import {
   Tag,
   TerminalSquare,
   User,
+  FileKey,
+  Trash2,
   Variable,
   Wifi,
   X,
@@ -69,7 +71,7 @@ import {
   ProxyPanel,
 } from "./host-details";
 
-type CredentialType = "sshid" | "key" | "certificate" | null;
+type CredentialType = "sshid" | "key" | "certificate" | "localKeyFile" | null;
 type SubPanel =
   | "none"
   | "create-group"
@@ -146,6 +148,9 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
 
   // Password visibility state
   const [showPassword, setShowPassword] = useState(false);
+
+  // Local key file path input state
+  const [newKeyFilePath, setNewKeyFilePath] = useState("");
 
   // New group creation state
   const [newGroupName, setNewGroupName] = useState("");
@@ -969,6 +974,31 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
               </div>
             )}
 
+            {/* Local key file paths display */}
+            {!selectedIdentity && !form.identityFileId && form.identityFilePaths && form.identityFilePaths.length > 0 && (
+              <div className="space-y-1.5">
+                {form.identityFilePaths.map((keyPath, idx) => (
+                  <div key={idx} className="flex items-center gap-2 p-2 rounded-md bg-secondary/50 border border-border/60">
+                    <FileKey size={14} className="text-primary shrink-0" />
+                    <span className="text-xs flex-1 truncate font-mono" title={keyPath}>
+                      {keyPath}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() => {
+                        const paths = form.identityFilePaths?.filter((_, i) => i !== idx) || [];
+                        update("identityFilePaths", paths.length > 0 ? paths : undefined);
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Selected credential display */}
             {!selectedIdentity && form.identityFileId && (
               <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/50 border border-border/60">
@@ -1046,6 +1076,20 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                           {t("hostDetails.credential.certificate")}
                         </span>
                       </button>
+
+                      <button
+                        type="button"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-secondary/80 transition-colors text-left"
+                        onClick={() => {
+                          setSelectedCredentialType("localKeyFile");
+                          setCredentialPopoverOpen(false);
+                        }}
+                      >
+                        <FileKey size={16} className="text-muted-foreground" />
+                        <span className="text-sm font-medium">
+                          {t("hostDetails.credential.localKeyFile")}
+                        </span>
+                      </button>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -1067,6 +1111,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                     onValueChange={(val) => {
                       update("identityFileId", val);
                       update("authMethod", "key");
+                      update("identityFilePaths", undefined);
                       setSelectedCredentialType(null);
                     }}
                     placeholder={t("hostDetails.keys.search")}
@@ -1102,6 +1147,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                     onValueChange={(val) => {
                       update("identityFileId", val);
                       update("authMethod", "certificate");
+                      update("identityFilePaths", undefined);
                       setSelectedCredentialType(null);
                     }}
                     placeholder={t("hostDetails.certs.search")}
@@ -1119,6 +1165,61 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                   >
                     <X size={14} />
                   </Button>
+                </div>
+              )}
+
+            {/* Local key file path input - appears after selecting "Local Key File" type */}
+            {!selectedIdentity &&
+              selectedCredentialType === "localKeyFile" &&
+              !form.identityFileId && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      className="flex-1 h-8 px-2 text-xs font-mono bg-background border border-border/60 rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder={t("hostDetails.credential.localKeyFilePlaceholder")}
+                      value={newKeyFilePath}
+                      onChange={(e) => setNewKeyFilePath(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newKeyFilePath.trim()) {
+                          e.preventDefault();
+                          const paths = [...(form.identityFilePaths || []), newKeyFilePath.trim()];
+                          update("identityFilePaths", paths);
+                          update("identityFileId", undefined);
+                          update("authMethod", "key");
+                          setNewKeyFilePath("");
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 px-2 shrink-0"
+                      disabled={!newKeyFilePath.trim()}
+                      onClick={() => {
+                        if (newKeyFilePath.trim()) {
+                          const paths = [...(form.identityFilePaths || []), newKeyFilePath.trim()];
+                          update("identityFilePaths", paths);
+                          update("identityFileId", undefined);
+                          update("authMethod", "key");
+                          setNewKeyFilePath("");
+                        }
+                      }}
+                    >
+                      <Plus size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => {
+                        setSelectedCredentialType(null);
+                        setNewKeyFilePath("");
+                      }}
+                    >
+                      <X size={14} />
+                    </Button>
+                  </div>
                 </div>
               )}
           </div>
