@@ -113,6 +113,9 @@ export interface Host {
   keywordHighlightEnabled?: boolean;
   // Legacy SSH algorithm support for older network equipment (switches, routers)
   legacyAlgorithms?: boolean;
+  // Local SSH key file paths (from SSH config IdentityFile or user-added)
+  // Resolved at connection time — the app reads the file content when connecting.
+  identityFilePaths?: string[];
 }
 
 export type KeyType = 'RSA' | 'ECDSA' | 'ED25519';

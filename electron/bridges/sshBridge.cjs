@@ -413,6 +413,39 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
         }
       }
 
+      // Read identity files from local paths (e.g. from SSH config IdentityFile)
+      if (!connOpts.privateKey && !connOpts.agent && jump.identityFilePaths?.length > 0) {
+        for (const keyPath of jump.identityFilePaths) {
+          try {
+            const resolvedPath = keyPath.startsWith("~/")
+              ? path.join(os.homedir(), keyPath.slice(2))
+              : keyPath;
+            const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
+            connOpts.privateKey = keyContent;
+            if (isKeyEncrypted(keyContent)) {
+              console.log(`[Chain] Hop ${i + 1}: identity file ${resolvedPath} is encrypted, requesting passphrase`);
+              sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
+              const result = await passphraseHandler.requestPassphrase(
+                sender,
+                resolvedPath,
+                path.basename(resolvedPath),
+                hopLabel
+              );
+              if (result?.passphrase) {
+                connOpts.passphrase = result.passphrase;
+              } else if (result?.cancelled) {
+                delete connOpts.privateKey;
+                continue;
+              }
+            }
+            console.log(`[Chain] Hop ${i + 1}: loaded identity file ${resolvedPath}`);
+            break;
+          } catch (err) {
+            console.warn(`[Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
+          }
+        }
+      }
+
       if (jump.password) connOpts.password = jump.password;
 
       // Get default keys (either from options if pre-fetched, or fetch them now)
@@ -610,6 +643,41 @@ async function startSSHSession(event, options) {
       connectOpts.privateKey = options.privateKey;
       if (effectivePassphrase) {
         connectOpts.passphrase = effectivePassphrase;
+      }
+    }
+
+    // Read identity files from local paths (e.g. from SSH config IdentityFile)
+    // Only if no explicit key was already configured
+    if (!connectOpts.privateKey && !connectOpts.agent && options.identityFilePaths?.length > 0) {
+      for (const keyPath of options.identityFilePaths) {
+        try {
+          const resolvedPath = keyPath.startsWith("~/")
+            ? path.join(os.homedir(), keyPath.slice(2))
+            : keyPath;
+          const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
+          connectOpts.privateKey = keyContent;
+          // Check if key is encrypted — if so, prompt for passphrase
+          if (isKeyEncrypted(keyContent)) {
+            log("Identity file is encrypted, requesting passphrase", { keyPath: resolvedPath });
+            const result = await passphraseHandler.requestPassphrase(
+              sender,
+              resolvedPath,
+              path.basename(resolvedPath),
+              options.hostname
+            );
+            if (result?.passphrase) {
+              connectOpts.passphrase = result.passphrase;
+            } else if (result?.cancelled) {
+              // User cancelled — clear the key so auth falls back to other methods
+              delete connectOpts.privateKey;
+              continue;
+            }
+          }
+          log("Loaded identity file", { keyPath: resolvedPath, encrypted: isKeyEncrypted(keyContent) });
+          break; // Use the first successfully loaded key
+        } catch (err) {
+          log("Failed to read identity file", { keyPath, error: err.message });
+        }
       }
     }
 

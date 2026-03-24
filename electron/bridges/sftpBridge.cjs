@@ -510,6 +510,38 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
         }
       }
 
+      // Read identity files from local paths (e.g. from SSH config IdentityFile)
+      if (!connOpts.privateKey && !connOpts.agent && jump.identityFilePaths?.length > 0) {
+        for (const keyPath of jump.identityFilePaths) {
+          try {
+            const resolvedPath = keyPath.startsWith("~/")
+              ? path.join(os.homedir(), keyPath.slice(2))
+              : keyPath;
+            const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
+            connOpts.privateKey = keyContent;
+            if (isKeyEncrypted(keyContent)) {
+              console.log(`[SFTP Chain] Hop ${i + 1}: identity file ${resolvedPath} is encrypted, requesting passphrase`);
+              const result = await passphraseHandler.requestPassphrase(
+                sender,
+                resolvedPath,
+                path.basename(resolvedPath),
+                hopLabel
+              );
+              if (result?.passphrase) {
+                connOpts.passphrase = result.passphrase;
+              } else if (result?.cancelled) {
+                delete connOpts.privateKey;
+                continue;
+              }
+            }
+            console.log(`[SFTP Chain] Hop ${i + 1}: loaded identity file ${resolvedPath}`);
+            break;
+          } catch (err) {
+            console.warn(`[SFTP Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
+          }
+        }
+      }
+
       if (jump.password) connOpts.password = jump.password;
 
       // Get default keys (either from options if pre-fetched, or fetch them now)
@@ -957,6 +989,38 @@ async function openSftp(event, options) {
           err.level = 'client-authentication';
           throw err;
         }
+      }
+    }
+  }
+
+  // Read identity files from local paths (e.g. from SSH config IdentityFile)
+  if (!connectOpts.privateKey && !connectOpts.agent && options.identityFilePaths?.length > 0) {
+    for (const keyPath of options.identityFilePaths) {
+      try {
+        const resolvedPath = keyPath.startsWith("~/")
+          ? path.join(os.homedir(), keyPath.slice(2))
+          : keyPath;
+        const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
+        connectOpts.privateKey = keyContent;
+        if (isKeyEncrypted(keyContent)) {
+          console.log(`[SFTP] Identity file ${resolvedPath} is encrypted, requesting passphrase`);
+          const result = await passphraseHandler.requestPassphrase(
+            event.sender,
+            resolvedPath,
+            path.basename(resolvedPath),
+            options.hostname
+          );
+          if (result?.passphrase) {
+            connectOpts.passphrase = result.passphrase;
+          } else if (result?.cancelled) {
+            delete connectOpts.privateKey;
+            continue;
+          }
+        }
+        console.log(`[SFTP] Loaded identity file ${resolvedPath}`);
+        break;
+      } catch (err) {
+        console.warn(`[SFTP] Failed to read identity file ${keyPath}:`, err.message);
       }
     }
   }

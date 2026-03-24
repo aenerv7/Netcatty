@@ -70,6 +70,7 @@ export const useSftpHostCredentials = ({
         proxy: proxyConfig,
         jumpHosts: jumpHosts && jumpHosts.length > 0 ? jumpHosts : undefined,
         sudo: host.sftpSudo,
+        identityFilePaths: host.identityFilePaths,
       };
     },
     [hosts, identities, keys],
