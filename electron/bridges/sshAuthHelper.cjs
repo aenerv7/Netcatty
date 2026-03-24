@@ -15,6 +15,16 @@ const PREFERRED_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
 const SSH_KEY_PATTERN = /^id_[\w-]+$/;
 
 /**
+ * Quick check if file content looks like an SSH private key.
+ * Rejects non-key files that happen to match the id_* filename pattern.
+ */
+function looksLikePrivateKey(content) {
+  if (!content || typeof content !== "string") return false;
+  const trimmed = content.trimStart();
+  return trimmed.startsWith("-----BEGIN") || trimmed.startsWith("openssh-key-v1");
+}
+
+/**
  * Check if an SSH private key is encrypted (requires passphrase)
  * @param {string} keyContent - The content of the private key file
  * @returns {boolean} - True if the key is encrypted
@@ -89,6 +99,7 @@ async function findDefaultPrivateKey() {
     const keyPath = path.join(sshDir, name);
     try {
       const privateKey = await fs.promises.readFile(keyPath, "utf8");
+      if (!looksLikePrivateKey(privateKey)) continue;
       if (isKeyEncrypted(privateKey)) continue;
       return { privateKey, keyPath, keyName: name };
     } catch {
@@ -123,6 +134,7 @@ async function findAllDefaultPrivateKeys(options = {}) {
     const keyPath = path.join(sshDir, name);
     try {
       const privateKey = await fs.promises.readFile(keyPath, "utf8");
+      if (!looksLikePrivateKey(privateKey)) return null;
       const encrypted = isKeyEncrypted(privateKey);
       if (encrypted && !includeEncrypted) {
         return null;
@@ -633,6 +645,7 @@ async function requestPassphrasesForEncryptedKeys(sender, hostname) {
 module.exports = {
   PREFERRED_KEY_NAMES,
   SSH_KEY_PATTERN,
+  looksLikePrivateKey,
   isKeyEncrypted,
   findDefaultPrivateKey,
   findAllDefaultPrivateKeys,

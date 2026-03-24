@@ -30,6 +30,16 @@ const PREFERRED_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
 const SSH_KEY_PATTERN = /^id_[\w-]+$/;
 
 /**
+ * Quick check if file content looks like an SSH private key.
+ * Rejects non-key files that happen to match the id_* filename pattern.
+ */
+function looksLikePrivateKey(content) {
+  if (!content || typeof content !== "string") return false;
+  const trimmed = content.trimStart();
+  return trimmed.startsWith("-----BEGIN") || trimmed.startsWith("openssh-key-v1");
+}
+
+/**
  * Check if an SSH private key is encrypted (requires passphrase)
  * @param {string} keyContent - The content of the private key file
  * @returns {boolean} - True if the key is encrypted
@@ -103,6 +113,10 @@ async function findDefaultPrivateKey() {
     const keyPath = path.join(sshDir, name);
     try {
       const privateKey = await fs.promises.readFile(keyPath, "utf8");
+      if (!looksLikePrivateKey(privateKey)) {
+        log("Skipping non-key file", { keyPath, keyName: name });
+        continue;
+      }
       const encrypted = isKeyEncrypted(privateKey);
       log("Key file read", { keyPath, keyName: name, encrypted, keyLength: privateKey.length });
       if (encrypted) {
@@ -143,6 +157,10 @@ async function findAllDefaultPrivateKeys() {
     const keyPath = path.join(sshDir, name);
     try {
       const privateKey = await fs.promises.readFile(keyPath, "utf8");
+      if (!looksLikePrivateKey(privateKey)) {
+        log("Skipping non-key file", { keyPath, keyName: name });
+        return null;
+      }
       const encrypted = isKeyEncrypted(privateKey);
       if (!encrypted) {
         log("Found default key for fallback", { keyPath, keyName: name });
@@ -1228,7 +1246,14 @@ async function startSSHSession(event, options) {
               flushBuffer();
               sessionLogStreamManager.stopStream(sessionId);
               const contents = event.sender;
-              safeSend(contents, "netcatty:exit", { sessionId, exitCode: streamExitCode, reason: streamExited ? "exited" : "closed" });
+              // Check if a transport error was recorded (e.g. ECONNRESET)
+              const session = sessions.get(sessionId);
+              const transportError = session?._transportError;
+              if (transportError) {
+                safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: transportError, reason: "error" });
+              } else {
+                safeSend(contents, "netcatty:exit", { sessionId, exitCode: streamExitCode, reason: streamExited ? "exited" : "closed" });
+              }
               sessions.delete(sessionId);
               sessionEncodings.delete(sessionId);
               sessionDecoders.delete(sessionId);
