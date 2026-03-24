@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo } from "react";
-import { AlertCircle, ArrowDown, Copy, Download, Edit2, ExternalLink, FilePlus, Folder, FolderPlus, Loader2, Pencil, RefreshCw, Shield, Trash2 } from "lucide-react";
+import React, { useCallback, useMemo, useState } from "react";
+import { AlertCircle, ArrowDown, ChevronDown, Copy, Download, Edit2, ExternalLink, FilePlus, Folder, FolderPlus, Loader2, Pencil, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   ContextMenu,
@@ -57,6 +57,46 @@ interface SftpPaneFileListProps {
   rowHeight: number;
   visibleRows: { entry: SftpFileEntry; index: number; top: number }[];
 }
+
+const SftpErrorWithLogs: React.FC<{
+  error: string;
+  connectionLogs: string[];
+  onRetry: () => void;
+  t: (key: string) => string;
+}> = ({ error, connectionLogs, onRetry, t }) => {
+  const [showLogs, setShowLogs] = useState(false);
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-2 text-destructive">
+      <AlertCircle size={24} />
+      <span className="text-sm text-center px-4">{t(error)}</span>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t("sftp.retry")}
+        </Button>
+        {connectionLogs.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setShowLogs(!showLogs)}
+          >
+            <ChevronDown size={14} className={`mr-1 transition-transform ${showLogs ? 'rotate-180' : ''}`} />
+            {showLogs ? "Hide logs" : "Show logs"}
+          </Button>
+        )}
+      </div>
+      {showLogs && connectionLogs.length > 0 && (
+        <div className="w-full max-w-sm mt-1 p-2 rounded-md bg-secondary/50 border border-border/60 space-y-0.5 max-h-40 overflow-y-auto">
+          {connectionLogs.map((log, i) => (
+            <div key={i} className="text-[11px] text-muted-foreground truncate font-mono">
+              {log}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = ({
   t,
@@ -340,17 +380,25 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = ({
           onScroll={handleFileListScroll}
         >
           {pane.loading && sortedDisplayFiles.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center justify-center h-full gap-2">
               <Loader2 size={24} className="animate-spin text-muted-foreground" />
+              {pane.connectionLogs.length > 0 && (
+                <div className="w-full max-w-sm mt-2 space-y-0.5 px-4">
+                  {pane.connectionLogs.map((log, i) => (
+                    <div key={i} className="text-[11px] text-muted-foreground truncate">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : pane.error && !pane.reconnecting ? (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-destructive">
-              <AlertCircle size={24} />
-              <span className="text-sm">{t(pane.error)}</span>
-              <Button variant="outline" size="sm" onClick={onRefresh}>
-                {t("sftp.retry")}
-              </Button>
-            </div>
+            <SftpErrorWithLogs
+              error={pane.error}
+              connectionLogs={pane.connectionLogs}
+              onRetry={onRefresh}
+              t={t}
+            />
           ) : sortedDisplayFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <Folder size={32} className="mb-2 opacity-50" />

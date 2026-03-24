@@ -853,6 +853,11 @@ async function startSSHSession(event, options) {
         connectOpts.authHandler = (methodsLeft, partialSuccess, callback) => {
           log("authHandler called", { methodsLeft, partialSuccess, authIndex, attemptedMethodIds: Array.from(attemptedMethodIds) });
 
+          // Log rejection of previous method
+          if (lastTriedMethod && !partialSuccess) {
+            sendProgress(totalHops, totalHops, options.hostname, 'auth-attempt', `${lastTriedMethod} rejected`);
+          }
+
           // methodsLeft can be null on first call (before server responds with available methods)
           // Include "agent" for SSH agent-based auth (used with agentForwarding)
           const availableMethods = methodsLeft || ["publickey", "password", "keyboard-interactive", "agent"];
@@ -989,6 +994,7 @@ async function startSSHSession(event, options) {
           }
 
           log("All auth methods exhausted");
+          sendProgress(totalHops, totalHops, options.hostname, 'auth-attempt', 'all methods exhausted');
           return callback(false);
         };
 
@@ -1293,12 +1299,15 @@ async function startSSHSession(event, options) {
           return;
         }
 
+        sendProgress(totalHops, totalHops, options.hostname, 'auth-attempt', 'waiting for user input...');
+
         // Forward ALL prompts to user - no auto-fill to avoid semantic detection issues
         // (Prompt text is admin-customizable and may not contain expected keywords)
         const requestId = keyboardInteractiveHandler.generateRequestId('ssh');
 
         keyboardInteractiveHandler.storeRequest(requestId, (userResponses) => {
           console.log(`${logPrefix} Received user responses, finishing keyboard-interactive`);
+          sendProgress(totalHops, totalHops, options.hostname, 'auth-attempt', 'user responded');
           finish(userResponses);
         }, sender.id, sessionId);
 

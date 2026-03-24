@@ -433,6 +433,18 @@ function init(deps) {
 }
 
 /**
+ * Send SFTP connection progress to the renderer for user-visible logging
+ */
+function sendSftpProgress(sender, sessionId, label, status, detail) {
+  try {
+    if (!sender || sender.isDestroyed()) return;
+    sender.send("netcatty:sftp:connection-progress", { sessionId, label, status, detail });
+  } catch {
+    // Ignore destroyed webContents
+  }
+}
+
+/**
  * Connect through a chain of jump hosts for SFTP
  */
 async function connectThroughChainForSftp(event, options, jumpHosts, targetHost, targetPort, connId, agentSocket) {
@@ -449,6 +461,7 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
       const hopLabel = jump.label || (jump.hostname.includes(':') && !jump.hostname.startsWith('[') ? `[${jump.hostname}]:${jump.port || 22}` : `${jump.hostname}:${jump.port || 22}`);
 
       console.log(`[SFTP Chain] Hop ${i + 1}/${jumpHosts.length}: Connecting to ${hopLabel}...`);
+      sendSftpProgress(sender, connId, hopLabel, 'connecting');
 
       const conn = new SSHClient();
       // Increase max listeners to prevent Node.js warning
@@ -559,6 +572,9 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
         unlockedEncryptedKeys: options._unlockedEncryptedKeys || [],
         defaultKeys,
         sshAgentSocketOverride: agentSocket,
+        onAuthAttempt: (method) => {
+          sendSftpProgress(sender, connId, hopLabel, 'auth-attempt', method);
+        },
       });
       applyAuthToConnOpts(connOpts, authConfig);
 
@@ -577,8 +593,12 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
 
       // Connect this hop
       await new Promise((resolve, reject) => {
+        conn.once('handshake', () => {
+          sendSftpProgress(sender, connId, hopLabel, 'authenticating');
+        });
         conn.once('ready', () => {
           console.log(`[SFTP Chain] Hop ${i + 1}/${jumpHosts.length}: ${hopLabel} connected`);
+          sendSftpProgress(sender, connId, hopLabel, 'connected');
           resolve();
         });
         conn.on('error', (err) => {
@@ -588,6 +608,7 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
             return;
           }
           console.error(`[SFTP Chain] Hop ${i + 1}/${jumpHosts.length}: ${hopLabel} error:`, err.message);
+          sendSftpProgress(sender, connId, hopLabel, 'error', err.message);
           reject(err);
         });
         conn.once('timeout', () => {
@@ -1038,6 +1059,9 @@ async function openSftp(event, options) {
     logPrefix: "[SFTP]",
     defaultKeys,
     sshAgentSocketOverride: agentSocket,
+    onAuthAttempt: (method) => {
+      sendSftpProgress(event.sender, connId, options.hostname, 'auth-attempt', method);
+    },
   });
   applyAuthToConnOpts(connectOpts, authConfig);
 
@@ -1110,6 +1134,10 @@ async function openSftp(event, options) {
       sshClient.on('end', onEnd);
       sshClient.on('close', onClose);
 
+      sshClient.once('handshake', () => {
+        sendSftpProgress(event.sender, connId, options.hostname, 'authenticating');
+      });
+
       sshClient.once('ready', () => {
         cleanup();
 
@@ -1154,6 +1182,7 @@ async function openSftp(event, options) {
         }
       });
 
+      sendSftpProgress(event.sender, connId, options.hostname, 'connecting');
       try {
         sshClient.connect(connectOpts);
       } catch (e) {

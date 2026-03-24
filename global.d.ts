@@ -468,6 +468,9 @@ declare global {
     // Callback receives: (sessionId: string, currentHop: number, totalHops: number, hostLabel: string, status: string, error?: string)
     onChainProgress?(cb: (sessionId: string, hop: number, total: number, label: string, status: string, error?: string) => void): () => void;
 
+    // SFTP connection progress listener (auth method logs)
+    onSftpConnectionProgress?(cb: (sessionId: string, label: string, status: string, detail?: string) => void): () => void;
+
     // OAuth callback server for cloud sync
     startOAuthCallback?(expectedState?: string): Promise<{ code: string; state?: string }>;
     cancelOAuthCallback?(): Promise<void>;

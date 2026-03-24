@@ -7,6 +7,7 @@ export interface SftpPane {
   loading: boolean;
   reconnecting: boolean;
   error: string | null;
+  connectionLogs: string[];
   selectedFiles: Set<string>;
   filter: string;
   filenameEncoding: SftpFilenameEncoding;
@@ -33,6 +34,7 @@ export const createEmptyPane = (
   loading: false,
   reconnecting: false,
   error: null,
+  connectionLogs: [],
   selectedFiles: new Set(),
   filter: "",
   filenameEncoding: "auto",
