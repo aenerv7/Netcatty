@@ -1261,14 +1261,14 @@ async function startSSHSession(event, options) {
         // session was already established (resolved), we still need to notify
         // the renderer about transport errors so the session shows as failed
         // rather than silently closing.
+        // Don't send netcatty:exit here — the stream close handler will flush
+        // any buffered data first and then send exit with this error info.
         if (settled) {
           console.warn(`${logPrefix} ${options.hostname} post-settle error:`, err.message);
-          // Forward the error to the renderer if the session was active
+          // Store the error so the close handler can include it in the exit event
           if (sessions.has(sessionId)) {
-            safeSend(event.sender, "netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
-            sessions.delete(sessionId);
-            sessionEncodings.delete(sessionId);
-            sessionDecoders.delete(sessionId);
+            const session = sessions.get(sessionId);
+            if (session) session._transportError = err.message;
           }
           return;
         }
@@ -1336,7 +1336,14 @@ async function startSSHSession(event, options) {
         // error handler (avoids sending a misleading exitCode:0 "closed" after
         // a real transport error was already reported).
         if (sessions.has(sessionId)) {
-          safeSend(contents, "netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
+          const session = sessions.get(sessionId);
+          const transportError = session?._transportError;
+          if (transportError) {
+            // A transport error was recorded — report it as an error exit
+            safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: transportError, reason: "error" });
+          } else {
+            safeSend(contents, "netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
+          }
         }
         sessionLogStreamManager.stopStream(sessionId);
         sessions.delete(sessionId);
