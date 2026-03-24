@@ -278,7 +278,7 @@ function buildAuthHandler(options) {
 
   // If only simple auth methods and no fallback keys needed, use array-based handler
   if (hasExplicitAuth && !hasFallbackOptions) {
-    const authMethods = [];
+    const authMethods = ["none"]; // Always try none first per RFC 4252
     if (effectiveAgent) authMethods.push("agent");
     if (privateKey) authMethods.push("publickey");
     if (password) authMethods.push("password");
@@ -410,7 +410,7 @@ function buildAuthHandler(options) {
     // This matches the behavior of OpenSSH and Tabby.
     if (methodsLeft === null && !triedNone) {
       triedNone = true;
-      lastAttemptedLabel = "none";
+      lastAttemptedLabel = "none (no credentials)";
       onAuthAttempt?.("none (no credentials)");
       return callback("none");
     }

@@ -1332,7 +1332,12 @@ async function startSSHSession(event, options) {
         if (!settled) {
           sendProgress(totalHops, totalHops, options.hostname, 'error', `Connection to ${options.hostname} closed unexpectedly`);
         }
-        safeSend(contents, "netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
+        // Only send exit if the session hasn't already been cleaned up by the
+        // error handler (avoids sending a misleading exitCode:0 "closed" after
+        // a real transport error was already reported).
+        if (sessions.has(sessionId)) {
+          safeSend(contents, "netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
+        }
         sessionLogStreamManager.stopStream(sessionId);
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);
