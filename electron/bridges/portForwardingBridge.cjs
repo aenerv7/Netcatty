@@ -236,6 +236,10 @@ async function startPortForward(event, payload) {
       delete connectOpts.port;
     }
   } catch (err) {
+    if (isTunnelCancelled(tunnelState)) {
+      portForwardingTunnels.delete(tunnelId);
+      return { tunnelId, success: false, cancelled: true };
+    }
     tunnelState.cancelled = true;
     if (tunnelState.pendingConn) {
       try { tunnelState.pendingConn.end(); } catch { /* ignore */ }
