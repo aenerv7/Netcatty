@@ -287,18 +287,43 @@ export function useTerminalAutocomplete(
   // Ref to fetchSuggestions (avoids circular dep — defined after fetchSuggestions)
   const fetchSuggestionsRef = useRef<() => void>(() => {});
 
-  /** Handle selecting a file/directory from any sub-dir panel. */
+  /** Handle selecting a file/directory from any sub-dir panel.
+   *  Builds the full path from the panel stack and replaces the current input. */
   const handleSubDirSelect = useCallback((level: number, entry: SubDirEntry) => {
+    const s = stateRef.current;
+    const term = termRef.current;
+    if (!term) return;
+
+    // Build the full path: panel's dirPath + entry name
+    const panel = s.subDirPanels[level];
+    if (!panel) return;
+
     const suffix = entry.type === "directory" ? "/" : "";
     const entryName = entry.name.includes(" ") ? entry.name.replace(/ /g, "\\ ") : entry.name;
+    const fullPath = panel.dirPath + entryName + suffix;
 
-    writeToTerminal(entryName + suffix);
+    // Get current prompt to know what command prefix to keep (e.g., "cd ")
+    const prompt = detectPrompt(term);
+    if (!prompt.isAtPrompt) return;
+
+    // Find the command part (everything before the path argument)
+    // e.g., userInput = "cd /usr/" → command prefix = "cd ", we replace the whole path
+    const cmdTokens = prompt.userInput.split(/\s+/);
+    // The path is the last token — replace it with fullPath
+    const cmdPrefix = cmdTokens.slice(0, -1).join(" ") + (cmdTokens.length > 1 ? " " : "");
+
+    // Clear current input and write: cmdPrefix + fullPath
+    const isWindows = hostOsRef.current === "windows";
+    const clearSeq = isWindows
+      ? "\b".repeat(prompt.userInput.length)
+      : "\x15";
+    writeToTerminal(clearSeq + cmdPrefix + fullPath);
     clearState();
 
     if (entry.type === "directory") {
       setTimeout(() => fetchSuggestionsRef.current(), 50);
     }
-  }, [writeToTerminal, clearState]);
+  }, [writeToTerminal, clearState, termRef]);
 
   /**
    * Fetch and display suggestions based on current input.
