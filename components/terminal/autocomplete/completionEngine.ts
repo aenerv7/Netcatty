@@ -190,8 +190,18 @@ export async function getCompletions(
   }
 
   // 2.5. Path completion (remote or local filesystem)
-  if (ctx.commandName && ctx.wordIndex >= 1 && options.sessionId !== undefined) {
-    // Get resolved args from spec to check for path template
+  // Only attempt path completion if:
+  // - There's a session context
+  // - We're past the command name (wordIndex >= 1)
+  // - The current word looks path-like OR the command is a known path command
+  // This avoids expensive IPC calls on every keystroke for non-path contexts.
+  const currentWord = ctx.currentWord;
+  const hasPathTrigger = currentWord.startsWith("/") || currentWord.startsWith("./") ||
+    currentWord.startsWith("../") || currentWord.startsWith("~/") ||
+    currentWord === "." || currentWord === ".." || currentWord === "~";
+
+  if (ctx.commandName && ctx.wordIndex >= 1 && options.sessionId !== undefined &&
+      (hasPathTrigger || suggestions.length < 3)) {
     let resolvedArgs: FigSubcommand["args"] | undefined;
     try {
       const specAvail = await hasSpec(ctx.commandName);
@@ -202,7 +212,7 @@ export async function getCompletions(
           resolvedArgs = resolved.args;
         }
       }
-    } catch { /* ignore spec errors for path detection */ }
+    } catch { /* ignore */ }
 
     const pathCheck = shouldDoPathCompletion(ctx, resolvedArgs as import("./figSpecLoader").FigArg | import("./figSpecLoader").FigArg[] | undefined);
     if (pathCheck.shouldComplete) {

@@ -473,7 +473,7 @@ export function useTerminalAutocomplete(
         // Still debounce, but with a longer delay to wait for typing to pause
         debounceTimerRef.current = setTimeout(() => {
           fetchSuggestions();
-        }, settingsRef.current.debounceMs * 2);
+        }, settingsRef.current.debounceMs * 3);
       } else {
         debounceTimerRef.current = setTimeout(() => {
           fetchSuggestions();
