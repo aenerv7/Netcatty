@@ -470,8 +470,10 @@ export function useTerminalAutocomplete(
       const ghost = ghostAddonRef.current;
 
       // Right arrow: if popup has selected directory with sub-dir panel, enter it
-      if (e.key === "ArrowRight" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        if (s.popupVisible && s.selectedIndex >= 0 && s.subDirPanels.length > 0 && s.subDirFocusLevel < 0) {
+      // Skip this handler entirely when sub-dir panels are focused — let the
+      // sub-panel navigation block handle → for deeper expansion.
+      if (e.key === "ArrowRight" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && s.subDirFocusLevel < 0) {
+        if (s.popupVisible && s.selectedIndex >= 0 && s.subDirPanels.length > 0) {
           const selected = s.suggestions[s.selectedIndex];
           if (selected?.fileType === "directory") {
             e.preventDefault();
