@@ -870,9 +870,12 @@ const SessionHistoryDrawer: React.FC<SessionHistoryDrawerProps> = ({
               const timeStr = formatRelativeTime(time, t);
 
               return (
-                <button
+                <div
                   key={session.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelect(session.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(session.id); }}
                   className={cn(
                     'w-full flex items-center justify-between py-2.5 border-b border-border/20 text-left transition-colors cursor-pointer group',
                     isActive ? 'text-foreground' : 'text-foreground/70 hover:text-foreground',
@@ -893,7 +896,7 @@ const SessionHistoryDrawer: React.FC<SessionHistoryDrawerProps> = ({
                       <Trash2 size={12} />
                     </button>
                   </div>
-                </button>
+                </div>
               );
             })
           )}
