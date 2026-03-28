@@ -86,7 +86,7 @@ function updateDefaultOpener(entry: FileAssociationEntry | null) {
   if (entry) {
     localStorageAdapter.write(STORAGE_KEY_SFTP_DEFAULT_OPENER, entry);
   } else {
-    localStorage.removeItem(STORAGE_KEY_SFTP_DEFAULT_OPENER);
+    localStorageAdapter.remove(STORAGE_KEY_SFTP_DEFAULT_OPENER);
   }
   defaultOpenerSubscribers.forEach(callback => callback());
 }
