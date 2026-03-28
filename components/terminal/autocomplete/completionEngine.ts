@@ -191,6 +191,9 @@ export async function getCompletions(
   }
 
   if (preferPathSuggestions && ctx.commandName) {
+    // When path completion is active (file-related commands like cat, vim, cd),
+    // recent history is still useful but should rank below actual path matches
+    // from the current directory.
     const recentHistory = queryRecentHistoryByCommand({
       commandName: ctx.commandName,
       excludeCommand: input,
@@ -205,7 +208,7 @@ export async function getCompletions(
         text: entry.command,
         displayText: entry.command,
         source: "history",
-        score: 900 - index,
+        score: 700 - index,
         frequency: entry.frequency,
       } satisfies CompletionSuggestion;
       suggestions.push(suggestion);
