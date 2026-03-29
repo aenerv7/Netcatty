@@ -87,12 +87,13 @@ export const useSftpDialogActionHandler = (
     onDelete?: (fileNames: string[]) => void;
     onNewFolder?: () => void;
     onNewFile?: () => void;
-  }
+  },
+  isActive = true
 ) => {
   const action = useSftpDialogAction();
 
   useEffect(() => {
-    if (!action || action.targetSide !== side) return;
+    if (!action || action.targetSide !== side || !isActive) return;
 
     // Handle the action and clear it
     switch (action.type) {
@@ -116,5 +117,5 @@ export const useSftpDialogActionHandler = (
 
     // Clear the action after handling
     sftpDialogActionStore.clear();
-  }, [action, side, handlers]);
+  }, [action, side, handlers, isActive]);
 };

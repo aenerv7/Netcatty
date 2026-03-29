@@ -85,7 +85,8 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
   onToggleShowHiddenFiles,
   onGoToTerminalCwd,
 }) => {
-  const isActive = true;
+  const activeTabId = useActiveTabId(side);
+  const isActive = activeTabId ? pane.id === activeTabId : true;
 
   const callbacks = useSftpPaneCallbacks(side);
   const { draggedFiles, onDragStart, onDragEnd } = useSftpDrag();
@@ -354,7 +355,7 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
     ],
   );
 
-  useSftpDialogActionHandler(side, dialogActionHandlers);
+  useSftpDialogActionHandler(side, dialogActionHandlers, isActive);
 
   const handleSortWithTransition = (field: typeof sortField) => {
     startTransition(() => handleSort(field));
