@@ -462,6 +462,20 @@ function createZmodemSentry(opts) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Race a promise against a timeout.  If the promise doesn't settle within
+ * `ms`, resolve with undefined instead of hanging forever.  This prevents
+ * zmodem.js internal promises (xfer.end, zsession.close) from blocking
+ * indefinitely after cancel/abort.
+ */
+function withTimeout(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((resolve) => { timer = setTimeout(resolve, ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Send CAN bytes + delayed Ctrl-C to kill the remote rz/sz process.
  * Used from dialog-cancel paths that run outside the sentry closure.
  */
@@ -572,13 +586,13 @@ async function handleUpload(zsession, opts) {
         if (opts.waitForDrain) await opts.waitForDrain();
         await yieldToIO();
       }
-      await xfer.end();
+      await withTimeout(xfer.end(), 10000);
     } finally {
       fs.closeSync(fd);
     }
   }
 
-  await zsession.close();
+  await withTimeout(zsession.close(), 10000);
 }
 
 /**

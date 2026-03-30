@@ -631,6 +631,7 @@ async function startTelnetSession(event, options) {
         sessionLogStreamManager.stopStream(sessionId);
         const session = sessions.get(sessionId);
         if (session) {
+          session.zmodemSentry?.cancel();
           const contents = electronModule.webContents.fromId(session.webContentsId);
           contents?.send("netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
         }
@@ -646,6 +647,7 @@ async function startTelnetSession(event, options) {
       sessionLogStreamManager.stopStream(sessionId);
       const session = sessions.get(sessionId);
       if (session) {
+        session.zmodemSentry?.cancel();
         const contents = electronModule.webContents.fromId(session.webContentsId);
         contents?.send("netcatty:exit", { sessionId, exitCode: hadError ? 1 : 0, reason: hadError ? "error" : "closed" });
       }
@@ -912,6 +914,7 @@ async function startSerialSession(event, options) {
 
         serialPort.on('error', (err) => {
           console.error(`[Serial] Port error: ${err.message}`);
+          session.zmodemSentry?.cancel();
           sessionLogStreamManager.stopStream(sessionId);
           const contents = electronModule.webContents.fromId(session.webContentsId);
           contents?.send("netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
@@ -920,6 +923,7 @@ async function startSerialSession(event, options) {
 
         serialPort.on('close', () => {
           console.log(`[Serial] Port closed`);
+          session.zmodemSentry?.cancel();
           sessionLogStreamManager.stopStream(sessionId);
           const contents = electronModule.webContents.fromId(session.webContentsId);
           contents?.send("netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
@@ -1119,6 +1123,7 @@ function cleanupAllSessions() {
   console.log(`[Terminal] Cleaning up ${sessions.size} sessions before quit`);
   for (const [sessionId, session] of sessions) {
     try {
+      session.zmodemSentry?.cancel();
       if (session.stream) {
         session.stream.close();
         session.conn?.end();

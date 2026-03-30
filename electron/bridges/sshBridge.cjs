@@ -1316,6 +1316,7 @@ async function startSSHSession(event, options) {
                 } else {
                   safeSend(contents, "netcatty:exit", { sessionId, exitCode: streamExitCode, reason: streamExited ? "exited" : "closed" });
                 }
+                sessions.get(sessionId)?.zmodemSentry?.cancel();
                 sessions.delete(sessionId);
                 sessionEncodings.delete(sessionId);
                 sessionDecoders.delete(sessionId);
@@ -1384,6 +1385,7 @@ async function startSSHSession(event, options) {
         sendProgress(totalHops, totalHops, options.hostname, 'error', err.message);
         safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
         sessionLogStreamManager.stopStream(sessionId);
+        sessions.get(sessionId)?.zmodemSentry?.cancel();
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);
         sessionDecoders.delete(sessionId);
@@ -1404,6 +1406,7 @@ async function startSSHSession(event, options) {
         sendProgress(totalHops, totalHops, options.hostname, 'error', err.message);
         safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "timeout" });
         sessionLogStreamManager.stopStream(sessionId);
+        sessions.get(sessionId)?.zmodemSentry?.cancel();
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);
         sessionDecoders.delete(sessionId);
@@ -1434,6 +1437,7 @@ async function startSSHSession(event, options) {
           }
         }
         sessionLogStreamManager.stopStream(sessionId);
+        sessions.get(sessionId)?.zmodemSentry?.cancel();
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);
         sessionDecoders.delete(sessionId);
