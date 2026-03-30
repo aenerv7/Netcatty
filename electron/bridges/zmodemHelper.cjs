@@ -301,12 +301,10 @@ function createZmodemSentry(opts) {
         waitForDrain: () => {
           if (!_needsDrain) return Promise.resolve();
           _needsDrain = false;
-          return new Promise((resolve) => {
-            // Give the event loop time to flush; check again after a short delay.
-            // We can't listen to stream "drain" directly since we don't have the
-            // stream reference, but yielding ~50ms lets TCP flush buffered writes.
-            setTimeout(resolve, 50);
-          });
+          // Yield to the event loop so Node can flush buffered writes to
+          // the kernel.  Using setImmediate (not setTimeout) avoids any
+          // fixed delay — we resume as soon as the I/O phase completes.
+          return new Promise((resolve) => setImmediate(resolve));
         },
       };
       handleTransfer(zsession, transferType, transferOpts)
