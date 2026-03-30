@@ -9,6 +9,10 @@ import { ChevronDown, RefreshCw, Plus, Settings } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { cn } from '../../lib/utils';
 import { useI18n } from '../../application/i18n/I18nProvider';
+import {
+  isSettingsManagedDiscoveredAgent,
+  matchesManagedAgentConfig,
+} from '../../infrastructure/ai/managedAgents';
 import type { AgentInfo, ExternalAgentConfig, DiscoveredAgent } from '../../infrastructure/ai/types';
 import AgentIconBadge from './AgentIconBadge';
 import {
@@ -140,7 +144,12 @@ const AgentSelector: React.FC<AgentSelectorProps> = ({
   const unconfiguredDiscovered = useMemo(
     () =>
       discoveredAgents.filter(
-        (da) => !externalAgents.some((ea) => ea.command === da.command || ea.command === da.path),
+        (da) => {
+          if (isSettingsManagedDiscoveredAgent(da)) {
+            return !externalAgents.some((ea) => matchesManagedAgentConfig(ea, da.command));
+          }
+          return !externalAgents.some((ea) => ea.command === da.command || ea.command === da.path);
+        },
       ),
     [discoveredAgents, externalAgents],
   );

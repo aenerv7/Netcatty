@@ -1963,6 +1963,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
                 containerRef={containerRef}
                 onRequestReposition={autocomplete.repositionPopup}
                 searchBarOffset={isSearchOpen ? 64 : 30}
+                onDismiss={autocompleteClosePopup}
               />,
               document.body,
             )

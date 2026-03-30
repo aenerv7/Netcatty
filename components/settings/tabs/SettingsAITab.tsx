@@ -8,7 +8,7 @@
  *   - SafetySettings
  */
 import { Bot, Globe } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AIPermissionMode,
   AIProviderId,
@@ -16,8 +16,12 @@ import type {
   ProviderConfig,
   WebSearchConfig,
 } from "../../../infrastructure/ai/types";
+import {
+  getManagedAgentStoredPath,
+  matchesManagedAgentConfig,
+  type ManagedAgentKey,
+} from "../../../infrastructure/ai/managedAgents";
 import { PROVIDER_PRESETS } from "../../../infrastructure/ai/types";
-import { useAgentDiscovery } from "../../../application/state/useAgentDiscovery";
 import { useI18n } from "../../../application/i18n/I18nProvider";
 import { TabsContent } from "../../ui/tabs";
 import { Select, SettingRow } from "../settings-ui";
@@ -71,6 +75,53 @@ interface SettingsAITabProps {
   setWebSearchConfig: (config: WebSearchConfig | null) => void;
 }
 
+function areExternalAgentListsEqual(
+  left: ExternalAgentConfig[],
+  right: ExternalAgentConfig[],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((agent, index) => JSON.stringify(agent) === JSON.stringify(right[index]));
+}
+
+function buildManagedAgentState(
+  prevAgents: ExternalAgentConfig[],
+  defaultAgentId: string,
+  agentKey: ManagedAgentKey,
+  pathInfo: AgentPathInfo | null,
+): { agents: ExternalAgentConfig[]; defaultAgentId: string } {
+  const managedId = `discovered_${agentKey}`;
+  const managedAgents = prevAgents.filter((agent) => matchesManagedAgentConfig(agent, agentKey));
+  const otherAgents = prevAgents.filter((agent) => !matchesManagedAgentConfig(agent, agentKey));
+  const storedPath = getManagedAgentStoredPath(prevAgents, agentKey);
+
+  if (!pathInfo?.available || !pathInfo.path) {
+    return {
+      agents: storedPath ? prevAgents : otherAgents,
+      defaultAgentId: storedPath
+        ? defaultAgentId
+        : managedAgents.some((agent) => agent.id === defaultAgentId)
+          ? "catty"
+          : defaultAgentId,
+    };
+  }
+
+  const existingManaged = managedAgents.find((agent) => agent.id === managedId);
+  const nextManagedAgent: ExternalAgentConfig = {
+    ...existingManaged,
+    ...AGENT_DEFAULTS[agentKey],
+    id: managedId,
+    command: pathInfo.path,
+    enabled: managedAgents.length === 0 ? true : managedAgents.some((agent) => agent.enabled),
+  };
+
+  return {
+    agents: [...otherAgents, nextManagedAgent],
+    defaultAgentId: managedAgents.some((agent) => agent.id === defaultAgentId)
+      ? managedId
+      : defaultAgentId,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main Tab Component
 // ---------------------------------------------------------------------------
@@ -114,71 +165,34 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
   const [claudePathInfo, setClaudePathInfo] = useState<AgentPathInfo | null>(null);
   const [claudeCustomPath, setClaudeCustomPath] = useState("");
   const [isResolvingClaude, setIsResolvingClaude] = useState(false);
+  const initialManagedPathsRef = useRef<{
+    codex: string;
+    claude: string;
+    copilot: string;
+  } | null>(null);
+  if (!initialManagedPathsRef.current) {
+    initialManagedPathsRef.current = {
+      codex: getManagedAgentStoredPath(externalAgents, "codex") ?? "",
+      claude: getManagedAgentStoredPath(externalAgents, "claude") ?? "",
+      copilot: getManagedAgentStoredPath(externalAgents, "copilot") ?? "",
+    };
+  }
 
   const [copilotPathInfo, setCopilotPathInfo] = useState<AgentPathInfo | null>(null);
   const [copilotCustomPath, setCopilotCustomPath] = useState("");
   const [isResolvingCopilot, setIsResolvingCopilot] = useState(false);
 
-  const {
-    discoveredAgents,
-    isDiscovering,
-    enableAgent,
-  } = useAgentDiscovery(externalAgents, setExternalAgents);
+  // Ref to read current defaultAgentId without adding it as a dependency.
+  const defaultAgentIdRef = useRef(defaultAgentId);
+  defaultAgentIdRef.current = defaultAgentId;
 
-  // Derive path info from discovery results
-  useEffect(() => {
-    if (isDiscovering) return;
-
-    const codex = discoveredAgents.find((a) => a.command === "codex");
-    setCodexPathInfo(
-      codex
-        ? { path: codex.path, version: codex.version, available: true }
-        : { path: null, version: null, available: false },
-    );
-
-    const claude = discoveredAgents.find((a) => a.command === "claude");
-    setClaudePathInfo(
-      claude
-        ? { path: claude.path, version: claude.version, available: true }
-        : { path: null, version: null, available: false },
-    );
-
-    const copilot = discoveredAgents.find((a) => a.command === "copilot");
-    setCopilotPathInfo(
-      copilot
-        ? { path: copilot.path, version: copilot.version, available: true }
-        : { path: null, version: null, available: false },
-    );
-  }, [isDiscovering, discoveredAgents]);
-
-  // Auto-register discovered agents in externalAgents
-  useEffect(() => {
-    if (isDiscovering || discoveredAgents.length === 0) return;
-
-    setExternalAgents((prev) => {
-      const agentsToRegister: ExternalAgentConfig[] = [];
-
-      for (const da of discoveredAgents) {
-        if (da.command !== "codex" && da.command !== "claude" && da.command !== "copilot") continue;
-        const agentId = `discovered_${da.command}`;
-        if (prev.some((ea) => ea.id === agentId)) continue;
-        agentsToRegister.push(enableAgent(da));
-      }
-
-      return agentsToRegister.length > 0 ? [...prev, ...agentsToRegister] : prev;
-    });
-  }, [isDiscovering, discoveredAgents, enableAgent, setExternalAgents]);
-
-  // Validate a custom path for an agent
-  const handleCheckCustomPath = useCallback(async (agentKey: "codex" | "claude" | "copilot") => {
+  const resolveAgentPath = useCallback(async (
+    agentKey: ManagedAgentKey,
+    customPath = "",
+  ) => {
     const bridge = getBridge();
-    if (!bridge?.aiResolveCli) return;
+    if (!bridge?.aiResolveCli) return null;
 
-    const customPath = agentKey === "codex"
-      ? codexCustomPath
-      : agentKey === "claude"
-        ? claudeCustomPath
-        : copilotCustomPath;
     const setInfo = agentKey === "codex"
       ? setCodexPathInfo
       : agentKey === "claude"
@@ -198,37 +212,48 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
       });
       setInfo(result);
 
-      // Register/update in externalAgents if valid
-      if (result.available && result.path) {
-        const agentId = `discovered_${agentKey}`;
-        const defaults = AGENT_DEFAULTS[agentKey];
-        setExternalAgents((prev) => {
-          const idx = prev.findIndex((a) => a.id === agentId);
-          const config: ExternalAgentConfig = {
-            id: agentId,
-            command: result.path!,
-            enabled: true,
-            ...defaults,
-            ...(agentKey === "copilot" ? { acpCommand: result.path! } : {}),
-          };
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = {
-              ...updated[idx],
-              command: result.path!,
-              ...(agentKey === "copilot" ? { acpCommand: result.path! } : {}),
-            };
-            return updated;
-          }
-          return [...prev, config];
-        });
+      // Consolidate managed agent entries using the callback form of
+      // setExternalAgents so we never depend on externalAgents directly.
+      // All three agents resolve concurrently on mount — React runs
+      // state updater callbacks sequentially, so updating the ref inside
+      // ensures later calls see earlier defaultAgentId changes.
+      let nextDefaultId: string | null = null;
+      setExternalAgents((prev) => {
+        const state = buildManagedAgentState(prev, defaultAgentIdRef.current, agentKey, result);
+        if (state.defaultAgentId !== defaultAgentIdRef.current) {
+          nextDefaultId = state.defaultAgentId;
+          defaultAgentIdRef.current = state.defaultAgentId;
+        }
+        return areExternalAgentListsEqual(prev, state.agents) ? prev : state.agents;
+      });
+      if (nextDefaultId !== null) {
+        setDefaultAgentId(nextDefaultId);
       }
+
+      return result;
     } catch (err) {
       console.error("Path resolution failed:", err);
+      return null;
     } finally {
       setResolving(false);
     }
-  }, [codexCustomPath, claudeCustomPath, copilotCustomPath, setExternalAgents]);
+  }, [setExternalAgents, setDefaultAgentId]);
+
+  useEffect(() => {
+    void resolveAgentPath("codex", initialManagedPathsRef.current?.codex ?? "");
+    void resolveAgentPath("claude", initialManagedPathsRef.current?.claude ?? "");
+    void resolveAgentPath("copilot", initialManagedPathsRef.current?.copilot ?? "");
+  }, [resolveAgentPath]);
+
+  // Validate a custom path for an agent
+  const handleCheckCustomPath = useCallback(async (agentKey: ManagedAgentKey) => {
+    const customPath = agentKey === "codex"
+      ? codexCustomPath
+      : agentKey === "claude"
+        ? claudeCustomPath
+        : copilotCustomPath;
+    await resolveAgentPath(agentKey, customPath);
+  }, [claudeCustomPath, codexCustomPath, copilotCustomPath, resolveAgentPath]);
 
   // Add a new provider from preset
   const handleAddProvider = useCallback(
@@ -486,7 +511,7 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
 
             <CodexConnectionCard
               pathInfo={codexPathInfo}
-              isResolvingPath={isDiscovering || isResolvingCodex}
+              isResolvingPath={isResolvingCodex}
               customPath={codexCustomPath}
               onCustomPathChange={setCodexCustomPath}
               onRecheckPath={() => void handleCheckCustomPath("codex")}
@@ -512,7 +537,7 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
 
             <ClaudeCodeCard
               pathInfo={claudePathInfo}
-              isResolvingPath={isDiscovering || isResolvingClaude}
+              isResolvingPath={isResolvingClaude}
               customPath={claudeCustomPath}
               onCustomPathChange={setClaudeCustomPath}
               onRecheckPath={() => void handleCheckCustomPath("claude")}
@@ -528,7 +553,7 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
 
             <CopilotCliCard
               pathInfo={copilotPathInfo}
-              isResolvingPath={isDiscovering || isResolvingCopilot}
+              isResolvingPath={isResolvingCopilot}
               customPath={copilotCustomPath}
               onCustomPathChange={setCopilotCustomPath}
               onRecheckPath={() => void handleCheckCustomPath("copilot")}

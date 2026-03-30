@@ -1466,7 +1466,9 @@ function registerHandlers(ipcMain) {
 
     if (customPath) {
       // Normalize Windows shim paths like `codex` -> `codex.cmd` when present.
-      resolvedPath = normalizeCliPathForPlatform(customPath);
+      // Fall back to PATH search if the stored path no longer exists
+      // (e.g. CLI reinstalled to a different location).
+      resolvedPath = normalizeCliPathForPlatform(customPath) || resolveCliFromPath(command, shellEnv);
     } else {
       resolvedPath = resolveCliFromPath(command, shellEnv);
     }

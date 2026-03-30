@@ -48,6 +48,8 @@ interface AutocompletePopupProps {
   onRequestReposition?: () => void;
   /** Offset from top of container to terminal content area (toolbar + search bar) */
   searchBarOffset?: number;
+  /** Called when user clicks outside the popup to dismiss it */
+  onDismiss?: () => void;
 }
 
 const SOURCE_LABELS: Record<SuggestionSource, { label: string; fullLabel: string; fallbackColor: string }> = {
@@ -105,7 +107,9 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
   containerRef,
   onRequestReposition,
   searchBarOffset: _searchBarOffset = 30,
+  onDismiss,
 }) => {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLDivElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
@@ -147,6 +151,18 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
       window.removeEventListener("resize", requestReposition);
     };
   }, [containerRef, onRequestReposition, visible]);
+
+  // Dismiss popup when clicking outside
+  useEffect(() => {
+    if (!visible || !onDismiss) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        onDismiss();
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [visible, onDismiss]);
 
   if (!visible || suggestions.length === 0) return null;
 
@@ -217,6 +233,7 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
 
   return (
     <div
+      ref={wrapperRef}
       style={{
         position: "fixed",
         left: `${clampedLeft}px`,

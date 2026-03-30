@@ -637,7 +637,23 @@ function handleExec(params) {
 
 // ── MCP Server Config Builder ──
 
-function buildMcpServerConfig(port, scopedSessionIds, chatSessionId, runtimeCommand) {
+function resolveMcpServerRuntimeCommand() {
+  const runtimeCommand = process.execPath;
+  const runtimeEnv = [];
+
+  if (runtimeCommand && existsSync(runtimeCommand)) {
+    const basename = path.basename(runtimeCommand).toLowerCase();
+    const isNodeBinary = basename === "node" || basename.startsWith("node.");
+    if (!isNodeBinary) {
+      runtimeEnv.push({ name: "ELECTRON_RUN_AS_NODE", value: "1" });
+    }
+    return { command: runtimeCommand, env: runtimeEnv };
+  }
+
+  return { command: "node", env: runtimeEnv };
+}
+
+function buildMcpServerConfig(port, scopedSessionIds, chatSessionId) {
   // Use provided scoped IDs, or resolve from chatSessionId, or fall back
   const effectiveIds = (scopedSessionIds && scopedSessionIds.length > 0)
     ? scopedSessionIds
@@ -646,8 +662,10 @@ function buildMcpServerConfig(port, scopedSessionIds, chatSessionId, runtimeComm
   const runtimePath = toUnpackedAsarPath(
     path.join(__dirname, "..", "mcp", "netcatty-mcp-server.cjs"),
   );
+  const runtime = resolveMcpServerRuntimeCommand();
 
   const env = [
+    ...runtime.env,
     { name: "NETCATTY_MCP_PORT", value: String(port) },
   ];
 
@@ -672,7 +690,7 @@ function buildMcpServerConfig(port, scopedSessionIds, chatSessionId, runtimeComm
   return {
     name: "netcatty-remote-hosts",
     type: "stdio",
-    command: runtimeCommand || "node",
+    command: runtime.command,
     args: [runtimePath],
     env,
   };
