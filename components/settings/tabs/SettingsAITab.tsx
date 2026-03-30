@@ -91,11 +91,16 @@ function buildManagedAgentState(
   const managedId = `discovered_${agentKey}`;
   const managedAgents = prevAgents.filter((agent) => matchesManagedAgentConfig(agent, agentKey));
   const otherAgents = prevAgents.filter((agent) => !matchesManagedAgentConfig(agent, agentKey));
+  const storedPath = getManagedAgentStoredPath(prevAgents, agentKey);
 
   if (!pathInfo?.available || !pathInfo.path) {
     return {
-      agents: prevAgents,
-      defaultAgentId,
+      agents: storedPath ? prevAgents : otherAgents,
+      defaultAgentId: storedPath
+        ? defaultAgentId
+        : managedAgents.some((agent) => agent.id === defaultAgentId)
+          ? "catty"
+          : defaultAgentId,
     };
   }
 

@@ -19,6 +19,11 @@ function isPathLikeCommand(command: string | undefined): boolean {
   return normalized.includes('/') || normalized.includes('\\');
 }
 
+function matchesPrimaryCliBasename(command: string | undefined, agentKey: ManagedAgentKey): boolean {
+  const basename = getCommandBasename(command);
+  return basename === agentKey || basename.startsWith(`${agentKey}.`);
+}
+
 export function isSettingsManagedDiscoveredAgent(
   agent: Pick<DiscoveredAgent, 'command'>,
 ): agent is Pick<DiscoveredAgent, 'command'> & { command: ManagedAgentKey } {
@@ -44,14 +49,20 @@ export function getManagedAgentStoredPath(
 ): string | null {
   const managedId = `discovered_${agentKey}`;
   const preferredAgent = agents.find(
-    (agent) => agent.id === managedId && isPathLikeCommand(agent.command),
+    (agent) =>
+      agent.id === managedId &&
+      isPathLikeCommand(agent.command) &&
+      matchesPrimaryCliBasename(agent.command, agentKey),
   );
   if (preferredAgent) {
     return preferredAgent.command;
   }
 
   const fallbackAgent = agents.find(
-    (agent) => matchesManagedAgentConfig(agent, agentKey) && isPathLikeCommand(agent.command),
+    (agent) =>
+      matchesManagedAgentConfig(agent, agentKey) &&
+      isPathLikeCommand(agent.command) &&
+      matchesPrimaryCliBasename(agent.command, agentKey),
   );
   return fallbackAgent?.command ?? null;
 }
