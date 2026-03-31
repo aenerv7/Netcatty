@@ -318,8 +318,8 @@ function registerAppProtocol() {
 
 function focusMainWindow() {
   try {
-    const wins = BrowserWindow.getAllWindows();
-    const win = wins && wins.length ? wins[0] : null;
+    const mainWin = getWindowManager().getMainWindow?.();
+    const win = mainWin && !mainWin.isDestroyed?.() ? mainWin : null;
     if (!win) return false;
 
     // Check if the webContents has crashed or been destroyed
@@ -1074,12 +1074,11 @@ if (!gotLock) {
       } catch {}
 
       if (focusMainWindow()) return;
-      if (BrowserWindow.getAllWindows().length === 0) {
-        void createWindow().catch((err) => {
-          console.error("[Main] Failed to create window on activate:", err);
-          showStartupError(err);
-        });
-      }
+      // Main window doesn't exist — create it even if other windows (e.g. settings) are open
+      void createWindow().catch((err) => {
+        console.error("[Main] Failed to create window on activate:", err);
+        showStartupError(err);
+      });
     });
   });
 
