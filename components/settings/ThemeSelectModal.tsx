@@ -3,55 +3,12 @@
  * A modal dialog for selecting terminal themes in settings
  */
 
-import React, { memo, useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Palette, X } from 'lucide-react';
+import { Palette, X } from 'lucide-react';
 import { useI18n } from '../../application/i18n/I18nProvider';
-import { TERMINAL_THEMES, TerminalThemeConfig } from '../../infrastructure/config/terminalThemes';
-import { useCustomThemes } from '../../application/state/customThemeStore';
 import { Button } from '../ui/button';
-import { cn } from '../../lib/utils';
-
-// Memoized theme item component to prevent unnecessary re-renders
-const ThemeItem = memo(({
-    theme,
-    isSelected,
-    onSelect
-}: {
-    theme: TerminalThemeConfig;
-    isSelected: boolean;
-    onSelect: (id: string) => void;
-}) => (
-    <button
-        onClick={() => onSelect(theme.id)}
-        className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all',
-            isSelected
-                ? 'bg-primary/15 ring-1 ring-primary'
-                : 'hover:bg-muted'
-        )}
-    >
-        {/* Color swatch preview */}
-        <div
-            className="w-12 h-8 rounded-md flex-shrink-0 flex flex-col justify-center items-start pl-1.5 gap-0.5 border border-border/50"
-            style={{ backgroundColor: theme.colors.background }}
-        >
-            <div className="h-1 w-4 rounded-full" style={{ backgroundColor: theme.colors.green }} />
-            <div className="h-1 w-6 rounded-full" style={{ backgroundColor: theme.colors.blue }} />
-            <div className="h-1 w-3 rounded-full" style={{ backgroundColor: theme.colors.yellow }} />
-        </div>
-        <div className="flex-1 min-w-0">
-            <div className={cn('text-sm font-medium truncate', isSelected ? 'text-primary' : 'text-foreground')}>
-                {theme.name}
-            </div>
-            <div className="text-[10px] text-muted-foreground capitalize">{theme.type}</div>
-        </div>
-        {isSelected && (
-            <Check size={16} className="text-primary flex-shrink-0" />
-        )}
-    </button>
-));
-ThemeItem.displayName = 'ThemeItem';
+import { ThemeList } from '../ThemeList';
 
 interface ThemeSelectModalProps {
     open: boolean;
@@ -67,15 +24,6 @@ export const ThemeSelectModal: React.FC<ThemeSelectModalProps> = ({
     onSelect,
 }) => {
     const { t } = useI18n();
-
-    // Group themes by type
-    const { darkThemes, lightThemes } = useMemo(() => {
-        const dark = TERMINAL_THEMES.filter(t => t.type === 'dark');
-        const light = TERMINAL_THEMES.filter(t => t.type === 'light');
-        return { darkThemes: dark, lightThemes: light };
-    }, []);
-
-    const customThemes = useCustomThemes();
 
     // Handle theme selection - select and close
     const handleThemeSelect = useCallback((themeId: string) => {
@@ -134,58 +82,10 @@ export const ThemeSelectModal: React.FC<ThemeSelectModalProps> = ({
 
                 {/* Theme List */}
                 <div className="flex-1 min-h-0 overflow-y-auto p-4">
-                    {/* Dark Themes Section */}
-                    <div className="mb-4">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-semibold px-1">
-                            {t('settings.terminal.themeModal.darkThemes')}
-                        </div>
-                        <div className="space-y-1">
-                            {darkThemes.map(theme => (
-                                <ThemeItem
-                                    key={theme.id}
-                                    theme={theme}
-                                    isSelected={selectedThemeId === theme.id}
-                                    onSelect={handleThemeSelect}
-                                />
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Light Themes Section */}
-                    <div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-semibold px-1">
-                            {t('settings.terminal.themeModal.lightThemes')}
-                        </div>
-                        <div className="space-y-1">
-                            {lightThemes.map(theme => (
-                                <ThemeItem
-                                    key={theme.id}
-                                    theme={theme}
-                                    isSelected={selectedThemeId === theme.id}
-                                    onSelect={handleThemeSelect}
-                                />
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Custom Themes Section */}
-                    {customThemes.length > 0 && (
-                        <div className="mt-4">
-                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-semibold px-1">
-                                {t('terminal.customTheme.section')}
-                            </div>
-                            <div className="space-y-1">
-                                {customThemes.map(theme => (
-                                    <ThemeItem
-                                        key={theme.id}
-                                        theme={theme}
-                                        isSelected={selectedThemeId === theme.id}
-                                        onSelect={handleThemeSelect}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    <ThemeList
+                        selectedThemeId={selectedThemeId}
+                        onSelect={handleThemeSelect}
+                    />
                 </div>
 
                 {/* Footer */}
