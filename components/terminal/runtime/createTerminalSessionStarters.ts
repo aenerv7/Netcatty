@@ -172,7 +172,7 @@ const attachSessionToTerminal = (
   term: XTerm,
   id: string,
   opts?: {
-    onExitMessage?: (evt: { exitCode?: number; signal?: number }) => string;
+    onExitMessage?: (evt: { exitCode?: number; signal?: number; error?: string; reason?: string }) => string;
     onConnected?: () => void;
     // For serial: convert lone LF to CRLF to avoid "staircase effect"
     convertLfToCrlf?: boolean;
@@ -209,6 +209,9 @@ const attachSessionToTerminal = (
 
   ctx.disposeExitRef.current = ctx.terminalBackend.onSessionExit(id, (evt) => {
     ctx.updateStatus("disconnected");
+    if (evt.error) {
+      ctx.setError(evt.error);
+    }
     term.writeln(opts?.onExitMessage?.(evt) ?? "\r\n[session closed]");
 
     if (ctx.onTerminalDataCapture && ctx.serializeAddonRef.current) {
