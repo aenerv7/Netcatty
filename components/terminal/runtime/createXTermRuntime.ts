@@ -1,7 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as XTerm } from "@xterm/xterm";
@@ -188,6 +188,8 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     ...(windowsPty ? { windowsPty } : {}),
     // Override ignoreBracketedPasteMode if user explicitly disables bracketed paste
     ignoreBracketedPasteMode: settings?.disableBracketedPaste ?? performanceConfig.options.ignoreBracketedPasteMode,
+    // Rescale glyphs that would visually overlap into the next cell (CJK compliance)
+    rescaleOverlappingGlyphs: true,
     fontSize: effectiveFontSize,
     fontFamily,
     fontWeight: fontWeight as
@@ -318,8 +320,8 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
   }
 
   scopedWindow.__xtermWebGLLoaded = webglLoaded;
-  scopedWindow.__xtermRendererPreference = performanceConfig.preferCanvasRenderer
-    ? "canvas"
+  scopedWindow.__xtermRendererPreference = performanceConfig.preferDOMRenderer
+    ? "dom"
     : "webgl";
 
   const webLinksAddon = new WebLinksAddon((event, uri) => {
@@ -354,9 +356,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
   });
   term.loadAddon(webLinksAddon);
 
-  // Enable Unicode 11 for better Nerd Fonts / Powerline / CJK character width handling
-  term.loadAddon(new Unicode11Addon());
-  term.unicode.activeVersion = '11';
+  // Enable Unicode graphemes for accurate CJK / emoji / Nerd Font character width handling
+  const unicodeGraphemes = new UnicodeGraphemesAddon();
+  term.loadAddon(unicodeGraphemes);
+  term.unicode.activeVersion = 'graphemes';
 
   logRenderer();
 

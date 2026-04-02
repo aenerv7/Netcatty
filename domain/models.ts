@@ -496,7 +496,7 @@ export interface TerminalSettings {
   osc52Clipboard: 'off' | 'write-only' | 'read-write' | 'prompt'; // OSC-52 clipboard access: off, write-only (default), read-write, or prompt on read
 
   // Rendering
-  rendererType: 'auto' | 'webgl' | 'canvas'; // Terminal renderer: auto (detect based on hardware), webgl, or canvas
+  rendererType: 'auto' | 'webgl' | 'dom'; // Terminal renderer: auto (detect based on hardware), webgl, or dom
 
   // Autocomplete
   autocompleteEnabled: boolean; // Enable terminal command autocomplete
@@ -572,8 +572,14 @@ export const normalizeTerminalSettings = (
     ...(settings ?? {}),
   };
 
+  // Migrate legacy 'canvas' renderer to 'dom' (canvas removed in xterm.js 6.0)
+  const rendererType = (mergedSettings.rendererType as string) === 'canvas'
+    ? 'dom' as const
+    : mergedSettings.rendererType;
+
   return {
     ...mergedSettings,
+    rendererType,
     autocompleteGhostText: mergedSettings.autocompletePopupMenu
       ? false
       : mergedSettings.autocompleteGhostText,

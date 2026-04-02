@@ -46,8 +46,8 @@ export const XTERM_PERFORMANCE_CONFIG = {
     // Enable WebGL by default for GPU acceleration
     enabled: true,
 
-    // User can choose Canvas renderer on any platform
-    preferCanvas: false,
+    // User can choose DOM renderer on any platform (canvas removed in xterm 6.0)
+    preferDOM: false,
 
     // Handle WebGL context loss gracefully
     enableContextLoss: true,
@@ -107,7 +107,7 @@ export const XTERM_PERFORMANCE_CONFIG = {
 
 export type XTermPlatform = "darwin" | "win32" | "linux";
 
-type RendererType = "canvas" | "dom";
+type RendererType = "dom";
 type LogLevel = "off" | "error" | "warn" | "info" | "debug";
 
 export type ResolvedXTermPerformance = {
@@ -127,7 +127,7 @@ export type ResolvedXTermPerformance = {
     rendererType?: RendererType;
   };
   useWebGLAddon: boolean;
-  preferCanvasRenderer: boolean;
+  preferDOMRenderer: boolean;
 };
 
 const isLowMemoryDevice = (deviceMemoryGb?: number) =>
@@ -141,11 +141,11 @@ export function getXTermConfig(platform: XTermPlatform = "darwin") {
   return resolveXTermPerformanceConfig({ platform }).options;
 }
 
-export type RendererPreference = "auto" | "webgl" | "canvas";
+export type RendererPreference = "auto" | "webgl" | "dom";
 
 /**
  * Resolve a platform and hardware aware performance profile.
- * When rendererType is 'auto', uses Canvas on low-memory devices to avoid WebGL overhead.
+ * When rendererType is 'auto', uses DOM on low-memory devices to avoid WebGL overhead.
  */
 export function resolveXTermPerformanceConfig({
   platform = "darwin",
@@ -160,15 +160,15 @@ export function resolveXTermPerformanceConfig({
 
   const lowMem = isLowMemoryDevice(deviceMemoryGb);
 
-  // Determine if we should use Canvas renderer
-  let resolvedPreferCanvas: boolean;
-  if (rendererType === "canvas") {
-    resolvedPreferCanvas = true;
+  // Determine if we should use DOM renderer (canvas removed in xterm 6.0)
+  let resolvedPreferDOM: boolean;
+  if (rendererType === "dom") {
+    resolvedPreferDOM = true;
   } else if (rendererType === "webgl") {
-    resolvedPreferCanvas = false;
+    resolvedPreferDOM = false;
   } else {
-    // Auto mode: use Canvas on low-memory devices
-    resolvedPreferCanvas = baseConfig.webgl.preferCanvas || lowMem;
+    // Auto mode: use DOM on low-memory devices
+    resolvedPreferDOM = baseConfig.webgl.preferDOM || lowMem;
   }
 
   const scrollbackProfile = lowMem
@@ -177,7 +177,7 @@ export function resolveXTermPerformanceConfig({
       ? "macOS"
       : "default";
 
-  const resolvedRendererType = resolvedPreferCanvas ? ("canvas" as const) : undefined;
+  const resolvedRendererType = resolvedPreferDOM ? ("dom" as const) : undefined;
 
   const baseOptions = {
     scrollback: baseConfig.scrollback[scrollbackProfile],
@@ -200,7 +200,7 @@ export function resolveXTermPerformanceConfig({
 
   return {
     options,
-    useWebGLAddon: baseConfig.webgl.enabled && !resolvedPreferCanvas,
-    preferCanvasRenderer: resolvedPreferCanvas,
+    useWebGLAddon: baseConfig.webgl.enabled && !resolvedPreferDOM,
+    preferDOMRenderer: resolvedPreferDOM,
   };
 }
