@@ -1,4 +1,4 @@
-import { Bell, Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, Moon, MoreHorizontal, Plus, Server, Sparkles, Square, Sun, TerminalSquare, Usb, X } from 'lucide-react';
+import { Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, MoreHorizontal, Plus, Server, Sparkles, Square, TerminalSquare, Usb, X } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activeTabStore, useActiveTabId } from '../application/state/activeTabStore';
 import { buildWorkspaceActivityMap } from '../application/state/sessionActivity';
@@ -6,6 +6,8 @@ import { useSessionActivityMap } from '../application/state/sessionActivityStore
 import { LogView } from '../application/state/useSessionState';
 import { useWindowControls } from '../application/state/useWindowControls';
 import { useI18n } from '../application/i18n/I18nProvider';
+import { STORAGE_KEY_AI_PROVIDERS } from '../infrastructure/config/storageKeys';
+import { localStorageAdapter } from '../infrastructure/persistence/localStorageAdapter';
 import { getEffectiveHostDistro } from '../domain/host';
 import { cn } from '../lib/utils';
 import { Host, TerminalSession, Workspace } from '../types';
@@ -259,6 +261,13 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   const isSftpActive = activeTabId === 'sftp';
   const isScpActive = activeTabId === 'scp';
   const onSelectTab = activeTabStore.setActiveTabId;
+
+  // Only show AI button when not on vault and at least one AI provider is configured
+  const hasAIProvider = useMemo(() => {
+    const providers = localStorageAdapter.read<unknown[]>(STORAGE_KEY_AI_PROVIDERS);
+    return Array.isArray(providers) && providers.length > 0;
+  }, []);
+  const showAIButton = !isVaultActive && hasAIProvider;
 
   // Tab reorder drag state
   const [dropIndicator, setDropIndicator] = useState<{ tabId: string; position: 'before' | 'after' } | null>(null);
@@ -950,30 +959,18 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
 
         {/* Fixed right controls */}
         <div className="flex-shrink-0 flex items-center gap-2 app-drag self-center" style={dragRegionStyle}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 app-no-drag"
-            style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
-            title="AI Assistant"
-            onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-ai-panel'))}
-          >
-            <Sparkles size={16} />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6 app-no-drag" style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}>
-            <Bell size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 app-no-drag"
-            style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
-            onClick={onToggleTheme}
-            disabled={isImmersiveActive}
-            title="Toggle theme"
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </Button>
+          {showAIButton && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 app-no-drag"
+              style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
+              title="AI Assistant"
+              onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-ai-panel'))}
+            >
+              <Sparkles size={16} />
+            </Button>
+          )}
           <SyncStatusButton onOpenSettings={onOpenSettings} onSyncNow={onSyncNow} />
         </div>
         {/* Custom window controls for Windows/Linux */}
