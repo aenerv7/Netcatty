@@ -697,7 +697,7 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
     };
 
     const disconnectOtherProviders = async (current: CloudProvider) => {
-        const providers: CloudProvider[] = ['github', 'google', 'onedrive', 'webdav', 's3'];
+        const providers: CloudProvider[] = ['webdav', 's3'];
         for (const provider of providers) {
             if (provider === current) continue;
             if (isProviderReadyForSync(sync.providers[provider])) {
@@ -1077,55 +1077,8 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
                 </TabsList>
 
                 <TabsContent value="providers" className="space-y-3">
-                    <ProviderCard
-                        provider="github"
-                        name="GitHub Gist"
-                        icon={<Github size={24} />}
-                        isConnected={isProviderReadyForSync(sync.providers.github)}
-                        isSyncing={sync.providers.github.status === 'syncing'}
-                        isConnecting={sync.providers.github.status === 'connecting'}
-                        account={sync.providers.github.account}
-                        lastSync={sync.providers.github.lastSync}
-                        error={sync.providers.github.error}
-                        disabled={sync.hasAnyConnectedProvider && !isProviderReadyForSync(sync.providers.github)}
-                        onConnect={handleConnectGitHub}
-                        onDisconnect={() => sync.disconnectProvider('github')}
-                        onSync={() => handleSync('github')}
-                    />
-
-                    <ProviderCard
-                        provider="google"
-                        name="Google Drive"
-                        icon={<GoogleDriveIcon className="w-6 h-6" />}
-                        isConnected={isProviderReadyForSync(sync.providers.google)}
-                        isSyncing={sync.providers.google.status === 'syncing'}
-                        isConnecting={sync.providers.google.status === 'connecting'}
-                        account={sync.providers.google.account}
-                        lastSync={sync.providers.google.lastSync}
-                        error={sync.providers.google.error}
-                        disabled={sync.hasAnyConnectedProvider && !isProviderReadyForSync(sync.providers.google)}
-                        onConnect={handleConnectGoogle}
-                        onCancelConnect={sync.cancelOAuthConnect}
-                        onDisconnect={() => sync.disconnectProvider('google')}
-                        onSync={() => handleSync('google')}
-                    />
-
-                    <ProviderCard
-                        provider="onedrive"
-                        name="Microsoft OneDrive"
-                        icon={<OneDriveIcon className="w-6 h-6" />}
-                        isConnected={isProviderReadyForSync(sync.providers.onedrive)}
-                        isSyncing={sync.providers.onedrive.status === 'syncing'}
-                        isConnecting={sync.providers.onedrive.status === 'connecting'}
-                        account={sync.providers.onedrive.account}
-                        lastSync={sync.providers.onedrive.lastSync}
-                        error={sync.providers.onedrive.error}
-                        disabled={sync.hasAnyConnectedProvider && !isProviderReadyForSync(sync.providers.onedrive)}
-                        onConnect={handleConnectOneDrive}
-                        onCancelConnect={sync.cancelOAuthConnect}
-                        onDisconnect={() => sync.disconnectProvider('onedrive')}
-                        onSync={() => handleSync('onedrive')}
-                    />
+                    {/* GitHub Gist, Google Drive, and OneDrive providers are hidden.
+                        Only WebDAV and S3 are available in this fork. */}
 
                     <ProviderCard
                         provider="webdav"

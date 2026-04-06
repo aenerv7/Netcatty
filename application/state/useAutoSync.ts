@@ -42,7 +42,7 @@ interface AutoSyncConfig {
 
 // Get manager singleton for direct state access
 const manager = getCloudSyncManager();
-const AUTO_SYNC_PROVIDER_ORDER: CloudProvider[] = ['github', 'google', 'onedrive', 'webdav', 's3'];
+const AUTO_SYNC_PROVIDER_ORDER: CloudProvider[] = ['webdav', 's3'];
 
 type SyncTrigger = 'auto' | 'manual';
 
