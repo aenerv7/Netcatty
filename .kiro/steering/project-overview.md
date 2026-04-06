@@ -1,5 +1,6 @@
 ---
 inclusion: auto
+description: 项目定位、技术栈、三层架构、关键入口、持久化、Fork 差异
 ---
 
 # Netcatty 项目概览

@@ -1,5 +1,6 @@
 ---
 inclusion: auto
+description: 四层架构文件清单、Electron 主进程 bridge、应用生命周期
 ---
 
 # 架构与分层指南
