@@ -93,16 +93,17 @@ SCP 复用 SFTP 的完整 UI，通过 `scpMode` prop 切换后端协议。适用
 
 ## 云同步
 
+本 fork 仅保留 WebDAV 和 S3，GitHub Gist / Google Drive / OneDrive 在 UI 层隐藏（代码保留）。
+
 | 功能 | 实现位置 |
 |------|----------|
 | 同步编排 | `infrastructure/services/CloudSyncManager.ts` |
-| GitHub Gist | `infrastructure/services/adapters/GitHubAdapter.ts` |
-| Google Drive | `infrastructure/services/adapters/GoogleDriveAdapter.ts` |
-| OneDrive | `infrastructure/services/adapters/OneDriveAdapter.ts` |
-| WebDAV | `infrastructure/services/adapters/WebDAVAdapter.ts` |
-| S3 | `infrastructure/services/adapters/S3Adapter.ts` |
+| WebDAV | `infrastructure/services/adapters/WebDAVAdapter.ts` + `electron/bridges/cloudSyncBridge.cjs`（同步文件路径 `/Netcatty/netcatty-vault.json`） |
+| S3 | `infrastructure/services/adapters/S3Adapter.ts` + `electron/bridges/cloudSyncBridge.cjs` |
 | 加密 | `infrastructure/services/EncryptionService.ts` |
 | 负载合并 | `domain/syncMerge.ts` |
+| 自动同步顺序 | `useAutoSync.ts` (`AUTO_SYNC_PROVIDER_ORDER: ['webdav', 's3']`) |
+| UI 隐藏 | `CloudSyncSettings.tsx` (GitHub/Google/OneDrive 的 ProviderCard 已注释) |
 
 ## 设置
 
@@ -118,3 +119,12 @@ SCP 复用 SFTP 的完整 UI，通过 `scpMode` prop 切换后端协议。适用
 ## UI 组件库 (`components/ui/`)
 
 aside-panel, badge, button, card, collapsible, combobox, context-menu, dialog, dropdown, hover-card, input, input-group, label, popover, scroll-area, select, sort-dropdown, spinner, switch, tabs, tag-filter-dropdown, textarea, toast, tooltip
+
+## 右上角工具栏 (`TopTabs.tsx`)
+
+| 按钮 | 可见条件 | 实现 |
+|------|----------|------|
+| AI Assistant (Sparkles) | 非 Vaults 页 且 `STORAGE_KEY_AI_PROVIDERS` 中有配置 | `window.dispatchEvent('netcatty:toggle-ai-panel')` |
+| Cloud Sync | 始终显示 | `SyncStatusButton` 组件 |
+| 通知铃铛 | 已移除 | — |
+| 亮暗色切换 | 已移除（仅在设置面板可用） | — |

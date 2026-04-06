@@ -73,10 +73,12 @@ inclusion: auto
 退出流程: `app.quit()` → `before-quit` → 关闭所有窗口 → `will-quit` → 进程退出
 
 关键注意事项:
-- `before-quit` 中必须销毁 tray panel 窗口 (`globalShortcutBridge.cleanup()`)，否则该窗口会阻止 `window-all-closed` 触发，导致退出死锁
-- `will-quit` 中同步清理 (terminal/port-forwarding/AI/SCP) 必须在异步清理之前完成
+- `before-quit` 中只设置 `isQuitting` 标志，不做 cleanup（避免在 IPC handler 执行期间销毁发起 IPC 的窗口）
+- 托盘退出使用 `setImmediate(() => { cleanup(); app.quit() })`，让 IPC response 先发出
+- `will-quit` 中同步清理 (terminal/port-forwarding/AI/SCP/globalShortcut) 必须在异步清理之前完成
 - 异步清理 (session log streams) 使用 `event.preventDefault()` + `app.exit(0)` 模式，带 3 秒硬超时兜底
 - 主窗口 close handler 在 `isQuitting` 为 true 时必须同步放行，禁止 `event.preventDefault()`
+- `windowStateCloseRequested` 在无 `pendingWindowStateWrite` 时自动重置，防止失败的退出尝试导致后续关闭被忽略
 - Settings 窗口在 `!isQuitting` 时 hide 而非 close (复用)，`isQuitting` 时正常关闭
 
 ## 构建与打包
@@ -86,10 +88,12 @@ npm run dev          # Vite + Electron 并行开发
 npm run build        # Vite 构建
 npm run pack:win     # Windows NSIS 安装包
 npm run pack:mac     # macOS DMG + ZIP
-npm run pack:linux   # Linux AppImage/DEB/RPM
 npm run lint         # ESLint 检查
 npm run lint:fix     # ESLint 自动修复
 ```
+
+本 fork 仅构建 Windows 和 macOS，Linux 构建已从 CI 移除。
+GitHub Actions workflow: `.github/workflows/release.yml`（tag push 或手动触发）。
 
 ## 路径别名
 

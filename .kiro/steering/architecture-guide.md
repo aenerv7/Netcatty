@@ -89,11 +89,9 @@ React Hooks，拥有状态和持久化边界。
 - `compressUploadService.ts` — SFTP 压缩上传
 
 ### 云同步适配器 (`services/adapters/`)
-- `GitHubAdapter.ts` — GitHub Gist
-- `GoogleDriveAdapter.ts` — Google Drive
-- `OneDriveAdapter.ts` — OneDrive
-- `WebDAVAdapter.ts` — WebDAV
+- `WebDAVAdapter.ts` — WebDAV（同步文件存放在 `/Netcatty/` 子目录，兼容坚果云）
 - `S3Adapter.ts` — AWS S3
+- `GitHubAdapter.ts` / `GoogleDriveAdapter.ts` / `OneDriveAdapter.ts` — 代码保留但 UI 层已隐藏，不可用
 
 ### AI (`ai/`)
 - `types.ts` — AI 类型定义 (ProviderConfig, ChatMessage, ToolCall, AISession 等)
@@ -139,6 +137,8 @@ React Hooks，拥有状态和持久化边界。
 - `sessionLogStreamManager.cjs` — 实时会话日志流写入
 
 ### 应用生命周期 (`electron/main.cjs`)
-- `before-quit`: 设置 `isQuitting` 标志 + 销毁 tray panel 窗口 (防止退出死锁)
-- `will-quit`: 同步清理 (terminal/port-forwarding/AI/SCP) + 异步清理 (session log streams，带 3 秒超时兜底)
+- `before-quit`: 设置 `isQuitting` 标志（不在此处 cleanup tray，由调用方负责）
+- `will-quit`: 同步清理 (terminal/port-forwarding/AI/SCP/globalShortcut) + 异步清理 (session log streams，带 3 秒超时兜底)
 - `window-all-closed`: 非 macOS 触发 `app.quit()`
+- 托盘退出: `setImmediate(() => { cleanup(); app.quit() })` — 先让 IPC response 发出，再销毁 tray panel + 调用 quit
+- `windowStateCloseRequested` 在无 pending write 时自动重置，防止失败的退出尝试导致后续关闭被忽略

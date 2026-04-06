@@ -146,3 +146,11 @@ const containerStyle: React.CSSProperties = isVisible
 
 ### 强调色
 - 模式: `theme` (跟随 UI 主题) 或 `custom` (自定义 HSL)
+
+## 工具栏按钮可见性
+
+右上角工具栏按钮根据上下文条件显示/隐藏：
+- AI 按钮: 从 `localStorageAdapter` 读取 `STORAGE_KEY_AI_PROVIDERS`，有配置且非 Vaults 页时显示
+- 亮暗色切换: 已移除（沉浸模式下无效，统一在设置面板操作）
+- 通知铃铛: 已移除（无实际通知系统）
+- Cloud Sync: 始终显示

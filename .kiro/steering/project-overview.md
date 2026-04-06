@@ -5,7 +5,7 @@ inclusion: auto
 # Netcatty 项目概览
 
 ## 项目定位
-Netcatty 是一个基于 Electron + React + TypeScript 的现代 SSH 管理器和终端应用，支持 macOS / Windows / Linux 三端。核心功能包括：主机管理、终端会话、SFTP 文件管理、SCP 文件管理、密钥链、端口转发、AI 辅助、云同步。
+Netcatty 是一个基于 Electron + React + TypeScript 的现代 SSH 管理器和终端应用，支持 macOS / Windows 两端（本 fork 精简了 Linux 构建）。核心功能包括：主机管理、终端会话、SFTP 文件管理、SCP 文件管理、密钥链、端口转发、AI 辅助、云同步（仅 WebDAV 和 S3）。
 
 ## 技术栈
 - 前端: React 19 + TypeScript 5.9 + Tailwind CSS 4
@@ -42,6 +42,17 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 自定义 React Context 方案 (`application/i18n/I18nProvider.tsx`)
 - 支持 `en` / `zh-CN`，消息字典在 `application/i18n/locales/`
 - 使用 `t('key', { var })` 插值
+
+## 本 Fork 与上游的差异
+
+本项目 fork 自 [binaricat/Netcatty](https://github.com/binaricat/Netcatty)，主要改动：
+- 新增 SCP 文件管理（复用 SFTP UI，后端走 SSH exec）
+- 云同步仅保留 WebDAV 和 S3（UI 层隐藏了 GitHub Gist / Google Drive / OneDrive）
+- WebDAV 同步文件存放在 `/Netcatty/` 子目录（兼容坚果云等不允许根目录操作的服务）
+- 修复了从托盘退出时 app 挂起的 bug
+- 右上角工具栏精简：移除了通知铃铛和亮暗色切换按钮，AI 按钮仅在有配置时显示
+- 构建仅保留 Windows (NSIS) 和 macOS (DMG)，移除 Linux
+- 所有 repo URL 指向 `aenerv7/Netcatty`（更新检查、electron-builder publish、设置页链接等）
 
 ## Electron IPC
 - 渲染进程通过 `window.netcatty` 桥接主进程
