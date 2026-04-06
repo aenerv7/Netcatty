@@ -2,41 +2,59 @@
   <img src="public/icon.png" alt="Netcatty" width="128" height="128">
 </p>
 
-<h1 align="center">Netcatty</h1>
+<h1 align="center">Netcatty (Fork)</h1>
 
 <p align="center">
-  <strong>🔥 AI-Powered SSH Client, SFTP Browser & Terminal Manager 🚀</strong><br/>
-  <a href="https://netcatty.app"><strong>netcatty.app</strong></a>
+  <strong>🔥 AI-Powered SSH Client, SFTP/SCP Browser & Terminal Manager 🚀</strong><br/>
+  Forked from <a href="https://github.com/binaricat/Netcatty"><strong>binaricat/Netcatty</strong></a>
 </p>
 
-<p align="center">
-  A beautiful, feature-rich SSH workspace built with Electron, React, and xterm.js.<br/>
-  🔥 Built-in AI Agent · Split terminals · Vault views · SFTP workflows · Custom themes — all in one.
-</p>
+> **This is a fork of [binaricat/Netcatty](https://github.com/binaricat/Netcatty).**
+> The upstream project is the original work — please star and support the original author at [ko-fi.com/binaricat](https://ko-fi.com/binaricat).
+>
+> This fork focuses on:
+> - **SCP file management** — for devices that don't support the SFTP subsystem (SSH exec-based directory browsing + cat pipe transfers)
+> - **Quality of Life fixes** — app quit hang fix, Electron lifecycle hardening, tray panel cleanup
+> - **CI/CD** — GitHub Actions release workflow for Windows + macOS
 
 <p align="center">
-  <a href="https://github.com/binaricat/Netcatty/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/binaricat/Netcatty?style=for-the-badge&logo=github&label=Release"></a>
+  <a href="https://github.com/aenerv7/Netcatty/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/aenerv7/Netcatty?style=for-the-badge&logo=github&label=Release"></a>
   &nbsp;
-  <a href="#"><img alt="Platform" src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=for-the-badge&logo=electron"></a>
+  <a href="https://github.com/binaricat/Netcatty"><img alt="Upstream" src="https://img.shields.io/badge/Upstream-binaricat%2FNetcatty-blue?style=for-the-badge&logo=github"></a>
   &nbsp;
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-green?style=for-the-badge"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/binaricat/Netcatty/releases/latest">
-    <img src="https://img.shields.io/github/v/release/binaricat/Netcatty?style=for-the-badge&logo=github&label=Download%20Latest&color=success" alt="Download Latest Release">
+  <a href="https://github.com/aenerv7/Netcatty/releases/latest">
+    <img src="https://img.shields.io/github/v/release/aenerv7/Netcatty?style=for-the-badge&logo=github&label=Download%20Latest&color=success" alt="Download Latest Release">
   </a>
 </p>
 
-<p align="center">
-  <a href="https://ko-fi.com/binaricat">
-    <img src="https://cdn.ko-fi.com/cdn/kofi3.png?v=2" width="150" alt="Support on Ko-fi">
-  </a>
-</p>
+---
 
-<p align="center">
-  <a href="./README.md">English</a> · <a href="./README.zh-CN.md">简体中文</a> · <a href="./README.ja-JP.md">日本語</a>
-</p>
+## What's different in this fork
+
+### SCP File Manager
+For devices that don't support the SFTP subsystem (older routers, embedded systems, hardened servers), this fork adds a dedicated SCP tab that provides the same dual-pane file browser UI as SFTP, but uses SSH exec (`ls -la`) for directory listing and `cat` pipe for file transfers.
+
+- Independent SCP tab in the top navigation bar (alongside Vaults and SFTP)
+- 1:1 identical UI to SFTP — same file list, breadcrumb, toolbar, transfer queue
+- SCP mode integrated into the SFTP backend via `useScp` flag — transparent to all UI components
+- Module-level store isolation (`ActiveTabStoreProvider`) so SFTP and SCP tabs don't interfere
+
+### Quality of Life Fixes
+- **App quit hang fix** — tray panel window now destroyed in `before-quit` to prevent exit deadlock
+- **Window state save during quit** — synchronous save path when `isQuitting` is true, no more `event.preventDefault()` blocking
+- **Async cleanup timeout** — session log stream cleanup has a 3-second hard timeout to guarantee exit
+
+### CI/CD
+- GitHub Actions release workflow for Windows (NSIS x64+arm64) and macOS (DMG x64+arm64)
+- Tag-triggered and manual dispatch support
+
+---
+
+*Everything below is from the upstream README.*
 
 ---
 
