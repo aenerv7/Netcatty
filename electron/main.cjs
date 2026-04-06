@@ -1097,11 +1097,6 @@ if (!gotLock) {
 
   app.on("before-quit", () => {
     getWindowManager().setIsQuitting(true);
-    // Destroy the tray panel window early so it doesn't block
-    // window-all-closed → will-quit from firing.
-    try {
-      getGlobalShortcutBridge().cleanup();
-    } catch {}
   });
 
   // Cleanup all PTY sessions and port forwarding tunnels before quitting

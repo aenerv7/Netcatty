@@ -16,10 +16,12 @@ type WebDAVClient = ReturnType<typeof createClient>;
 
 const normalizeEndpoint = (endpoint: string): string => {
   const trimmed = endpoint.trim();
-  if (!/^https?:\/\//i.test(trimmed)) {
-    return `https://${trimmed}`;
+  let url = trimmed;
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
   }
-  return trimmed;
+  // Remove trailing slash to avoid double-slash when joining paths
+  return url.replace(/\/+$/, "");
 };
 
 const ensureLeadingSlash = (value: string): string =>
@@ -71,6 +73,7 @@ export class WebDAVAdapter {
         return this.resource;
       }
       const client = this.getClient();
+      await this.ensureSyncDir(client);
       const path = this.getSyncPath();
       await client.exists(path);
       this.resource = path;
@@ -90,6 +93,7 @@ export class WebDAVAdapter {
         return this.resource;
       }
       const client = this.getClient();
+      await this.ensureSyncDir(client);
       const path = this.getSyncPath();
       await client.putFileContents(path, JSON.stringify(syncedFile), { overwrite: true });
       this.resource = path;
@@ -234,7 +238,26 @@ export class WebDAVAdapter {
   }
 
   private getSyncPath(): string {
-    return ensureLeadingSlash(SYNC_CONSTANTS.SYNC_FILE_NAME);
+    return ensureLeadingSlash(`Netcatty/${SYNC_CONSTANTS.SYNC_FILE_NAME}`);
+  }
+
+  private getSyncDir(): string {
+    return ensureLeadingSlash('Netcatty');
+  }
+
+  private async ensureSyncDir(client: WebDAVClient): Promise<void> {
+    const dir = this.getSyncDir();
+    try {
+      const exists = await client.exists(dir);
+      if (!exists) {
+        await client.createDirectory(dir);
+      }
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status
+        ?? (err as { response?: { status?: number } })?.response?.status;
+      if (status === 405) return; // directory already exists
+      throw err;
+    }
   }
 
   private buildAccountInfo(config: WebDAVConfig | null): ProviderAccount | null {

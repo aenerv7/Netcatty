@@ -963,7 +963,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
           <Button variant="ghost" size="icon" className="h-6 w-6 app-no-drag" style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}>
             <Bell size={16} />
           </Button>
-          <SyncStatusButton onOpenSettings={onOpenSettings} onSyncNow={onSyncNow} />
           <Button
             variant="ghost"
             size="icon"
@@ -975,6 +974,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
           >
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </Button>
+          <SyncStatusButton onOpenSettings={onOpenSettings} onSyncNow={onSyncNow} />
         </div>
         {/* Custom window controls for Windows/Linux */}
         {!isMacClient && <div className="self-stretch flex items-stretch"><WindowControls /></div>}

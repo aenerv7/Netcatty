@@ -525,6 +525,7 @@ function buildTrayMenuTemplate() {
     label: "Quit",
     click: () => {
       closeToTray = false;
+      cleanup();
       app.quit();
     },
   });
@@ -694,7 +695,12 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:trayPanel:quitApp", async () => {
     const { app } = electronModule;
     closeToTray = false;
-    app.quit();
+    // Destroy tray panel window first so it doesn't block window-all-closed.
+    // Use setImmediate to let the IPC response flush before destroying.
+    setImmediate(() => {
+      cleanup();
+      app.quit();
+    });
     return { success: true };
   });
 

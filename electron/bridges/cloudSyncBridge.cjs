@@ -9,14 +9,17 @@ const {
 } = require("@aws-sdk/client-s3");
 
 const SYNC_FILE_NAME = "netcatty-vault.json";
+const SYNC_DIR_NAME = "Netcatty";
 
 const normalizeEndpoint = (endpoint) => {
   const trimmed = String(endpoint || "").trim();
   if (!trimmed) return trimmed;
-  if (!/^https?:\/\//i.test(trimmed)) {
-    return `https://${trimmed}`;
+  let url = trimmed;
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
   }
-  return trimmed;
+  // Remove trailing slash to avoid double-slash when joining paths
+  return url.replace(/\/+$/, "");
 };
 
 const ensureLeadingSlash = (value) => (value.startsWith("/") ? value : `/${value}`);
@@ -81,7 +84,26 @@ const buildWebdavClient = (config) => {
   });
 };
 
-const getWebdavPath = () => ensureLeadingSlash(SYNC_FILE_NAME);
+const getWebdavPath = () => ensureLeadingSlash(`${SYNC_DIR_NAME}/${SYNC_FILE_NAME}`);
+const getWebdavDir = () => ensureLeadingSlash(SYNC_DIR_NAME);
+
+/**
+ * Ensure the sync directory exists on the WebDAV server.
+ * Silently succeeds if the directory already exists.
+ */
+const ensureWebdavDir = async (client) => {
+  const dir = getWebdavDir();
+  try {
+    const exists = await client.exists(dir);
+    if (!exists) {
+      await client.createDirectory(dir);
+    }
+  } catch (err) {
+    // 405 Method Not Allowed = directory already exists on some servers
+    if (err?.status === 405 || err?.response?.status === 405) return;
+    throw err;
+  }
+};
 
 const buildS3Client = (config) =>
   new S3Client({
@@ -136,6 +158,10 @@ const wrapS3Error = (operation, error, config) => {
 const handleWebdavInitialize = async (config) => {
   try {
     const client = buildWebdavClient(config);
+    // Ensure the sync directory exists (e.g. /Netcatty/)
+    // This is required for providers like Jianguoyun that don't allow
+    // files at the WebDAV root.
+    await ensureWebdavDir(client);
     const path = getWebdavPath();
     await client.exists(path);
     return { resourceId: path };
@@ -147,6 +173,7 @@ const handleWebdavInitialize = async (config) => {
 const handleWebdavUpload = async (config, syncedFile) => {
   try {
     const client = buildWebdavClient(config);
+    await ensureWebdavDir(client);
     const path = getWebdavPath();
     await client.putFileContents(path, JSON.stringify(syncedFile), { overwrite: true });
     return { resourceId: path };

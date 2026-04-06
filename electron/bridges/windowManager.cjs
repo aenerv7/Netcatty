@@ -790,9 +790,15 @@ async function createWindow(electronModule, options) {
       const state = getWindowBoundsState(win, lastNormalBounds);
       if (state) saveWindowStateSync(state);
       hideSettingsWindow();
+      windowStateCloseRequested = false;
       return;
     }
 
+    // Guard against re-entrant close during pendingWindowStateWrite flow.
+    // Reset the flag if a previous quit attempt failed (window still alive).
+    if (windowStateCloseRequested && !pendingWindowStateWrite) {
+      windowStateCloseRequested = false;
+    }
     if (windowStateCloseRequested) {
       return;
     }
