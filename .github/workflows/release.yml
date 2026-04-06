@@ -62,13 +62,26 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           npm pkg set version="${VERSION}"
 
+      - name: Disable code signing and notarization
+        shell: bash
+        run: |
+          # Patch electron-builder config to disable signing/notarization
+          # when no certificates are available
+          node -e "
+            const fs = require('fs');
+            const f = 'electron-builder.config.cjs';
+            let c = fs.readFileSync(f, 'utf8');
+            c = c.replace(/hardenedRuntime:\s*true/g, 'hardenedRuntime: false');
+            c = c.replace(/notarize:\s*true/g, 'notarize: false');
+            fs.writeFileSync(f, c);
+            console.log('Patched electron-builder.config.cjs: disabled hardenedRuntime + notarize');
+          "
+
       - name: Build package
         env:
           ELECTRON_BUILDER_PUBLISH: "never"
-          # Skip code signing on all platforms (no certificates configured)
+          # Skip code signing on all platforms
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          CSC_LINK: ""
-          WIN_CSC_LINK: ""
         run: npm run ${{ matrix.pack_script }}
 
       - name: Upload artifacts
