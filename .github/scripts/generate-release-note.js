@@ -38,7 +38,7 @@ function getVersion() {
 }
 
 const version = getVersion();
-const repo = process.env.GITHUB_REPOSITORY || 'binaricat/netcatty';
+const repo = process.env.GITHUB_REPOSITORY || 'aenerv7/Netcatty';
 // For tag releases, use the tag; for workflow_dispatch, create a tag from version
 const tag = (process.env.GITHUB_REF_NAME && /^v\d+\.\d+\.\d+/.test(process.env.GITHUB_REF_NAME))
   ? process.env.GITHUB_REF_NAME

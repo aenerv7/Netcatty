@@ -1,7 +1,7 @@
 {
   "name": "netcatty",
   "description": "Netcatty is a modern SSH manager and terminal app with host grouping, SFTP, keychain, port forwarding, and a rich UI.",
-  "homepage": "https://github.com/binaricat/Netcatty",
+  "homepage": "https://github.com/aenerv7/Netcatty",
   "private": true,
   "version": "0.0.0",
   "type": "module",

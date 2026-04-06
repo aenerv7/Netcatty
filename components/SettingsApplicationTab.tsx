@@ -15,7 +15,7 @@ type AppInfo = {
   platform?: string;
 };
 
-const REPO_URL = "https://github.com/binaricat/Netcatty";
+const REPO_URL = "https://github.com/aenerv7/Netcatty";
 
 const buildIssueUrl = (appInfo: AppInfo) => {
   const title = "Bug: ";
