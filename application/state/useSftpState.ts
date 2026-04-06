@@ -194,6 +194,7 @@ export const useSftpState = (
     clearCacheForConnection,
     createEmptyPane: createPane,
     autoConnectLocalOnMount: options?.autoConnectLocalOnMount,
+    useScp: options?.useScp,
   });
 
   const {

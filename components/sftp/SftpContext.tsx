@@ -60,38 +60,53 @@ export interface SftpDragCallbacks {
 }
 
 // Store for activeTabId - allows subscription without re-rendering parent
-type ActiveTabStore = {
+type ActiveTabStoreState = {
     left: string | null;
     right: string | null;
 };
 
 type ActiveTabListener = () => void;
 
-let activeTabState: ActiveTabStore = { left: null, right: null };
-const activeTabListeners = new Set<ActiveTabListener>();
+export type ActiveTabStoreInstance = ReturnType<typeof createActiveTabStore>;
 
-export const activeTabStore = {
-    getSnapshot: () => activeTabState,
-    getLeftActiveTabId: () => activeTabState.left,
-    getRightActiveTabId: () => activeTabState.right,
-    setActiveTabId: (side: "left" | "right", tabId: string | null) => {
-        if (activeTabState[side] !== tabId) {
-            activeTabState = { ...activeTabState, [side]: tabId };
-            activeTabListeners.forEach((listener) => listener());
-        }
-    },
-    subscribe: (listener: ActiveTabListener) => {
-        activeTabListeners.add(listener);
-        return () => activeTabListeners.delete(listener);
-    },
-};
+export function createActiveTabStore() {
+    let state: ActiveTabStoreState = { left: null, right: null };
+    const listeners = new Set<ActiveTabListener>();
+    return {
+        getSnapshot: () => state,
+        getLeftActiveTabId: () => state.left,
+        getRightActiveTabId: () => state.right,
+        setActiveTabId: (side: "left" | "right", tabId: string | null) => {
+            if (state[side] !== tabId) {
+                state = { ...state, [side]: tabId };
+                listeners.forEach((listener) => listener());
+            }
+        },
+        subscribe: (listener: ActiveTabListener) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    };
+}
+
+// Default instance for SFTP (backward compat)
+export const activeTabStore = createActiveTabStore();
+
+// Context to allow SCP to use its own store instance
+const ActiveTabStoreContext = createContext<ActiveTabStoreInstance>(activeTabStore);
+export const ActiveTabStoreProvider = ActiveTabStoreContext.Provider;
+
+function useActiveTabStore() {
+    return useContext(ActiveTabStoreContext);
+}
 
 // Hook to subscribe to active tab changes for a specific side
 export const useActiveTabId = (side: "left" | "right"): string | null => {
+    const store = useActiveTabStore();
     return useSyncExternalStore(
-        activeTabStore.subscribe,
-        () => (side === "left" ? activeTabStore.getLeftActiveTabId() : activeTabStore.getRightActiveTabId()),
-        () => (side === "left" ? activeTabStore.getLeftActiveTabId() : activeTabStore.getRightActiveTabId()),
+        store.subscribe,
+        () => (side === "left" ? store.getLeftActiveTabId() : store.getRightActiveTabId()),
+        () => (side === "left" ? store.getLeftActiveTabId() : store.getRightActiveTabId()),
     );
 };
 

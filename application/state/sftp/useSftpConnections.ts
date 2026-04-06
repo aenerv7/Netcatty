@@ -31,6 +31,8 @@ interface UseSftpConnectionsParams {
   clearCacheForConnection: (connectionId: string) => void;
   createEmptyPane: (id?: string, showHiddenFiles?: boolean) => SftpPane;
   autoConnectLocalOnMount?: boolean;
+  /** When true, remote connections use SCP mode (SSH exec) instead of SFTP subsystem. */
+  useScp?: boolean;
 }
 
 interface UseSftpConnectionsResult {
@@ -64,6 +66,7 @@ export const useSftpConnections = ({
   clearCacheForConnection,
   createEmptyPane,
   autoConnectLocalOnMount = true,
+  useScp,
 }: UseSftpConnectionsParams): UseSftpConnectionsResult => {
   const getHostCredentials = useSftpHostCredentials({ hosts, keys, identities });
   const { listLocalFiles, listRemoteFiles } = useSftpDirectoryListing();
@@ -290,6 +293,7 @@ export const useSftpConnections = ({
               const keyFirstCredentials = {
                 sessionId: `sftp-${connectionId}`,
                 ...credentials,
+                useScp,
               };
               if (!credentials.sudo) {
                 keyFirstCredentials.password = undefined;
@@ -305,6 +309,7 @@ export const useSftpConnections = ({
                   publicKey: undefined,
                   keyId: undefined,
                   keySource: undefined,
+                  useScp,
                 });
               } else {
                 throw err;
@@ -314,6 +319,7 @@ export const useSftpConnections = ({
             sftpId = await openSftp({
               sessionId: `sftp-${connectionId}`,
               ...credentials,
+              useScp,
             });
           }
 

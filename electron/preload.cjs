@@ -715,6 +715,47 @@ const api = {
     uploadErrorListeners.delete(transferId);
     return ipcRenderer.invoke("netcatty:sftp:cancelUpload", { transferId });
   },
+  // SCP operations (for devices without SFTP subsystem)
+  openScp: async (options) => {
+    const result = await ipcRenderer.invoke("netcatty:scp:open", options);
+    return result.scpId;
+  },
+  closeScp: async (scpId) => {
+    return ipcRenderer.invoke("netcatty:scp:close", { scpId });
+  },
+  listScp: async (scpId, remotePath) => {
+    return ipcRenderer.invoke("netcatty:scp:list", { scpId, remotePath });
+  },
+  getScpHomeDir: async (scpId) => {
+    return ipcRenderer.invoke("netcatty:scp:homeDir", { scpId });
+  },
+  readScp: async (scpId, remotePath) => {
+    return ipcRenderer.invoke("netcatty:scp:read", { scpId, remotePath });
+  },
+  writeScp: async (scpId, remotePath, content) => {
+    return ipcRenderer.invoke("netcatty:scp:write", { scpId, remotePath, content });
+  },
+  mkdirScp: async (scpId, remotePath) => {
+    return ipcRenderer.invoke("netcatty:scp:mkdir", { scpId, remotePath });
+  },
+  deleteScp: async (scpId, remotePath) => {
+    return ipcRenderer.invoke("netcatty:scp:delete", { scpId, remotePath });
+  },
+  renameScp: async (scpId, oldPath, newPath) => {
+    return ipcRenderer.invoke("netcatty:scp:rename", { scpId, oldPath, newPath });
+  },
+  chmodScp: async (scpId, remotePath, mode) => {
+    return ipcRenderer.invoke("netcatty:scp:chmod", { scpId, remotePath, mode });
+  },
+  statScp: async (scpId, remotePath) => {
+    return ipcRenderer.invoke("netcatty:scp:stat", { scpId, remotePath });
+  },
+  downloadScpToTemp: async (scpId, remotePath, fileName) => {
+    return ipcRenderer.invoke("netcatty:scp:downloadToTemp", { scpId, remotePath, fileName });
+  },
+  scpTransfer: async (scpId, transferId, sourcePath, targetPath, direction, totalBytes) => {
+    return ipcRenderer.invoke("netcatty:scp:transfer", { scpId, transferId, sourcePath, targetPath, direction, totalBytes });
+  },
   // Local filesystem operations
   listLocalDir: async (path) => {
     return ipcRenderer.invoke("netcatty:local:list", { path });

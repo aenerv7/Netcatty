@@ -16,7 +16,7 @@
 
 import React, { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useI18n } from "../application/i18n/I18nProvider";
-import { useIsSftpActive } from "../application/state/activeTabStore";
+import { useIsSftpActive, useIsScpActive } from "../application/state/activeTabStore";
 import { useSftpState } from "../application/state/useSftpState";
 import { useSftpBackend } from "../application/state/useSftpBackend";
 import { HotkeyScheme, KeyBinding } from "../domain/models";
@@ -36,7 +36,7 @@ import { SftpOverlays } from "./sftp/SftpOverlays";
 import { Loader2 } from "lucide-react";
 
 // Import context hooks
-import { SftpContextProvider, activeTabStore } from "./sftp";
+import { SftpContextProvider, activeTabStore, createActiveTabStore, ActiveTabStoreProvider } from "./sftp";
 import { useSftpViewPaneCallbacks } from "./sftp/hooks/useSftpViewPaneCallbacks";
 import { useSftpViewTabs } from "./sftp/hooks/useSftpViewTabs";
 import { useSftpKeyboardShortcuts } from "./sftp/hooks/useSftpKeyboardShortcuts";
@@ -63,6 +63,8 @@ interface SftpViewProps {
   keyBindings: KeyBinding[];
   editorWordWrap: boolean;
   setEditorWordWrap: (enabled: boolean) => void;
+  /** When true, remote connections use SCP mode (SSH exec) instead of SFTP subsystem. */
+  scpMode?: boolean;
 }
 
 const SftpViewInner: React.FC<SftpViewProps> = ({
@@ -80,9 +82,12 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
   keyBindings,
   editorWordWrap,
   setEditorWordWrap,
+  scpMode,
 }) => {
   const { t } = useI18n();
-  const isActive = useIsSftpActive();
+  const isSftpTabActive = useIsSftpActive();
+  const isScpTabActive = useIsScpActive();
+  const isActive = scpMode ? isScpTabActive : isSftpTabActive;
   const rootRef = useRef<HTMLDivElement>(null);
   const dialogActionScopeIdRef = useRef("sftp-main-view");
 
@@ -105,7 +110,8 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
     ...fileWatchHandlers,
     useCompressedUpload: sftpUseCompressedUpload,
     defaultShowHiddenFiles: sftpShowHiddenFiles,
-  }), [fileWatchHandlers, sftpUseCompressedUpload, sftpShowHiddenFiles]);
+    useScp: scpMode,
+  }), [fileWatchHandlers, sftpUseCompressedUpload, sftpShowHiddenFiles, scpMode]);
 
   // Pre-resolve group defaults so SFTP connections inherit group config
   const effectiveHosts = useMemo(() =>
@@ -178,15 +184,23 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
     sftpRef.current.setShowHiddenFiles(side, paneId, !pane.showHiddenFiles);
   }, []);
 
-  // Sync activeTabId to external store (allows child components to subscribe without parent re-render)
-  // Using useLayoutEffect to sync before paint
+  // Each SftpView instance needs its own activeTabStore so that the SFTP and
+  // SCP tabs don't overwrite each other's left/right pane tab IDs.
+  // SFTP uses the default singleton; SCP creates a private instance.
+  const scpActiveTabStore = useMemo(
+    () => (scpMode ? createActiveTabStore() : null),
+    [scpMode],
+  );
+  const effectiveStore = scpActiveTabStore ?? activeTabStore;
+
+  // Sync activeTabId to the effective store
   useLayoutEffect(() => {
-    activeTabStore.setActiveTabId("left", sftp.leftTabs.activeTabId);
-  }, [sftp.leftTabs.activeTabId]);
+    effectiveStore.setActiveTabId("left", sftp.leftTabs.activeTabId);
+  }, [sftp.leftTabs.activeTabId, effectiveStore]);
 
   useLayoutEffect(() => {
-    activeTabStore.setActiveTabId("right", sftp.rightTabs.activeTabId);
-  }, [sftp.rightTabs.activeTabId]);
+    effectiveStore.setActiveTabId("right", sftp.rightTabs.activeTabId);
+  }, [sftp.rightTabs.activeTabId, effectiveStore]);
 
   // 渲染追踪 - 不追踪 activeTabId（现在通过 store 订阅）
   useRenderTracker("SftpViewInner", {
@@ -302,7 +316,7 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
     handlePaneFocus("right", tabId);
   }, [handlePaneFocus, handleSelectTabRight]);
 
-  return (
+  const renderTree = (
     <SftpContextProvider
       hosts={hosts}
       updateHosts={updateHosts}
@@ -480,6 +494,17 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
       </div>
     </SftpContextProvider>
   );
+
+  // Wrap SCP instance with its own ActiveTabStoreProvider to isolate
+  // left/right pane tab IDs from the SFTP instance's store.
+  if (scpActiveTabStore) {
+    return (
+      <ActiveTabStoreProvider value={scpActiveTabStore}>
+        {renderTree}
+      </ActiveTabStoreProvider>
+    );
+  }
+  return renderTree;
 };
 
 const sftpViewAreEqual = (prev: SftpViewProps, next: SftpViewProps): boolean =>
@@ -495,7 +520,8 @@ const sftpViewAreEqual = (prev: SftpViewProps, next: SftpViewProps): boolean =>
   prev.hotkeyScheme === next.hotkeyScheme &&
   prev.keyBindings === next.keyBindings &&
   prev.editorWordWrap === next.editorWordWrap &&
-  prev.setEditorWordWrap === next.setEditorWordWrap;
+  prev.setEditorWordWrap === next.setEditorWordWrap &&
+  prev.scpMode === next.scpMode;
 
 export const SftpView = memo(SftpViewInner, sftpViewAreEqual);
 SftpView.displayName = "SftpView";

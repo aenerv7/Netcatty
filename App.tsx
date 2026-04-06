@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { activeTabStore, useActiveTabId, useIsSftpActive, useIsTerminalLayerVisible, useIsVaultActive } from './application/state/activeTabStore';
+import { activeTabStore, useActiveTabId, useIsScpActive, useIsSftpActive, useIsTerminalLayerVisible, useIsVaultActive } from './application/state/activeTabStore';
 import { useAutoSync } from './application/state/useAutoSync';
 import { useImmersiveMode } from './application/state/useImmersiveMode';
 import { useManagedSourceSync } from './application/state/useManagedSourceSync';
@@ -40,6 +40,7 @@ import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShe
 import { ConnectionLog, Host, HostProtocol, SerialConfig, TerminalSession, TerminalTheme } from './types';
 import { LogView as LogViewType } from './application/state/useSessionState';
 import type { SftpView as SftpViewComponent } from './components/SftpView';
+import type { ScpView as ScpViewComponent } from './components/ScpView';
 import type { TerminalLayer as TerminalLayerComponent } from './components/TerminalLayer';
 
 // Initialize fonts eagerly at app startup
@@ -112,12 +113,17 @@ const LazySftpView = lazy(() =>
   import('./components/SftpView').then((m) => ({ default: m.SftpView })),
 );
 
+const LazyScpView = lazy(() =>
+  import('./components/ScpView').then((m) => ({ default: m.ScpView })),
+);
+
 const LazyTerminalLayer = lazy(() =>
   import('./components/TerminalLayer').then((m) => ({ default: m.TerminalLayer })),
 );
 
 type SettingsState = ReturnType<typeof useSettingsState>;
 type SftpViewProps = React.ComponentProps<typeof SftpViewComponent>;
+type ScpViewProps = React.ComponentProps<typeof ScpViewComponent>;
 type TerminalLayerProps = React.ComponentProps<typeof TerminalLayerComponent>;
 
 const SftpViewMount: React.FC<SftpViewProps> = (props) => {
@@ -133,6 +139,14 @@ const SftpViewMount: React.FC<SftpViewProps> = (props) => {
   return (
     <Suspense fallback={null}>
       <LazySftpView {...props} />
+    </Suspense>
+  );
+};
+
+const ScpViewMount: React.FC<ScpViewProps> = (props) => {
+  return (
+    <Suspense fallback={null}>
+      <LazyScpView {...props} />
     </Suspense>
   );
 };
@@ -323,7 +337,7 @@ function App({ settings }: { settings: SettingsState }) {
     [customThemes],
   );
   const activeTerminalTheme = useMemo<TerminalTheme | null>(() => {
-    if (activeTabId === 'vault' || activeTabId === 'sftp') return null;
+    if (activeTabId === 'vault' || activeTabId === 'sftp' || activeTabId === 'scp') return null;
 
     const resolveTheme = (s: TerminalSession): TerminalTheme => {
       const host = hostById.get(s.hostId) ?? null;
@@ -889,8 +903,8 @@ function App({ settings }: { settings: SettingsState }) {
         // Get the number key pressed (1-9)
         const num = parseInt(e.key, 10);
         if (num >= 1 && num <= 9) {
-          // Build complete tab list: vault + sftp + sessions/workspaces
-          const allTabs = ['vault', 'sftp', ...orderedTabs];
+          // Build complete tab list: vault + sftp + scp + sessions/workspaces
+          const allTabs = ['vault', 'sftp', 'scp', ...orderedTabs];
           if (num <= allTabs.length) {
             setActiveTabId(allTabs[num - 1]);
           }
@@ -898,8 +912,8 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
       case 'nextTab': {
-        // Build complete tab list: vault + sftp + sessions/workspaces
-        const allTabs = ['vault', 'sftp', ...orderedTabs];
+        // Build complete tab list: vault + sftp + scp + sessions/workspaces
+        const allTabs = ['vault', 'sftp', 'scp', ...orderedTabs];
         const currentId = activeTabStore.getActiveTabId();
         const currentIdx = allTabs.indexOf(currentId);
         if (currentIdx !== -1 && allTabs.length > 0) {
@@ -911,8 +925,8 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
       case 'prevTab': {
-        // Build complete tab list: vault + sftp + sessions/workspaces
-        const allTabs = ['vault', 'sftp', ...orderedTabs];
+        // Build complete tab list: vault + sftp + scp + sessions/workspaces
+        const allTabs = ['vault', 'sftp', 'scp', ...orderedTabs];
         const currentId = activeTabStore.getActiveTabId();
         const currentIdx = allTabs.indexOf(currentId);
         if (currentIdx !== -1 && allTabs.length > 0) {
@@ -1451,6 +1465,23 @@ function App({ settings }: { settings: SettingsState }) {
         </VaultViewContainer>
 
         <SftpViewMount
+          hosts={hosts}
+          keys={keys}
+          identities={identities}
+          groupConfigs={groupConfigs}
+          updateHosts={updateHosts}
+          sftpDefaultViewMode={sftpDefaultViewMode}
+          sftpDoubleClickBehavior={sftpDoubleClickBehavior}
+          sftpAutoSync={sftpAutoSync}
+          sftpShowHiddenFiles={sftpShowHiddenFiles}
+          sftpUseCompressedUpload={sftpUseCompressedUpload}
+          hotkeyScheme={hotkeyScheme}
+          keyBindings={keyBindings}
+          editorWordWrap={editorWordWrap}
+          setEditorWordWrap={setEditorWordWrap}
+        />
+
+        <ScpViewMount
           hosts={hosts}
           keys={keys}
           identities={identities}

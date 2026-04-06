@@ -64,4 +64,6 @@ export interface SftpStateOptions {
   useCompressedUpload?: boolean;
   defaultShowHiddenFiles?: boolean;
   autoConnectLocalOnMount?: boolean;
+  /** When true, remote connections use SCP mode (SSH exec) instead of SFTP subsystem. */
+  useScp?: boolean;
 }

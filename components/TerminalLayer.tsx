@@ -450,7 +450,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const activeTabId = useActiveTabId();
   const isVaultActive = activeTabId === 'vault';
   const isSftpActive = activeTabId === 'sftp';
-  const isVisible = (!isVaultActive && !isSftpActive) || !!draggingSessionId;
+  const isScpActive = activeTabId === 'scp';
+  const isVisible = (!isVaultActive && !isSftpActive && !isScpActive) || !!draggingSessionId;
 
   // Stable callback references for Terminal components
   const handleCloseSession = useCallback((sessionId: string) => {

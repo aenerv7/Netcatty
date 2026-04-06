@@ -798,7 +798,16 @@ async function createWindow(electronModule, options) {
     }
     windowStateCloseRequested = true;
     if (saveStateTimer) clearTimeout(saveStateTimer);
+
+    // When quitting, save state synchronously and let the close proceed
+    // immediately. Never preventDefault during quit — it can hang the app.
     const state = getWindowBoundsState(win, lastNormalBounds);
+    if (isQuitting) {
+      if (state) saveWindowStateSync(state);
+      closeSettingsWindow();
+      return;
+    }
+
     if (pendingWindowStateWrite) {
       event.preventDefault();
       if (state) queuedWindowState = state;
@@ -810,10 +819,14 @@ async function createWindow(electronModule, options) {
           const finalState = getWindowBoundsState(win, lastNormalBounds);
           if (finalState) saveWindowStateSync(finalState);
           closeSettingsWindow();
+          // Reset flag so the re-issued close() can proceed through the
+          // handler without being short-circuited.
+          windowStateCloseRequested = false;
           try {
-            win.close();
+            if (!win.isDestroyed()) win.close();
           } catch {
-            // ignore
+            // Window already gone — force quit if no windows remain.
+            try { electronApp?.quit(); } catch {}
           }
         });
       return;

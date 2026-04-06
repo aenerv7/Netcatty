@@ -136,6 +136,277 @@ const hasSftpChannelApi = (value) =>
   typeof value.mkdir === "function" &&
   typeof value.unlink === "function";
 
+// ── SCP Mode Adapter ──
+// When a connection is opened with useScp: true, we store a lightweight
+// adapter in sftpClients that uses SSH exec for all file operations.
+// This allows the entire SFTP UI to work transparently with SCP-only hosts.
+
+function scpExec(sshClient, command, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Command timed out")), timeoutMs);
+    sshClient.exec(command, (err, stream) => {
+      if (err) { clearTimeout(timer); return reject(err); }
+      let stdout = "";
+      let stderr = "";
+      stream.on("data", (data) => { stdout += data.toString("utf8"); });
+      stream.stderr.on("data", (data) => { stderr += data.toString("utf8"); });
+      stream.on("close", (code) => {
+        clearTimeout(timer);
+        if (code !== 0 && !stdout.trim()) {
+          reject(new Error(stderr.trim() || `Command exited with code ${code}`));
+        } else {
+          resolve(stdout);
+        }
+      });
+    });
+  });
+}
+
+function createScpSftpChannel(sshClient) {
+  // Returns an object that mimics the ssh2 SFTP channel API
+  // so that requireSftpChannel / listSftp / etc. work transparently.
+  const esc = (p) => p.replace(/'/g, "'\\''");
+  return {
+    __isScp: true,
+    readdir(dirPath, cb) {
+      const safePath = typeof dirPath === "string" ? dirPath : dirPath.toString("utf8");
+      scpExec(sshClient, `LC_ALL=C ls -la '${esc(safePath)}'`)
+        .then((output) => {
+          const items = [];
+          for (const line of output.split("\n")) {
+            if (!line.trim() || /^total\s+\d+/i.test(line.trim())) continue;
+            const m = line.match(
+              /^([dlcbps-])([rwxsStT-]{9})\s+\d+\s+(\S+)\s+(\S+)\s+(\d+)\s+(\w+\s+\d+\s+[\d:]+)\s+(.+)$/
+            );
+            if (!m) continue;
+            const [, typeChar, perms, owner, group, sizeStr, dateStr, nameRaw] = m;
+            let name = nameRaw.trim();
+            if (name === "." || name === "..") continue;
+            // Handle symlinks
+            const isSymlink = typeChar === "l";
+            if (isSymlink) {
+              const arrow = name.indexOf(" -> ");
+              if (arrow !== -1) name = name.slice(0, arrow);
+            }
+            const isDir = typeChar === "d";
+            const size = parseInt(sizeStr, 10) || 0;
+            let mtime;
+            try {
+              const d = new Date(dateStr);
+              mtime = isNaN(d.getTime()) ? Math.floor(Date.now() / 1000) : Math.floor(d.getTime() / 1000);
+            } catch { mtime = Math.floor(Date.now() / 1000); }
+            items.push({
+              filename: name,
+              longname: line,
+              attrs: {
+                size,
+                mtime,
+                mode: 0,
+                isDirectory: () => isDir,
+                isSymbolicLink: () => isSymlink,
+                isFile: () => !isDir && !isSymlink,
+              },
+            });
+          }
+          cb(null, items);
+        })
+        .catch((err) => cb(err));
+    },
+    stat(filePath, cb) {
+      const safePath = typeof filePath === "string" ? filePath : filePath.toString("utf8");
+      scpExec(sshClient, `LC_ALL=C stat -c '%F|%s|%Y|%a' '${esc(safePath)}' 2>/dev/null || LC_ALL=C stat -f '%HT|%z|%m|%Lp' '${esc(safePath)}'`)
+        .then((output) => {
+          const parts = output.trim().split("|");
+          const isDir = /directory/i.test(parts[0] || "");
+          const size = parseInt(parts[1], 10) || 0;
+          const mtime = parseInt(parts[2], 10) || Math.floor(Date.now() / 1000);
+          const mode = parseInt(parts[3], 8) || 0;
+          cb(null, {
+            size, mtime, mode,
+            isDirectory: isDir,
+            isFile: !isDir,
+            isSymbolicLink: () => false,
+          });
+        })
+        .catch((err) => cb(err));
+    },
+    realpath(targetPath, cb) {
+      const safePath = typeof targetPath === "string" ? targetPath : targetPath.toString("utf8");
+      scpExec(sshClient, `realpath '${esc(safePath)}' 2>/dev/null || readlink -f '${esc(safePath)}' 2>/dev/null || echo '${esc(safePath)}'`)
+        .then((output) => cb(null, output.trim() || safePath))
+        .catch((err) => cb(err));
+    },
+    mkdir(dirPath, cb) {
+      const safePath = typeof dirPath === "string" ? dirPath : dirPath.toString("utf8");
+      scpExec(sshClient, `mkdir -p '${esc(safePath)}'`)
+        .then(() => cb(null))
+        .catch((err) => cb(err));
+    },
+    rmdir(dirPath, cb) {
+      const safePath = typeof dirPath === "string" ? dirPath : dirPath.toString("utf8");
+      scpExec(sshClient, `rm -rf '${esc(safePath)}'`)
+        .then(() => cb(null))
+        .catch((err) => cb(err));
+    },
+    unlink(filePath, cb) {
+      const safePath = typeof filePath === "string" ? filePath : filePath.toString("utf8");
+      scpExec(sshClient, `rm -f '${esc(safePath)}'`)
+        .then(() => cb(null))
+        .catch((err) => cb(err));
+    },
+    rename(oldPath, newPath, cb) {
+      const safeOld = typeof oldPath === "string" ? oldPath : oldPath.toString("utf8");
+      const safeNew = typeof newPath === "string" ? newPath : newPath.toString("utf8");
+      scpExec(sshClient, `mv '${esc(safeOld)}' '${esc(safeNew)}'`)
+        .then(() => cb(null))
+        .catch((err) => cb(err));
+    },
+    chmod(filePath, mode, cb) {
+      const safePath = typeof filePath === "string" ? filePath : filePath.toString("utf8");
+      const modeStr = typeof mode === "number" ? mode.toString(8) : String(mode);
+      scpExec(sshClient, `chmod ${modeStr} '${esc(safePath)}'`)
+        .then(() => cb(null))
+        .catch((err) => cb(err));
+    },
+    // createReadStream / createWriteStream for file transfers
+    createReadStream(filePath, options) {
+      const { PassThrough } = require("stream");
+      const pt = new PassThrough();
+      const safePath = typeof filePath === "string" ? filePath : filePath.toString("utf8");
+      sshClient.exec(`cat '${esc(safePath)}'`, (err, stream) => {
+        if (err) { pt.destroy(err); return; }
+        stream.pipe(pt);
+        stream.stderr.on("data", () => {});
+      });
+      return pt;
+    },
+    createWriteStream(filePath, options) {
+      const { PassThrough } = require("stream");
+      const pt = new PassThrough();
+      const safePath = typeof filePath === "string" ? filePath : filePath.toString("utf8");
+      sshClient.exec(`cat > '${esc(safePath)}'`, (err, stream) => {
+        if (err) { pt.destroy(err); return; }
+        pt.pipe(stream);
+        stream.on("close", () => pt.emit("close"));
+        stream.stderr.on("data", () => {});
+      });
+      return pt;
+    },
+  };
+}
+
+/**
+ * Create an SCP-mode adapter that looks like an ssh2-sftp-client instance.
+ * Stored in sftpClients so all downstream code works transparently.
+ */
+function createScpClientAdapter(sshClient) {
+  const scpChannel = createScpSftpChannel(sshClient);
+  return {
+    __scpMode: true,
+    client: sshClient,
+    sftp: scpChannel,
+    // Mimic ssh2-sftp-client methods used by sftpBridge
+    async get(remotePath) {
+      return new Promise((resolve, reject) => {
+        const safePath = typeof remotePath === "string" ? remotePath : remotePath.toString("utf8");
+        const esc = (p) => p.replace(/'/g, "'\\''");
+        scpExec(sshClient, `cat '${esc(safePath)}'`, 30000)
+          .then((data) => resolve(Buffer.from(data, "utf8")))
+          .catch(reject);
+      });
+    },
+    async put(input, remotePath) {
+      return new Promise((resolve, reject) => {
+        const safePath = typeof remotePath === "string" ? remotePath : remotePath.toString("utf8");
+        const esc = (p) => p.replace(/'/g, "'\\''");
+        sshClient.exec(`cat > '${esc(safePath)}'`, (err, stream) => {
+          if (err) return reject(err);
+          stream.on("close", (code) => {
+            if (code !== 0) reject(new Error(`Write failed with code ${code}`));
+            else resolve();
+          });
+          if (Buffer.isBuffer(input)) {
+            stream.end(input);
+          } else if (typeof input === "string") {
+            stream.end(input);
+          } else if (input && typeof input.pipe === "function") {
+            input.pipe(stream);
+          } else {
+            stream.end(input);
+          }
+        });
+      });
+    },
+    async stat(remotePath) {
+      return new Promise((resolve, reject) => {
+        scpChannel.stat(remotePath, (err, stats) => {
+          if (err) return reject(err);
+          resolve(stats);
+        });
+      });
+    },
+    async end() {
+      try { sshClient.end(); } catch {}
+    },
+    async mkdir(remotePath) {
+      return new Promise((resolve, reject) => {
+        scpChannel.mkdir(remotePath, (err) => err ? reject(err) : resolve());
+      });
+    },
+    async delete(remotePath) {
+      return new Promise((resolve, reject) => {
+        scpChannel.unlink(remotePath, (err) => err ? reject(err) : resolve());
+      });
+    },
+    async rmdir(remotePath, recursive) {
+      return new Promise((resolve, reject) => {
+        scpChannel.rmdir(remotePath, (err) => err ? reject(err) : resolve());
+      });
+    },
+    async rename(oldPath, newPath) {
+      return new Promise((resolve, reject) => {
+        scpChannel.rename(oldPath, newPath, (err) => err ? reject(err) : resolve());
+      });
+    },
+    async chmod(remotePath, mode) {
+      return new Promise((resolve, reject) => {
+        scpChannel.chmod(remotePath, mode, (err) => err ? reject(err) : resolve());
+      });
+    },
+    async fastGet(remotePath, localPath) {
+      return new Promise((resolve, reject) => {
+        const safePath = typeof remotePath === "string" ? remotePath : remotePath.toString("utf8");
+        const esc = (p) => p.replace(/'/g, "'\\''");
+        sshClient.exec(`cat '${esc(safePath)}'`, (err, stream) => {
+          if (err) return reject(err);
+          const ws = fs.createWriteStream(localPath);
+          stream.pipe(ws);
+          stream.stderr.on("data", () => {});
+          ws.on("finish", () => resolve());
+          ws.on("error", (e) => reject(e));
+          stream.on("error", (e) => { ws.destroy(); reject(e); });
+        });
+      });
+    },
+    async fastPut(localPath, remotePath) {
+      return new Promise((resolve, reject) => {
+        const safePath = typeof remotePath === "string" ? remotePath : remotePath.toString("utf8");
+        const esc = (p) => p.replace(/'/g, "'\\''");
+        sshClient.exec(`cat > '${esc(safePath)}'`, (err, stream) => {
+          if (err) return reject(err);
+          const rs = fs.createReadStream(localPath);
+          rs.pipe(stream);
+          stream.on("close", (code) => {
+            if (code !== 0) reject(new Error(`Upload failed with code ${code}`));
+            else resolve();
+          });
+          rs.on("error", (e) => { stream.destroy(); reject(e); });
+        });
+      });
+    },
+  };
+}
+
 const SFTP_CHANNEL_OPEN_TIMEOUT_MS = 10_000;
 
 const tryOpenSftpChannel = (client) =>
@@ -219,6 +490,10 @@ const getSftpChannel = async (client) => {
 };
 
 const requireSftpChannel = async (client) => {
+  // SCP mode: the adapter's .sftp is already a compatible channel object
+  if (client?.__scpMode) {
+    return client.sftp;
+  }
   const sftp = await getSftpChannel(client);
   if (!sftp) {
     throw new Error("SFTP session lost. Please reconnect.");
@@ -898,10 +1173,98 @@ async function connectSudoSftp(client, password) {
 }
 
 /**
+ * Open a raw SSH connection for SCP mode (no SFTP subsystem).
+ * Returns the same { sftpId } shape so the renderer treats it identically.
+ */
+async function openScpConnection(event, options) {
+  const connId = options.sessionId || `${Date.now()}-scp-${Math.random().toString(16).slice(2)}`;
+  const defaultKeys = await findAllDefaultPrivateKeysFromHelper();
+  const agentSocket = await getAvailableAgentSocket();
+
+  // Proxy support
+  let connectionSocket = null;
+  if (options.proxy) {
+    connectionSocket = await createProxySocket(options.proxy, options.hostname, options.port || 22);
+  }
+
+  const connectOpts = {
+    host: options.hostname,
+    port: options.port || 22,
+    username: options.username || "root",
+    tryKeyboard: true,
+    readyTimeout: 120000,
+    algorithms: buildSftpAlgorithms(options.legacyAlgorithms),
+  };
+
+  if (connectionSocket) {
+    connectOpts.sock = connectionSocket;
+    delete connectOpts.host;
+    delete connectOpts.port;
+  }
+
+  // Auth
+  const authConfig = buildAuthHandler({
+    privateKey: options.privateKey,
+    password: options.password,
+    passphrase: options.passphrase,
+    agent: agentSocket,
+    username: options.username || "root",
+    logPrefix: "[SCP]",
+    defaultKeys,
+  });
+  applyAuthToConnOpts(connectOpts, authConfig);
+  if (options.password) connectOpts.password = options.password;
+
+  const kiHandler = createKeyboardInteractiveHandler({
+    sender: event.sender,
+    sessionId: connId,
+    hostname: options.hostname,
+    password: options.password,
+    logPrefix: "[SCP]",
+  });
+
+  return new Promise((resolve, reject) => {
+    const sshClient = new SSHClient();
+    let settled = false;
+    const done = (fn) => (val) => { if (settled) return; settled = true; fn(val); };
+
+    sshClient.once("ready", done(() => {
+      const adapter = createScpClientAdapter(sshClient);
+      sftpClients.set(connId, adapter);
+      console.log(`[SCP] Connection established: ${connId}`);
+      resolve({ sftpId: connId });
+    }));
+    sshClient.once("error", done((err) => {
+      console.error(`[SCP] Connection error:`, err.message);
+      try { sshClient.end(); } catch {}
+      reject(err);
+    }));
+    sshClient.once("end", done(() => reject(new Error("Connection ended before ready"))));
+    sshClient.on("keyboard-interactive", kiHandler);
+
+    try {
+      event.sender.send("netcatty:sftp:connection-progress", {
+        connId, hostname: options.hostname,
+        message: `Connecting to ${options.hostname}:${options.port || 22} (SCP mode)...`,
+      });
+    } catch {}
+
+    sshClient.connect(connectOpts);
+  });
+}
+
+/**
  * Open a new SFTP connection
  * Supports jump host connections when options.jumpHosts is provided
+ * When options.useScp is true, opens a raw SSH connection (no SFTP subsystem)
+ * and uses SSH exec for all file operations.
  */
 async function openSftp(event, options) {
+  // ── SCP Mode ──
+  if (options.useScp) {
+    return openScpConnection(event, options);
+  }
+
   const client = new SftpClient();
   const connId = options.sessionId || `${Date.now()}-sftp-${Math.random().toString(16).slice(2)}`;
 

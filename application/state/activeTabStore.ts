@@ -53,6 +53,7 @@ export const useIsTabActive = (tabId: string) => {
 // Stable snapshot functions - defined once outside components
 const getIsVaultActive = () => activeTabStore.getActiveTabId() === 'vault';
 const getIsSftpActive = () => activeTabStore.getActiveTabId() === 'sftp';
+const getIsScpActive = () => activeTabStore.getActiveTabId() === 'scp';
 
 // Check if vault is active
 export const useIsVaultActive = () => {
@@ -70,9 +71,17 @@ export const useIsSftpActive = () => {
   );
 };
 
+// Check if scp is active
+export const useIsScpActive = () => {
+  return useSyncExternalStore(
+    activeTabStore.subscribe,
+    getIsScpActive
+  );
+};
+
 // Check if terminal layer should be visible
 export const useIsTerminalLayerVisible = (draggingSessionId: string | null) => {
   const activeTabId = useActiveTabId();
-  const isTerminalTab = activeTabId !== 'vault' && activeTabId !== 'sftp';
+  const isTerminalTab = activeTabId !== 'vault' && activeTabId !== 'sftp' && activeTabId !== 'scp';
   return isTerminalTab || !!draggingSessionId;
 };

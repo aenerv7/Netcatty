@@ -163,6 +163,7 @@ const getCredentialBridge = createLazyModule("./bridges/credentialBridge.cjs");
 const getAutoUpdateBridge = createLazyModule("./bridges/autoUpdateBridge.cjs");
 const getAiBridge = createLazyModule("./bridges/aiBridge.cjs");
 const getWindowManager = createLazyModule("./bridges/windowManager.cjs");
+const getScpBridge = createLazyModule("./bridges/scpBridge.cjs");
 
 // GPU settings
 // NOTE: Do not disable Chromium sandbox by default.
@@ -504,6 +505,11 @@ const registerBridges = (win) => {
   autoUpdateBridge.registerHandlers(ipcMain);
   aiBridge.registerHandlers(ipcMain);
   crashLogBridge.registerHandlers(ipcMain);
+
+  // SCP bridge
+  const scpBridge = getScpBridge();
+  scpBridge.init(deps);
+  scpBridge.registerHandlers(ipcMain);
 
   // ZMODEM cancel handler
   ipcMain.on("netcatty:zmodem:cancel", (_event, payload) => {
@@ -1091,15 +1097,16 @@ if (!gotLock) {
 
   app.on("before-quit", () => {
     getWindowManager().setIsQuitting(true);
+    // Destroy the tray panel window early so it doesn't block
+    // window-all-closed → will-quit from firing.
+    try {
+      getGlobalShortcutBridge().cleanup();
+    } catch {}
   });
 
   // Cleanup all PTY sessions and port forwarding tunnels before quitting
-  app.on("will-quit", () => {
-    try {
-      sessionLogStreamManager.cleanupAll();
-    } catch (err) {
-      console.warn("Error during session log stream cleanup:", err);
-    }
+  app.on("will-quit", (event) => {
+    // Synchronous cleanup — these must complete before the process exits.
     try {
       terminalBridge.cleanupAllSessions();
     } catch (err) {
@@ -1120,6 +1127,33 @@ if (!gotLock) {
     } catch (err) {
       console.warn("Error during AI bridge cleanup:", err);
     }
+    try {
+      getScpBridge().cleanupAllSessions();
+    } catch (err) {
+      console.warn("Error during SCP bridge cleanup:", err);
+    }
+
+    // Async cleanup (session log streams involve file I/O).
+    // Defer quit until streams are flushed, with a hard timeout to
+    // guarantee the app never hangs.
+    event.preventDefault();
+    const QUIT_TIMEOUT_MS = 3000;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      app.exit(0);
+    };
+    const timer = setTimeout(finish, QUIT_TIMEOUT_MS);
+    Promise.resolve()
+      .then(() => sessionLogStreamManager.cleanupAll())
+      .catch((err) => {
+        console.warn("Error during session log stream cleanup:", err);
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        finish();
+      });
   });
 }
 

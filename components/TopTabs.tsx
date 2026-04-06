@@ -257,6 +257,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   const sessionActivityMap = useSessionActivityMap();
   const isVaultActive = activeTabId === 'vault';
   const isSftpActive = activeTabId === 'sftp';
+  const isScpActive = activeTabId === 'scp';
   const onSelectTab = activeTabStore.setActiveTabId;
 
   // Tab reorder drag state
@@ -312,7 +313,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
 
   // Scroll to active tab when it changes
   useLayoutEffect(() => {
-    if (!activeTabId || activeTabId === 'vault' || activeTabId === 'sftp') return;
+    if (!activeTabId || activeTabId === 'vault' || activeTabId === 'sftp' || activeTabId === 'scp') return;
     const container = tabsContainerRef.current;
     if (!container) return;
 
@@ -842,6 +843,40 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               />
             )}
             <Folder size={14} /> SFTP
+          </div>
+          <div
+            onClick={() => onSelectTab('scp')}
+            className={cn(
+              "relative h-7 px-3 rounded-none text-xs font-semibold cursor-pointer flex items-center gap-2 app-no-drag",
+            )}
+            style={{
+              backgroundColor: isScpActive
+                ? 'var(--top-tabs-active-bg, hsl(var(--background)))'
+                : 'transparent',
+              color: isScpActive
+                ? 'var(--top-tabs-fg, hsl(var(--foreground)))'
+                : 'var(--top-tabs-muted, hsl(var(--muted-foreground)))',
+            }}
+            onMouseEnter={(e) => {
+              if (!isScpActive) {
+                e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--top-tabs-active-bg, hsl(var(--background))) 40%, transparent)';
+                e.currentTarget.style.color = 'var(--top-tabs-fg, hsl(var(--foreground)))';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isScpActive) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--top-tabs-muted, hsl(var(--muted-foreground)))';
+              }
+            }}
+          >
+            {isScpActive && (
+              <div
+                className="absolute top-0 left-0 right-0 h-[2px]"
+                style={{ backgroundColor: 'var(--top-tabs-accent, hsl(var(--accent)))' }}
+              />
+            )}
+            <Folder size={14} /> SCP
           </div>
         </div>
 
