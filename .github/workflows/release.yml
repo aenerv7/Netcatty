@@ -34,10 +34,10 @@ jobs:
             pack_script: pack:win
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -63,8 +63,6 @@ jobs:
       - name: Disable code signing and notarization
         shell: bash
         run: |
-          # Patch electron-builder config to disable signing/notarization
-          # when no certificates are available
           node -e "
             const fs = require('fs');
             const f = 'electron-builder.config.cjs';
@@ -78,12 +76,11 @@ jobs:
       - name: Build package
         env:
           ELECTRON_BUILDER_PUBLISH: "never"
-          # Skip code signing on all platforms
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run ${{ matrix.pack_script }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: netcatty-${{ matrix.name }}
           path: |
@@ -105,10 +102,10 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
