@@ -442,8 +442,9 @@ declare global {
     onWindowFullScreenChanged?(cb: (isFullscreen: boolean) => void): () => void;
 
     // Settings window
-    openSettingsWindow?(): Promise<boolean>;
+    openSettingsWindow?(options?: { tab?: string }): Promise<boolean>;
     closeSettingsWindow?(): Promise<void>;
+    onSettingsNavigateTab?(callback: (tab: string) => void): () => void;
 
     // Cross-window settings sync
     notifySettingsChanged?(payload: { key: string; value: unknown }): void;

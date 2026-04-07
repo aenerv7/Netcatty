@@ -229,22 +229,22 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     if (!connectedProvider) return;
     
     try {
-      // Load base BEFORE downloading (downloadFromProvider overwrites the base)
-      const base = await manager.loadSyncBase(connectedProvider);
       const remotePayload = await sync.downloadFromProvider(connectedProvider);
 
-      if (remotePayload && remotePayload.syncedAt > state.localUpdatedAt) {
-        // Remote is newer — apply remote payload directly (last-write-wins)
-        config.onApplyPayload(remotePayload);
-        // Don't save base or skip auto-sync — let the data-change effect
-        // naturally trigger an upload of the merged payload (which will
-        // go through syncAllProviders and save base on success).
-        notify.success(t('sync.autoSync.syncedMessage'), t('sync.autoSync.syncedTitle'));
+      if (remotePayload) {
+        // downloadFromProvider already updates localVersion/remoteVersion,
+        // so if we got data, apply it when remote version was higher
+        // (downloadFromProvider only succeeds if remote exists)
+        const updatedState = manager.getState();
+        if (updatedState.localVersion > state.localVersion || state.localVersion === 0) {
+          config.onApplyPayload(remotePayload);
+          notify.success(t('sync.autoSync.syncedMessage'), t('sync.autoSync.syncedTitle'));
+        }
       }
     } catch (error) {
       console.error('[AutoSync] Failed to check remote version:', error);
     }
-  }, [sync, config, buildPayload, t]);
+  }, [sync, config, t]);
   
   // Debounced auto-sync when data changes
   useEffect(() => {

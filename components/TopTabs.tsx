@@ -981,7 +981,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               <Sparkles size={16} />
             </Button>
           )}
-          <SyncStatusButton onOpenSettings={onOpenSettings} onSyncNow={onSyncNow} />
+          <SyncStatusButton onSyncNow={onSyncNow} />
         </div>
         {/* Custom window controls for Windows/Linux */}
         {!isMacClient && <div className="self-stretch flex items-stretch"><WindowControls /></div>}

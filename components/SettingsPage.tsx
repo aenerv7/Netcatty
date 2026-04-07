@@ -160,6 +160,15 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
         notifyRendererReady();
     }, [notifyRendererReady]);
 
+    // Listen for tab navigation requests from the main process
+    useEffect(() => {
+        const bridge = (window as unknown as { netcatty?: { onSettingsNavigateTab?: (cb: (tab: string) => void) => () => void } }).netcatty;
+        const cleanup = bridge?.onSettingsNavigateTab?.((tab) => {
+            setActiveTab(tab);
+        });
+        return () => cleanup?.();
+    }, []);
+
     // Allow Cmd+W (Mac) / Ctrl+W (PC) to close the settings window
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {

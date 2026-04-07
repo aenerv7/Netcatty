@@ -10,7 +10,7 @@
  * Clicking opens a popover with sync status details and history.
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
     Cloud,
     CloudOff,
@@ -25,6 +25,7 @@ import {
     Server,
 } from 'lucide-react';
 import { useCloudSync } from '../application/state/useCloudSync';
+import { useWindowControls } from '../application/state/useWindowControls';
 import { isProviderReadyForSync, type CloudProvider } from '../domain/sync';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { cn } from '../lib/utils';
@@ -103,13 +104,11 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status, size = 'sm', 
 // ============================================================================
 
 interface SyncStatusButtonProps {
-    onOpenSettings?: () => void;
     onSyncNow?: () => Promise<void>; // Callback to trigger sync with current data
     className?: string;
 }
 
 export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
-    onOpenSettings,
     onSyncNow,
     className,
 }) => {
@@ -117,6 +116,12 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
     const [isOpen, setIsOpen] = useState(false);
     const [isSyncingManual, setIsSyncingManual] = useState(false);
     const sync = useCloudSync();
+    const { openSettingsWindow } = useWindowControls();
+
+    const openSyncSettings = useCallback(() => {
+        setIsOpen(false);
+        void openSettingsWindow({ tab: 'sync' });
+    }, [openSettingsWindow]);
 
     // State is now automatically synced via useSyncExternalStore - no manual refresh needed
 
@@ -215,18 +220,13 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
                             </span>
                         </div>
 
-                        {onOpenSettings && (
-                            <button
-                                onClick={() => {
-                                    setIsOpen(false);
-                                    onOpenSettings();
-                                }}
+                        <button
+                                onClick={openSyncSettings}
                                 className="p-1 rounded hover:bg-muted transition-colors"
                                 title={t('sync.settings')}
                             >
                                 <Settings size={14} className="text-muted-foreground" />
                             </button>
-                        )}
                     </div>
                 </div>
 
@@ -243,10 +243,7 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
                             <Button
                                 size="sm"
                                 className="w-full"
-                                onClick={() => {
-                                    setIsOpen(false);
-                                    onOpenSettings?.();
-                                }}
+                                onClick={openSyncSettings}
                             >
                                 {t('sync.settings')}
                             </Button>
@@ -363,8 +360,7 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
                                             setIsSyncingManual(false);
                                          }
                                     } else {
-                                        setIsOpen(false);
-                                        onOpenSettings?.();
+                                        openSyncSettings();
                                     }
                                 }}
                             >

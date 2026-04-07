@@ -938,8 +938,8 @@ export class CloudSyncManager {
       const remoteFile = await adapter.download();
 
       if (remoteFile) {
-        // Compare versions
-        if (remoteFile.meta.updatedAt > this.state.localUpdatedAt) {
+        // Compare by version number (higher version wins)
+        if (remoteFile.meta.version > this.state.localVersion) {
           return {
             conflict: true,
             remoteFile,
@@ -1089,13 +1089,62 @@ export class CloudSyncManager {
     this.emit({ type: 'SYNC_STARTED', provider });
 
     try {
-      // 1. Check for conflict
+      // 1. Check remote state
       const checkResult = await this.checkProviderConflict(adapter);
 
       if (checkResult.error) {
         throw new Error(checkResult.error);
       }
 
+      // First sync (localVersion === 0): if remote has data, pull it directly
+      if (this.state.localVersion === 0 && checkResult.remoteFile) {
+        try {
+          let remotePayload: SyncPayload;
+          try {
+            remotePayload = await EncryptionService.decryptPayload(
+              checkResult.remoteFile,
+              this.masterPassword,
+            );
+          } catch (decryptError) {
+            throw new Error(`Decryption failed (master password may differ between devices): ${decryptError instanceof Error ? decryptError.message : String(decryptError)}`);
+          }
+
+          // Update local version tracking to match remote
+          this.state.localVersion = checkResult.remoteFile.meta.version;
+          this.state.localUpdatedAt = checkResult.remoteFile.meta.updatedAt;
+          this.state.remoteVersion = checkResult.remoteFile.meta.version;
+          this.state.remoteUpdatedAt = checkResult.remoteFile.meta.updatedAt;
+          this.saveSyncConfig();
+          await this.saveSyncBase(remotePayload, provider);
+          this.state.syncState = 'IDLE';
+
+          this.addSyncHistoryEntry({
+            timestamp: Date.now(),
+            provider,
+            action: 'download',
+            success: true,
+            localVersion: checkResult.remoteFile.meta.version,
+            remoteVersion: checkResult.remoteFile.meta.version,
+            deviceName: this.state.deviceName,
+          });
+
+          return {
+            success: true,
+            provider,
+            action: 'download' as SyncResult['action'],
+            mergedPayload: remotePayload,
+          };
+        } catch (downloadError) {
+          console.error('[CloudSyncManager] First sync: failed to apply remote payload', downloadError);
+          this.state.syncState = 'ERROR';
+          this.state.lastError = String(downloadError);
+          this.updateProviderStatus(provider, 'error', String(downloadError));
+          this.emit({ type: 'SYNC_ERROR', provider, error: String(downloadError) });
+          return { success: false, provider, action: 'none', error: String(downloadError) };
+        }
+      }
+
+      // Remote has higher version — pull remote data (last-write-wins)
       if (checkResult.conflict && checkResult.remoteFile) {
         // Remote is newer — decrypt and return as merged payload (last-write-wins)
         try {
@@ -1346,22 +1395,71 @@ export class CloudSyncManager {
 
     const checkResults = await Promise.all(checkTasks);
 
-    // 2. Analyze Results & Handle Conflicts — merge ALL conflicting providers
+    // 2. First sync (localVersion === 0): if any provider has remote data, pull it
+    const hasRemoteData = checkResults.filter((r) => !r.error && r.check?.remoteFile);
+    if (this.state.localVersion === 0 && hasRemoteData.length > 0) {
+      try {
+        // Pick the highest-versioned remote payload
+        let bestRemote: SyncPayload | null = null;
+        let bestVersion = 0;
+        let bestRemoteFile: SyncedFile | null = null;
+        for (const c of hasRemoteData) {
+          const rf = c.check!.remoteFile!;
+          if (rf.meta.version > bestVersion) {
+            const rp = await EncryptionService.decryptPayload(rf, this.masterPassword);
+            bestRemote = rp;
+            bestVersion = rf.meta.version;
+            bestRemoteFile = rf;
+          }
+        }
+
+        if (bestRemote && bestRemoteFile) {
+          console.log('[CloudSyncManager] syncAll: first sync, pulling remote v' + bestVersion);
+          this.state.localVersion = bestRemoteFile.meta.version;
+          this.state.localUpdatedAt = bestRemoteFile.meta.updatedAt;
+          this.state.remoteVersion = bestRemoteFile.meta.version;
+          this.state.remoteUpdatedAt = bestRemoteFile.meta.updatedAt;
+          this.saveSyncConfig();
+
+          for (const r of hasRemoteData) {
+            if (r.check?.remoteFile) {
+              await this.saveSyncBase(bestRemote, r.provider as CloudProvider);
+            }
+          }
+
+          this.state.syncState = 'IDLE';
+          this.notifyStateChange();
+
+          for (const r of checkResults) {
+            const p = r.provider as CloudProvider;
+            if (r.error) {
+              results.set(p, { success: false, provider: p, action: 'none', error: r.error });
+            } else {
+              this.updateProviderStatus(p, 'connected');
+              results.set(p, { success: true, provider: p, action: 'download', mergedPayload: bestRemote });
+            }
+          }
+          return results;
+        }
+      } catch (firstSyncError) {
+        console.error('[CloudSyncManager] syncAll: first sync pull failed', firstSyncError);
+        // Fall through to normal upload path
+      }
+    }
+
+    // 3. Analyze Results — remote has higher version on some providers
     const conflicts = checkResults.filter((r) => !r.error && r.check?.conflict && r.check?.remoteFile);
 
     if (conflicts.length > 0) {
-      // Remote is newer on at least one provider — apply remote data (last-write-wins)
+      // Remote is newer — pick the highest-versioned remote payload
       try {
-        // Pick the most recent remote payload across all conflicting providers
         let newestRemote: SyncPayload | null = null;
-        let newestTimestamp = 0;
+        let newestVersion = 0;
         for (const c of conflicts) {
-          const remotePayload = await EncryptionService.decryptPayload(
-            c.check!.remoteFile!,
-            this.masterPassword,
-          );
-          if (remotePayload.syncedAt > newestTimestamp) {
-            newestTimestamp = remotePayload.syncedAt;
+          const rf = c.check!.remoteFile!;
+          if (rf.meta.version > newestVersion) {
+            const remotePayload = await EncryptionService.decryptPayload(rf, this.masterPassword);
+            newestVersion = rf.meta.version;
             newestRemote = remotePayload;
           }
         }

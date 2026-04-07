@@ -15,9 +15,9 @@ export const useWindowControls = () => {
     await bridge?.closeSettingsWindow?.();
   }, []);
 
-  const openSettingsWindow = useCallback(async () => {
+  const openSettingsWindow = useCallback(async (options?: { tab?: string }) => {
     const bridge = netcattyBridge.get();
-    return bridge?.openSettingsWindow?.();
+    return bridge?.openSettingsWindow?.(options);
   }, []);
 
   const minimize = useCallback(async () => {

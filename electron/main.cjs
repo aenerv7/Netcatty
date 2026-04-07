@@ -617,7 +617,7 @@ const registerBridges = (win) => {
   });
 
   // Settings window handler
-  ipcMain.handle("netcatty:settings:open", async () => {
+  ipcMain.handle("netcatty:settings:open", async (_event, options) => {
     try {
       await getWindowManager().openSettingsWindow(electronModule, {
         preload,
@@ -627,6 +627,14 @@ const registerBridges = (win) => {
         isMac,
         electronDir,
       });
+      // If a specific tab was requested, notify the settings window
+      const tab = options?.tab;
+      if (tab && typeof tab === "string") {
+        const sw = getWindowManager().getSettingsWindow?.();
+        if (sw && !sw.isDestroyed()) {
+          sw.webContents.send("netcatty:settings:navigate-tab", tab);
+        }
+      }
       return true;
     } catch (err) {
       console.error("[Main] Failed to open settings window:", err);

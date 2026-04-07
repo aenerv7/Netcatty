@@ -850,8 +850,13 @@ const api = {
   },
   
   // Settings window
-  openSettingsWindow: () => ipcRenderer.invoke("netcatty:settings:open"),
+  openSettingsWindow: (options) => ipcRenderer.invoke("netcatty:settings:open", options),
   closeSettingsWindow: () => ipcRenderer.invoke("netcatty:settings:close"),
+  onSettingsNavigateTab: (callback) => {
+    const handler = (_event, tab) => callback(tab);
+    ipcRenderer.on("netcatty:settings:navigate-tab", handler);
+    return () => ipcRenderer.removeListener("netcatty:settings:navigate-tab", handler);
+  },
 
   // Cross-window settings sync
   notifySettingsChanged: (payload) => ipcRenderer.send("netcatty:settings:changed", payload),
