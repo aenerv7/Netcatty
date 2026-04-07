@@ -1002,6 +1002,10 @@ if (!gotLock) {
     }
   });
 
+  // Ensure the app name is capitalized for macOS Keychain ("Netcatty Safe Storage")
+  // and other system-level identifiers. Must be called before app.whenReady().
+  app.setName('Netcatty');
+
   // Application lifecycle
   app.whenReady().then(() => {
     registerAppProtocol();
