@@ -6,7 +6,7 @@ import { useSessionActivityMap } from '../application/state/sessionActivityStore
 import { LogView } from '../application/state/useSessionState';
 import { useWindowControls } from '../application/state/useWindowControls';
 import { useI18n } from '../application/i18n/I18nProvider';
-import { STORAGE_KEY_AI_PROVIDERS } from '../infrastructure/config/storageKeys';
+import { STORAGE_KEY_AI_PROVIDERS, STORAGE_KEY_AI_EXTERNAL_AGENTS } from '../infrastructure/config/storageKeys';
 import { localStorageAdapter } from '../infrastructure/persistence/localStorageAdapter';
 import { getEffectiveHostDistro } from '../domain/host';
 import { cn } from '../lib/utils';
@@ -262,12 +262,22 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   const isScpActive = activeTabId === 'scp';
   const onSelectTab = activeTabStore.setActiveTabId;
 
-  // Only show AI button when not on vault and at least one AI provider is configured
+  // Only show AI button when not on vault and at least one AI capability is available
   const hasAIProvider = useMemo(() => {
     const providers = localStorageAdapter.read<unknown[]>(STORAGE_KEY_AI_PROVIDERS);
-    return Array.isArray(providers) && providers.length > 0;
+    if (Array.isArray(providers) && providers.length > 0) return true;
+    const agents = localStorageAdapter.read<{ enabled?: boolean }[]>(STORAGE_KEY_AI_EXTERNAL_AGENTS);
+    if (Array.isArray(agents) && agents.some(a => a.enabled)) return true;
+    return false;
   }, []);
-  const showAIButton = !isVaultActive && hasAIProvider;
+  const [hasDiscoveredAgent, setHasDiscoveredAgent] = useState(false);
+  useEffect(() => {
+    const bridge = (window as unknown as { netcatty?: { aiDiscoverAgents?: () => Promise<{ available?: boolean }[]> } }).netcatty;
+    bridge?.aiDiscoverAgents?.().then(agents => {
+      if (Array.isArray(agents) && agents.some(a => a.available)) setHasDiscoveredAgent(true);
+    }).catch(() => {});
+  }, []);
+  const showAIButton = !isVaultActive && (hasAIProvider || hasDiscoveredAgent);
 
   // Tab reorder drag state
   const [dropIndicator, setDropIndicator] = useState<{ tabId: string; position: 'before' | 'after' } | null>(null);

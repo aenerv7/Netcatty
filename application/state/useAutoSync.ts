@@ -234,11 +234,8 @@ export const useAutoSync = (config: AutoSyncConfig) => {
       const remotePayload = await sync.downloadFromProvider(connectedProvider);
 
       if (remotePayload && remotePayload.syncedAt > state.localUpdatedAt) {
-        const { mergeSyncPayloads } = await import('../../domain/syncMerge');
-        const localPayload = buildPayload();
-        const mergeResult = mergeSyncPayloads(base, localPayload, remotePayload);
-
-        config.onApplyPayload(mergeResult.payload);
+        // Remote is newer — apply remote payload directly (last-write-wins)
+        config.onApplyPayload(remotePayload);
         // Don't save base or skip auto-sync — let the data-change effect
         // naturally trigger an upload of the merged payload (which will
         // go through syncAllProviders and save base on success).

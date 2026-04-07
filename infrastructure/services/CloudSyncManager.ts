@@ -44,7 +44,6 @@ import {
   decryptProviderSecrets,
   encryptProviderSecrets,
 } from '../persistence/secureFieldAdapter';
-import { mergeSyncPayloads } from '../../domain/syncMerge';
 
 const SYNC_HISTORY_STORAGE_KEY = 'netcatty_sync_history_v1';
 
@@ -1098,7 +1097,7 @@ export class CloudSyncManager {
       }
 
       if (checkResult.conflict && checkResult.remoteFile) {
-        // Remote is newer — attempt three-way merge instead of blocking
+        // Remote is newer — decrypt and return as merged payload (last-write-wins)
         try {
           let remotePayload: SyncPayload;
           try {
@@ -1109,73 +1108,40 @@ export class CloudSyncManager {
           } catch (decryptError) {
             throw new Error(`Decryption failed (master password may differ between devices): ${decryptError instanceof Error ? decryptError.message : String(decryptError)}`);
           }
-          const base = await this.loadSyncBase(provider);
-          const mergeResult = mergeSyncPayloads(base, payload, remotePayload);
 
-          console.log('[CloudSyncManager] Three-way merge completed', mergeResult.summary);
+          // Remote is newer: apply remote data locally, then upload to
+          // keep version/device metadata in sync across providers.
+          await this.saveSyncBase(remotePayload, provider);
+          this.state.syncState = 'IDLE';
 
-          // Encrypt and upload merged payload
-          const mergedSyncedFile = await EncryptionService.encryptPayload(
-            mergeResult.payload,
-            this.masterPassword,
-            this.state.deviceId,
-            this.state.deviceName,
-            packageJson.version,
-            checkResult.remoteFile.meta.version, // base on remote version
-          );
-
-          const uploadResult = await this.uploadToProvider(provider, adapter, mergedSyncedFile);
-
-          if (uploadResult.success) {
-            await this.saveSyncBase(mergeResult.payload, provider);
-            this.state.syncState = 'IDLE';
-
-            this.addSyncHistoryEntry({
-              timestamp: Date.now(),
-              provider,
-              action: 'merge',
-              success: true,
-              localVersion: mergedSyncedFile.meta.version,
-              remoteVersion: checkResult.remoteFile.meta.version,
-              deviceName: this.state.deviceName,
-            });
-
-            return {
-              ...uploadResult,
-              action: 'merge',
-              mergedPayload: mergeResult.payload,
-            };
-          }
-
-          // Upload after merge failed — set ERROR so sync isn't stuck in SYNCING
-          this.state.syncState = 'ERROR';
-          this.state.lastError = uploadResult.error || 'Upload failed after merge';
-          return uploadResult;
-        } catch (mergeError) {
-          // Merge failed — fall back to conflict UI
-          console.error('[CloudSyncManager] Merge failed, falling back to conflict UI', mergeError);
-          const remoteFile = checkResult.remoteFile;
-          this.state.syncState = 'CONFLICT';
-          this.state.currentConflict = {
+          this.addSyncHistoryEntry({
+            timestamp: Date.now(),
             provider,
+            action: 'download',
+            success: true,
             localVersion: this.state.localVersion,
-            localUpdatedAt: this.state.localUpdatedAt,
-            localDeviceName: this.state.deviceName,
-            remoteVersion: remoteFile.meta.version,
-            remoteUpdatedAt: remoteFile.meta.updatedAt,
-            remoteDeviceName: remoteFile.meta.deviceName,
-          };
-
-          this.emit({
-            type: 'CONFLICT_DETECTED',
-            conflict: this.state.currentConflict,
+            remoteVersion: checkResult.remoteFile.meta.version,
+            deviceName: this.state.deviceName,
           });
+
+          return {
+            success: true,
+            provider,
+            action: 'download' as SyncResult['action'],
+            mergedPayload: remotePayload,
+          };
+        } catch (downloadError) {
+          console.error('[CloudSyncManager] Failed to apply remote payload', downloadError);
+          this.state.syncState = 'ERROR';
+          this.state.lastError = String(downloadError);
+          this.updateProviderStatus(provider, 'error', String(downloadError));
+          this.emit({ type: 'SYNC_ERROR', provider, error: String(downloadError) });
 
           return {
             success: false,
             provider,
             action: 'none',
-            conflictDetected: true,
+            error: String(downloadError),
           };
         }
       }
@@ -1384,34 +1350,34 @@ export class CloudSyncManager {
     const conflicts = checkResults.filter((r) => !r.error && r.check?.conflict && r.check?.remoteFile);
 
     if (conflicts.length > 0) {
-      // Three-way merge: incorporate remote data from every conflicting provider
+      // Remote is newer on at least one provider — apply remote data (last-write-wins)
       try {
-        let merged = payload;
+        // Pick the most recent remote payload across all conflicting providers
+        let newestRemote: SyncPayload | null = null;
+        let newestTimestamp = 0;
         for (const c of conflicts) {
-          const providerBase = await this.loadSyncBase(c.provider as CloudProvider);
           const remotePayload = await EncryptionService.decryptPayload(
             c.check!.remoteFile!,
             this.masterPassword,
           );
-          const result = mergeSyncPayloads(providerBase, merged, remotePayload);
-          merged = result.payload;
+          if (remotePayload.syncedAt > newestTimestamp) {
+            newestTimestamp = remotePayload.syncedAt;
+            newestRemote = remotePayload;
+          }
         }
-        const mergeResult = { payload: merged };
 
-        console.log('[CloudSyncManager] syncAll: three-way merge completed');
+        if (newestRemote) {
+          console.log('[CloudSyncManager] syncAll: remote is newer, applying remote payload');
+          payload = newestRemote;
+          wasMerged = true;
+        }
 
-        // Replace payload with merged payload for upload to all providers
-        payload = mergeResult.payload;
-        wasMerged = true;
-
-        // Re-classify: all providers (including the conflicting one) should now upload
-        // Clear the conflict check result so all go through the upload path
+        // All providers should now upload the (remote-wins) payload
         for (const r of checkResults) {
           if (r.check) r.check.conflict = false;
         }
-      } catch (mergeError) {
-        // Merge failed — fall back to conflict UI
-        console.error('[CloudSyncManager] syncAll: merge failed', mergeError);
+      } catch (applyError) {
+        console.error('[CloudSyncManager] syncAll: failed to apply remote payload', applyError);
         const { provider, check } = conflicts[0];
         const remoteFile = check!.remoteFile!;
 
