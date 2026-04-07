@@ -160,6 +160,19 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
         notifyRendererReady();
     }, [notifyRendererReady]);
 
+    // Allow Cmd+W (Mac) / Ctrl+W (PC) to close the settings window
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            const mod = isMac ? e.metaKey : e.ctrlKey;
+            if (mod && e.key === 'w') {
+                e.preventDefault();
+                closeSettingsWindow();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [closeSettingsWindow]);
+
     useEffect(() => {
         setMountedTabs((prev) => {
             if (prev.has(activeTab)) return prev;

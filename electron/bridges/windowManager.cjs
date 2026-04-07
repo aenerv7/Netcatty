@@ -173,8 +173,22 @@ function getWindowBoundsState(win, overrideBounds) {
 }
 
 const MENU_LABELS = {
-  en: { edit: "Edit", view: "View", window: "Window", reload: "Reload" },
-  "zh-CN": { edit: "编辑", view: "视图", window: "窗口", reload: "重新加载" },
+  en: {
+    edit: "Edit", view: "View", window: "Window",
+    reload: "Reload", forceReload: "Force Reload", toggleDevTools: "Toggle Developer Tools",
+    resetZoom: "Actual Size", zoomIn: "Zoom In", zoomOut: "Zoom Out", toggleFullscreen: "Toggle Full Screen",
+    undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", selectAll: "Select All",
+    minimize: "Minimize", zoom: "Zoom", front: "Bring All to Front", close: "Close",
+    about: "About", hide: "Hide", hideOthers: "Hide Others", unhide: "Show All", quit: "Quit",
+  },
+  "zh-CN": {
+    edit: "编辑", view: "视图", window: "窗口",
+    reload: "重新加载", forceReload: "强制重新加载", toggleDevTools: "切换开发者工具",
+    resetZoom: "实际大小", zoomIn: "放大", zoomOut: "缩小", toggleFullscreen: "切换全屏",
+    undo: "撤销", redo: "重做", cut: "剪切", copy: "拷贝", paste: "粘贴", selectAll: "全选",
+    minimize: "最小化", zoom: "缩放", front: "前置全部窗口", close: "关闭",
+    about: "关于", hide: "隐藏", hideOthers: "隐藏其他", unhide: "显示全部", quit: "退出",
+  },
 };
 
 function tMenu(language, key) {
@@ -955,7 +969,7 @@ async function openSettingsWindow(electronModule, options, { showOnLoad = true }
   }
 
   const win = new BrowserWindow({
-    title: "netcatty Settings",
+    title: "Netcatty Settings",
     width: settingsWidth,
     height: settingsHeight,
     ...(settingsX !== undefined && settingsY !== undefined ? { x: settingsX, y: settingsY } : {}),
@@ -1305,57 +1319,58 @@ function registerWindowHandlers(ipcMain, nativeTheme) {
 function buildAppMenu(Menu, app, isMac, language = currentLanguage) {
   // Save deps so later language changes can rebuild the menu.
   menuDeps = { Menu, app, isMac };
+  const t = (key) => tMenu(language, key);
   const template = [
     ...(isMac
       ? [
         {
           label: app.name,
           submenu: [
-            { role: "about" },
+            { role: "about", label: `${t("about")} ${app.name}` },
             { type: "separator" },
-            { role: "hide" },
-            { role: "hideOthers" },
-            { role: "unhide" },
+            { role: "hide", label: `${t("hide")} ${app.name}` },
+            { role: "hideOthers", label: t("hideOthers") },
+            { role: "unhide", label: t("unhide") },
             { type: "separator" },
-            { role: "quit" },
+            { role: "quit", label: `${t("quit")} ${app.name}` },
           ],
         },
       ]
       : []),
     {
-      label: tMenu(language, "edit"),
+      label: t("edit"),
       submenu: [
-        { role: "undo" },
-        { role: "redo" },
+        { role: "undo", label: t("undo") },
+        { role: "redo", label: t("redo") },
         { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
+        { role: "cut", label: t("cut") },
+        { role: "copy", label: t("copy") },
+        { role: "paste", label: t("paste") },
+        { role: "selectAll", label: t("selectAll") },
       ],
     },
     {
-      label: tMenu(language, "view"),
+      label: t("view"),
       submenu: [
-        { label: tMenu(language, "reload"), click: (_, win) => { if (win) win.reload(); } },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
+        { label: t("reload"), click: (_, win) => { if (win) win.reload(); } },
+        { role: "forceReload", label: t("forceReload") },
+        { role: "toggleDevTools", label: t("toggleDevTools") },
         { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        { role: "resetZoom", label: t("resetZoom") },
+        { role: "zoomIn", label: t("zoomIn") },
+        { role: "zoomOut", label: t("zoomOut") },
         { type: "separator" },
-        { role: "togglefullscreen" },
+        { role: "togglefullscreen", label: t("toggleFullscreen") },
       ],
     },
     {
-      label: tMenu(language, "window"),
+      label: t("window"),
       submenu: [
-        { role: "minimize" },
-        { role: "zoom" },
+        { role: "minimize", label: t("minimize") },
+        { role: "zoom", label: t("zoom") },
         ...(isMac
-          ? [{ type: "separator" }, { role: "front" }]
-          : [{ role: "close" }]),
+          ? [{ type: "separator" }, { role: "front", label: t("front") }]
+          : [{ role: "close", label: t("close") }]),
       ],
     },
   ];
