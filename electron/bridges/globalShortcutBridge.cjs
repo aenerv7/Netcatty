@@ -695,10 +695,19 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:trayPanel:quitApp", async () => {
     const { app } = electronModule;
     closeToTray = false;
-    // Destroy tray panel window first so it doesn't block window-all-closed.
-    // Use setImmediate to let the IPC response flush before destroying.
+    // Set isQuitting before cleanup so window close handlers don't interfere
+    const windowManager = require("./windowManager.cjs");
+    windowManager.setIsQuitting(true);
+    // Use setImmediate to let the IPC response flush before destroying
     setImmediate(() => {
       cleanup();
+      // Close settings window first
+      windowManager.closeSettingsWindow?.();
+      // Force-close the main window if it's still alive (may be hidden)
+      const mainWin = windowManager.getMainWindow?.();
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.destroy();
+      }
       app.quit();
     });
     return { success: true };

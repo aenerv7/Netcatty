@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Bookmark, Check, Eye, EyeOff, FilePlus, Folder, FolderPlus, Globe, Home, Languages, List, ListTree, MoreHorizontal, RefreshCw, Search, TerminalSquare, Trash2, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -61,6 +61,105 @@ interface SftpPaneToolbarProps {
 // bookmark ~20px, padding ~16px. Collapse early so the breadcrumb
 // always gets at least ~200px of space.
 const COLLAPSE_WIDTH = 400;
+
+/** Bookmark button: left-click toggles bookmark, right-click opens bookmark list */
+const BookmarkButton: React.FC<{
+  t: (key: string, params?: Record<string, unknown>) => string;
+  bookmarks: (SftpBookmark & { global?: boolean })[];
+  isCurrentPathBookmarked: boolean;
+  onToggleBookmark: () => void;
+  onNavigateToBookmark: (path: string) => void;
+  onDeleteBookmark: (id: string) => void;
+  onAddGlobalBookmark: (path: string) => void;
+  isCurrentPathGlobalBookmarked: boolean;
+  currentPath?: string;
+}> = ({ t, bookmarks, isCurrentPathBookmarked, onToggleBookmark, onNavigateToBookmark, onDeleteBookmark, onAddGlobalBookmark, isCurrentPathGlobalBookmarked, currentPath }) => {
+  const [open, setOpen] = useState(false);
+
+  const handleContextMenu = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    setOpen(true);
+  }, []);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-5 w-5 shrink-0", isCurrentPathBookmarked && "text-yellow-500")}
+              onClick={(e) => { e.preventDefault(); onToggleBookmark(); }}
+              onContextMenu={handleContextMenu}
+            >
+              <Bookmark size={12} fill={isCurrentPathBookmarked ? "currentColor" : "none"} />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}</TooltipContent>
+      </Tooltip>
+      <PopoverContent className="w-64 p-0" align="start">
+        <div className="p-2 border-b border-border/40 flex gap-1">
+          <Button
+            variant={isCurrentPathBookmarked ? "secondary" : "ghost"}
+            size="sm"
+            className="flex-1 justify-start text-xs h-7"
+            onClick={() => { onToggleBookmark(); setOpen(false); }}
+          >
+            <Bookmark size={12} fill={isCurrentPathBookmarked ? "currentColor" : "none"} className={cn("mr-2", isCurrentPathBookmarked && "text-yellow-500")} />
+            {isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}
+          </Button>
+          {currentPath && !isCurrentPathGlobalBookmarked && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 px-2 shrink-0"
+                  onClick={() => { onAddGlobalBookmark(currentPath); setOpen(false); }}
+                >
+                  {t("sftp.bookmark.addGlobal")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("sftp.bookmark.addGlobalTooltip")}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        {bookmarks.length > 0 ? (
+          <div className="max-h-48 overflow-auto py-1">
+            {bookmarks.map((bm) => (
+              <div key={bm.id} className="flex items-center gap-1 px-2 py-1 hover:bg-secondary/60 group">
+                {bm.global && <Globe size={10} className="shrink-0 text-primary" />}
+                <button
+                  type="button"
+                  className="flex-1 text-left text-xs truncate font-mono"
+                  onClick={() => { onNavigateToBookmark(bm.path); setOpen(false); }}
+                  title={bm.path}
+                >
+                  {bm.label}
+                  <span className="ml-1.5 text-muted-foreground text-[10px]">{bm.path}</span>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={(e) => { e.stopPropagation(); onDeleteBookmark(bm.id); }}
+                >
+                  <Trash2 size={10} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-3 text-xs text-muted-foreground text-center">
+            {t("sftp.bookmark.empty")}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = React.memo(({
   t,
@@ -491,96 +590,18 @@ export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = React.memo(({
           </div>
         )}
 
-        {/* Bookmark button with dropdown */}
-        <Popover>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn("h-5 w-5 shrink-0", isCurrentPathBookmarked && "text-yellow-500")}
-                    onClick={(e) => {
-                  // If not bookmarked, toggle directly instead of opening popover
-                  if (!isCurrentPathBookmarked && bookmarks.length === 0) {
-                    e.preventDefault();
-                    onToggleBookmark();
-                  }
-                }}
-              >
-                <Bookmark size={12} fill={isCurrentPathBookmarked ? "currentColor" : "none"} />
-              </Button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent>{isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}</TooltipContent>
-            </Tooltip>
-            <PopoverContent className="w-64 p-0" align="start">
-              <div className="p-2 border-b border-border/40 flex gap-1">
-                <Button
-                  variant={isCurrentPathBookmarked ? "secondary" : "ghost"}
-                  size="sm"
-                  className="flex-1 justify-start text-xs h-7"
-                  onClick={onToggleBookmark}
-                >
-                  <Bookmark size={12} fill={isCurrentPathBookmarked ? "currentColor" : "none"} className={cn("mr-2", isCurrentPathBookmarked && "text-yellow-500")} />
-                  {isCurrentPathBookmarked ? t("sftp.bookmark.remove") : t("sftp.bookmark.add")}
-                </Button>
-                {pane.connection?.currentPath && !isCurrentPathGlobalBookmarked && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs h-7 px-2 shrink-0"
-                        onClick={() => pane.connection?.currentPath && onAddGlobalBookmark(pane.connection.currentPath)}
-                      >
-                        {t("sftp.bookmark.addGlobal")}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t("sftp.bookmark.addGlobalTooltip")}</TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-              {bookmarks.length > 0 ? (
-                <div className="max-h-48 overflow-auto py-1">
-                  {bookmarks.map((bm) => (
-                    <div
-                      key={bm.id}
-                      className="flex items-center gap-1 px-2 py-1 hover:bg-secondary/60 group"
-                    >
-                      {bm.global && (
-                        <Globe size={10} className="shrink-0 text-primary" />
-                      )}
-                      <button
-                        type="button"
-                        className="flex-1 text-left text-xs truncate font-mono"
-                        onClick={() => onNavigateToBookmark(bm.path)}
-                        title={bm.path}
-                      >
-                        {bm.label}
-                        <span className="ml-1.5 text-muted-foreground text-[10px]">{bm.path}</span>
-                      </button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteBookmark(bm.id);
-                        }}
-                      >
-                        <Trash2 size={10} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-3 text-xs text-muted-foreground text-center">
-                  {t("sftp.bookmark.empty")}
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
+        {/* Bookmark button: left-click toggles, right-click opens list */}
+        <BookmarkButton
+          t={t}
+          bookmarks={bookmarks}
+          isCurrentPathBookmarked={isCurrentPathBookmarked}
+          onToggleBookmark={onToggleBookmark}
+          onNavigateToBookmark={onNavigateToBookmark}
+          onDeleteBookmark={onDeleteBookmark}
+          onAddGlobalBookmark={onAddGlobalBookmark}
+          isCurrentPathGlobalBookmarked={isCurrentPathGlobalBookmarked}
+          currentPath={pane.connection?.currentPath}
+        />
 
         {/* Action buttons area - observed for overflow */}
         <div className="ml-auto flex items-center gap-0.5 shrink-0">
