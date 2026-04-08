@@ -32,6 +32,7 @@ import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { ToastProvider, toast } from './components/ui/toast';
 import { VaultView, VaultSection } from './components/VaultView';
+import { QuickAddSnippetDialog } from './components/QuickAddSnippetDialog';
 import { KeyboardInteractiveModal, KeyboardInteractiveRequest } from './components/KeyboardInteractiveModal';
 import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal';
 import { cn } from './lib/utils';
@@ -171,10 +172,6 @@ function App({ settings }: { settings: SettingsState }) {
   const [protocolSelectHost, setProtocolSelectHost] = useState<Host | null>(null);
   // Navigation state for VaultView sections
   const [navigateToSection, setNavigateToSection] = useState<VaultSection | null>(null);
-  // One-shot "pending add snippet" flag. Set true when the terminal-side
-  // ScriptsSidePanel "+" button is clicked. Cleared by SnippetsManager
-  // once it has consumed the request and opened its add panel.
-  const [pendingSnippetAdd, setPendingSnippetAdd] = useState(false);
   // Keyboard-interactive authentication queue (2FA/MFA) - queue-based to handle multiple concurrent sessions
   const [keyboardInteractiveQueue, setKeyboardInteractiveQueue] = useState<KeyboardInteractiveRequest[]>([]);
   // Passphrase request queue for encrypted SSH keys
@@ -580,24 +577,6 @@ function App({ settings }: { settings: SettingsState }) {
       setIsQuickSwitcherOpen(false);
     }
   });
-
-  // Listen for "add snippet" requests from the terminal-side ScriptsSidePanel.
-  // Switches the active tab to the vault, navigates to the Snippets section,
-  // and raises a one-shot pending flag so SnippetsManager opens its add panel
-  // on mount. SnippetsManager clears the flag via the handled callback.
-  useEffect(() => {
-    const handler = () => {
-      setActiveTabId('vault');
-      setNavigateToSection('snippets');
-      setPendingSnippetAdd(true);
-    };
-    window.addEventListener('netcatty:snippets:add', handler);
-    return () => window.removeEventListener('netcatty:snippets:add', handler);
-  }, [setActiveTabId]);
-
-  const handlePendingSnippetAddHandled = useCallback(() => {
-    setPendingSnippetAdd(false);
-  }, []);
 
   // Show toast notification when update is available (only when auto-download is idle)
   useEffect(() => {
@@ -1469,8 +1448,6 @@ function App({ settings }: { settings: SettingsState }) {
             onOpenLogView={openLogView}
             navigateToSection={navigateToSection}
             onNavigateToSectionHandled={() => setNavigateToSection(null)}
-            pendingSnippetAdd={pendingSnippetAdd}
-            onPendingSnippetAddHandled={handlePendingSnippetAddHandled}
           />
         </VaultViewContainer>
 
@@ -1561,6 +1538,17 @@ function App({ settings }: { settings: SettingsState }) {
           );
         })}
       </div>
+
+      {/* Global "quick add snippet" dialog, triggered by the
+          netcatty:snippets:add window event (from ScriptsSidePanel "+"). */}
+      <QuickAddSnippetDialog
+        snippets={snippets}
+        packages={snippetPackages}
+        onCreateSnippet={(snippet) => updateSnippets([...snippets, snippet])}
+        onCreatePackage={(pkg) =>
+          updateSnippetPackages(Array.from(new Set([...snippetPackages, pkg])))
+        }
+      />
 
       {isQuickSwitcherOpen && (
         <Suspense fallback={null}>

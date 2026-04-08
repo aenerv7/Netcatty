@@ -38,12 +38,6 @@ interface SnippetsManagerProps {
   managedSources?: ManagedSource[];
   onSaveHost?: (host: Host) => void;
   onCreateGroup?: (groupPath: string) => void;
-  // One-shot pending flag: when true, the manager opens its "add snippet"
-  // panel and then invokes onPendingAddHandled to clear the flag. Used so
-  // the terminal-side ScriptsSidePanel "+" button can jump straight into
-  // the add flow even when SnippetsManager is mounting for the first time.
-  pendingAdd?: boolean;
-  onPendingAddHandled?: () => void;
 }
 
 type RightPanelMode = 'none' | 'edit-snippet' | 'history' | 'select-targets';
@@ -67,8 +61,6 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   managedSources = [],
   onSaveHost,
   onCreateGroup,
-  pendingAdd,
-  onPendingAddHandled,
 }) => {
   const { t } = useI18n();
   // Panel state
@@ -300,28 +292,6 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     }
     setRightPanelMode('edit-snippet');
   };
-
-  // When the parent raises the pendingAdd flag (e.g. user clicked "+" on
-  // the terminal-side ScriptsSidePanel), open the add panel on mount /
-  // when the flag turns true, then clear the flag via the handled callback.
-  // Using a one-shot flag (vs. a monotonic trigger) avoids the edge case
-  // where the trigger is already non-zero on first mount and the naive
-  // "last-seen" comparison would skip the initial open.
-  useEffect(() => {
-    if (!pendingAdd) return;
-    setEditingSnippet({
-      label: '',
-      command: '',
-      package: selectedPackage || '',
-      targets: [],
-    });
-    setTargetSelection([]);
-    setRightPanelMode('edit-snippet');
-    onPendingAddHandled?.();
-    // selectedPackage is intentionally not a dep — we snapshot it when
-    // opening the panel, not on every selectedPackage change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingAdd, onPendingAddHandled]);
 
   const handleSubmit = () => {
     if (editingSnippet.label && editingSnippet.command) {

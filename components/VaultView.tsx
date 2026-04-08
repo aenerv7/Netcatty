@@ -150,11 +150,6 @@ interface VaultViewProps {
   // Optional: navigate to a specific section on mount or when changed
   navigateToSection?: VaultSection | null;
   onNavigateToSectionHandled?: () => void;
-  // One-shot pending flag from the terminal-side ScriptsSidePanel "+"
-  // button. When true, SnippetsManager opens its add panel and then
-  // calls onPendingSnippetAddHandled to clear the flag.
-  pendingSnippetAdd?: boolean;
-  onPendingSnippetAddHandled?: () => void;
 }
 
 const VaultViewInner: React.FC<VaultViewProps> = ({
@@ -200,8 +195,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   onUpdateGroupConfigs,
   navigateToSection,
   onNavigateToSectionHandled,
-  pendingSnippetAdd,
-  onPendingSnippetAddHandled,
 }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -2794,8 +2787,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 Array.from(new Set([...customGroups, groupPath])),
               )
             }
-            pendingAdd={pendingSnippetAdd}
-            onPendingAddHandled={onPendingSnippetAddHandled}
           />
         )}
         {currentSection === "keys" && (
