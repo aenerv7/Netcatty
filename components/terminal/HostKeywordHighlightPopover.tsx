@@ -11,6 +11,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { ScrollArea } from '../ui/scroll-area';
+import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip';
 
 export interface HostKeywordHighlightPopoverProps {
   host?: Host;
@@ -120,18 +121,22 @@ export const HostKeywordHighlightPopover: React.FC<HostKeywordHighlightPopoverPr
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="secondary"
-          size="icon"
-          className={buttonClassName}
-          title={t('terminal.toolbar.hostHighlight.title')}
-          aria-label={t('terminal.toolbar.hostHighlight.title')}
-          disabled={isDisabled}
-        >
-          <Highlighter size={12} />
-        </Button>
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              className={buttonClassName}
+              aria-label={t('terminal.toolbar.hostHighlight.title')}
+              disabled={isDisabled}
+            >
+              <Highlighter size={12} />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{t('terminal.toolbar.hostHighlight.title')}</TooltipContent>
+      </Tooltip>
       <PopoverContent className="w-80 p-0" align="start" side="top">
         <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase text-muted-foreground">

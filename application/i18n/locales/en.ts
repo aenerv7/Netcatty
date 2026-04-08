@@ -1153,6 +1153,7 @@ const en: Messages = {
   'terminal.toolbar.hostHighlight.clearAll': 'Clear All',
   'terminal.toolbar.hostHighlight.changeColor': 'Change highlight color for',
   'terminal.toolbar.hostHighlight.selectColor': 'Select color for new rule',
+  'terminal.toolbar.toggleSidebar': 'Toggle Sidebar',
   'terminal.serverStats.cpu': 'CPU Usage',
   'terminal.serverStats.cpuCores': 'CPU Core Usage',
   'terminal.serverStats.memory': 'Memory Usage',

@@ -767,6 +767,7 @@ const zhCN: Messages = {
   'terminal.toolbar.hostHighlight.clearAll': '清除全部',
   'terminal.toolbar.hostHighlight.changeColor': '更改高亮颜色',
   'terminal.toolbar.hostHighlight.selectColor': '选择新规则的颜色',
+  'terminal.toolbar.toggleSidebar': '切换侧边栏',
   'terminal.serverStats.cpu': 'CPU 使用率',
   'terminal.serverStats.cpuCores': 'CPU 核心使用率',
   'terminal.serverStats.memory': '内存使用',

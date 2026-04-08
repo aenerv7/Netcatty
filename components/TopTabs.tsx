@@ -1,4 +1,4 @@
-import { Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, MoreHorizontal, Plus, Server, Sparkles, Square, TerminalSquare, Usb, X } from 'lucide-react';
+import { Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, MoreHorizontal, PanelLeft, Plus, Server, Square, TerminalSquare, Usb, X } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activeTabStore, useActiveTabId } from '../application/state/activeTabStore';
 import { buildWorkspaceActivityMap } from '../application/state/sessionActivity';
@@ -6,8 +6,6 @@ import { useSessionActivityMap } from '../application/state/sessionActivityStore
 import { LogView } from '../application/state/useSessionState';
 import { useWindowControls } from '../application/state/useWindowControls';
 import { useI18n } from '../application/i18n/I18nProvider';
-import { STORAGE_KEY_AI_PROVIDERS, STORAGE_KEY_AI_EXTERNAL_AGENTS } from '../infrastructure/config/storageKeys';
-import { localStorageAdapter } from '../infrastructure/persistence/localStorageAdapter';
 import { getEffectiveHostDistro } from '../domain/host';
 import { cn } from '../lib/utils';
 import { Host, TerminalSession, Workspace } from '../types';
@@ -262,22 +260,8 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   const isScpActive = activeTabId === 'scp';
   const onSelectTab = activeTabStore.setActiveTabId;
 
-  // Only show AI button when not on vault and at least one AI capability is available
-  const hasAIProvider = useMemo(() => {
-    const providers = localStorageAdapter.read<unknown[]>(STORAGE_KEY_AI_PROVIDERS);
-    if (Array.isArray(providers) && providers.length > 0) return true;
-    const agents = localStorageAdapter.read<{ enabled?: boolean }[]>(STORAGE_KEY_AI_EXTERNAL_AGENTS);
-    if (Array.isArray(agents) && agents.some(a => a.enabled)) return true;
-    return false;
-  }, []);
-  const [hasDiscoveredAgent, setHasDiscoveredAgent] = useState(false);
-  useEffect(() => {
-    const bridge = (window as unknown as { netcatty?: { aiDiscoverAgents?: () => Promise<{ available?: boolean }[]> } }).netcatty;
-    bridge?.aiDiscoverAgents?.().then(agents => {
-      if (Array.isArray(agents) && agents.some(a => a.available)) setHasDiscoveredAgent(true);
-    }).catch(() => {});
-  }, []);
-  const showAIButton = !isVaultActive && (hasAIProvider || hasDiscoveredAgent);
+  // Show sidebar toggle only on terminal tabs (not vault/sftp/scp)
+  const isTerminalTab = !isVaultActive && !isSftpActive && !isScpActive;
 
   // Tab reorder drag state
   const [dropIndicator, setDropIndicator] = useState<{ tabId: string; position: 'before' | 'after' } | null>(null);
@@ -969,16 +953,16 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
 
         {/* Fixed right controls */}
         <div className="flex-shrink-0 flex items-center gap-2 app-drag self-center" style={dragRegionStyle}>
-          {showAIButton && (
+          {isTerminalTab && (
             <Button
               variant="ghost"
               size="icon"
               className="h-6 w-6 app-no-drag"
               style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
-              title="AI Assistant"
-              onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-ai-panel'))}
+              title={t('terminal.toolbar.toggleSidebar')}
+              onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-sidebar'))}
             >
-              <Sparkles size={16} />
+              <PanelLeft size={16} />
             </Button>
           )}
           <SyncStatusButton onSyncNow={onSyncNow} />

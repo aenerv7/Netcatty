@@ -1315,6 +1315,13 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     return () => window.removeEventListener('netcatty:toggle-ai-panel', handler);
   }, [handleOpenAI]);
 
+  // Listen for global sidebar toggle (from TopTabs button)
+  useEffect(() => {
+    const handler = () => handleToggleSftpFromBar();
+    window.addEventListener('netcatty:toggle-sidebar', handler);
+    return () => window.removeEventListener('netcatty:toggle-sidebar', handler);
+  }, [handleToggleSftpFromBar]);
+
   useEffect(() => {
     const sessionIdsToClear = getSessionActivityIdsToClear(activeTabId, sessions);
     if (sessionIdsToClear.length === 1) {
