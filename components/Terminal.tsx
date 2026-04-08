@@ -1548,7 +1548,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     <TerminalToolbar
       status={status}
       host={host}
-      onOpenSFTP={handleOpenSFTP}
       onOpenScripts={onOpenScripts ?? (() => {})}
       onOpenTheme={onOpenTheme ?? (() => {})}
       onUpdateHost={onUpdateHost}

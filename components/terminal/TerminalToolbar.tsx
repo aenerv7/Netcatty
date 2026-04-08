@@ -1,8 +1,8 @@
 /**
  * Terminal Toolbar
- * Displays SFTP, Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
+ * Displays Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
  */
-import { Check, FolderInput, Languages, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, Languages, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -15,7 +15,6 @@ import HostKeywordHighlightPopover from './HostKeywordHighlightPopover';
 export interface TerminalToolbarProps {
     status: 'connecting' | 'connected' | 'disconnected';
     host?: Host;
-    onOpenSFTP: () => void;
     onOpenScripts: () => void;
     onOpenTheme: () => void;
     onUpdateHost?: (host: Host) => void;
@@ -35,7 +34,6 @@ export interface TerminalToolbarProps {
 export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     status,
     host,
-    onOpenSFTP,
     onOpenScripts,
     onOpenTheme,
     onUpdateHost,
@@ -55,30 +53,9 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     const isLocalTerminal = host?.protocol === 'local' || host?.id?.startsWith('local-');
     const isSerialTerminal = host?.protocol === 'serial' || host?.id?.startsWith('serial-');
     const isSSHSession = !isLocalTerminal && !isSerialTerminal && host?.protocol !== 'telnet' && host?.protocol !== 'mosh' && !host?.moshEnabled && host?.hostname !== 'localhost';
-    const hidesSftp = isLocalTerminal || isSerialTerminal;
 
     return (
         <TooltipProvider delayDuration={500} skipDelayDuration={100} disableHoverableContent>
-            {!hidesSftp && (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="secondary"
-                            size="icon"
-                            className={buttonBase}
-                            disabled={status !== 'connected'}
-                            aria-label={t("terminal.toolbar.openSftp")}
-                            onClick={onOpenSFTP}
-                        >
-                            <FolderInput size={12} />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        {status === 'connected' ? t("terminal.toolbar.openSftp") : t("terminal.toolbar.availableAfterConnect")}
-                    </TooltipContent>
-                </Tooltip>
-            )}
-
             {isSSHSession && onSetTerminalEncoding && (
                 <Popover>
                     <Tooltip>

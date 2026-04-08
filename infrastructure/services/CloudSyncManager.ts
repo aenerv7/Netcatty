@@ -1114,9 +1114,15 @@ export class CloudSyncManager {
           this.state.localUpdatedAt = checkResult.remoteFile.meta.updatedAt;
           this.state.remoteVersion = checkResult.remoteFile.meta.version;
           this.state.remoteUpdatedAt = checkResult.remoteFile.meta.updatedAt;
+          ++this.providerDecryptSeq[provider];
+          this.state.providers[provider].lastSync = Date.now();
+          this.state.providers[provider].lastSyncVersion = checkResult.remoteFile.meta.version;
           this.saveSyncConfig();
+          await this.saveProviderConnection(provider, this.state.providers[provider]);
           await this.saveSyncBase(remotePayload, provider);
           this.state.syncState = 'IDLE';
+          this.updateProviderStatus(provider, 'connected');
+          this.notifyStateChange();
 
           this.addSyncHistoryEntry({
             timestamp: Date.now(),
@@ -1128,12 +1134,14 @@ export class CloudSyncManager {
             deviceName: this.state.deviceName,
           });
 
-          return {
+          const result: SyncResult = {
             success: true,
             provider,
             action: 'download' as SyncResult['action'],
             mergedPayload: remotePayload,
           };
+          this.emit({ type: 'SYNC_COMPLETED', provider, result });
+          return result;
         } catch (downloadError) {
           console.error('[CloudSyncManager] First sync: failed to apply remote payload', downloadError);
           this.state.syncState = 'ERROR';
@@ -1146,7 +1154,6 @@ export class CloudSyncManager {
 
       // Remote has higher version — pull remote data (last-write-wins)
       if (checkResult.conflict && checkResult.remoteFile) {
-        // Remote is newer — decrypt and return as merged payload (last-write-wins)
         try {
           let remotePayload: SyncPayload;
           try {
@@ -1158,27 +1165,39 @@ export class CloudSyncManager {
             throw new Error(`Decryption failed (master password may differ between devices): ${decryptError instanceof Error ? decryptError.message : String(decryptError)}`);
           }
 
-          // Remote is newer: apply remote data locally, then upload to
-          // keep version/device metadata in sync across providers.
+          // Update local version tracking to match remote
+          this.state.localVersion = checkResult.remoteFile.meta.version;
+          this.state.localUpdatedAt = checkResult.remoteFile.meta.updatedAt;
+          this.state.remoteVersion = checkResult.remoteFile.meta.version;
+          this.state.remoteUpdatedAt = checkResult.remoteFile.meta.updatedAt;
+          ++this.providerDecryptSeq[provider];
+          this.state.providers[provider].lastSync = Date.now();
+          this.state.providers[provider].lastSyncVersion = checkResult.remoteFile.meta.version;
+          this.saveSyncConfig();
+          await this.saveProviderConnection(provider, this.state.providers[provider]);
           await this.saveSyncBase(remotePayload, provider);
           this.state.syncState = 'IDLE';
+          this.updateProviderStatus(provider, 'connected');
+          this.notifyStateChange();
 
           this.addSyncHistoryEntry({
             timestamp: Date.now(),
             provider,
             action: 'download',
             success: true,
-            localVersion: this.state.localVersion,
+            localVersion: checkResult.remoteFile.meta.version,
             remoteVersion: checkResult.remoteFile.meta.version,
             deviceName: this.state.deviceName,
           });
 
-          return {
+          const result: SyncResult = {
             success: true,
             provider,
             action: 'download' as SyncResult['action'],
             mergedPayload: remotePayload,
           };
+          this.emit({ type: 'SYNC_COMPLETED', provider, result });
+          return result;
         } catch (downloadError) {
           console.error('[CloudSyncManager] Failed to apply remote payload', downloadError);
           this.state.syncState = 'ERROR';
@@ -1423,12 +1442,16 @@ export class CloudSyncManager {
 
           for (const r of hasRemoteData) {
             if (r.check?.remoteFile) {
-              await this.saveSyncBase(bestRemote, r.provider as CloudProvider);
+              const p = r.provider as CloudProvider;
+              ++this.providerDecryptSeq[p];
+              this.state.providers[p].lastSync = Date.now();
+              this.state.providers[p].lastSyncVersion = bestRemoteFile.meta.version;
+              await this.saveProviderConnection(p, this.state.providers[p]);
+              await this.saveSyncBase(bestRemote, p);
             }
           }
 
           this.state.syncState = 'IDLE';
-          this.notifyStateChange();
 
           for (const r of checkResults) {
             const p = r.provider as CloudProvider;
@@ -1436,9 +1459,12 @@ export class CloudSyncManager {
               results.set(p, { success: false, provider: p, action: 'none', error: r.error });
             } else {
               this.updateProviderStatus(p, 'connected');
-              results.set(p, { success: true, provider: p, action: 'download', mergedPayload: bestRemote });
+              const result: SyncResult = { success: true, provider: p, action: 'download', mergedPayload: bestRemote };
+              results.set(p, result);
+              this.emit({ type: 'SYNC_COMPLETED', provider: p, result });
             }
           }
+          this.notifyStateChange();
           return results;
         }
       } catch (firstSyncError) {

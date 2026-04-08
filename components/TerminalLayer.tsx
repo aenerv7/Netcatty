@@ -1,4 +1,4 @@
-import { Circle, FolderTree, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
+import { Circle, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
 import React, { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveTabId } from '../application/state/activeTabStore';
 import {
@@ -48,7 +48,7 @@ import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { setupMcpApprovalBridge } from '../infrastructure/ai/shared/approvalGate';
 
-type SidePanelTab = 'sftp' | 'scripts' | 'theme' | 'ai';
+type SidePanelTab = 'scripts' | 'theme' | 'ai';
 
 type WorkspaceRect = { x: number; y: number; w: number; h: number };
 
@@ -458,56 +458,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     onCloseSession(sessionId);
   }, [onCloseSession]);
 
-  const sftpAutoOpenSidebarRef = useRef(sftpAutoOpenSidebar);
-  sftpAutoOpenSidebarRef.current = sftpAutoOpenSidebar;
-
   const handleStatusChange = useCallback((sessionId: string, status: TerminalSession['status']) => {
     onUpdateSessionStatus(sessionId, status);
-
-    // Auto-open SFTP sidebar when a remote host connects (if setting enabled)
-    if (status === 'connected' && sftpAutoOpenSidebarRef.current) {
-      const session = sessionsRef.current.find(s => s.id === sessionId);
-      if (!session) return;
-      // Only auto-open for SSH/Mosh (SFTP requires SSH); skip local/unset protocol
-      const proto = session.protocol;
-      if (proto !== 'ssh' && proto !== 'mosh') return;
-
-      const host = hostsRef.current.find(h => h.id === session.hostId);
-
-      // Determine the tab ID (workspace or solo session)
-      const tabId = session.workspaceId || sessionId;
-
-      // Only open if the sidebar is not already open for this tab
-      if (sidePanelOpenTabsRef.current.has(tabId)) return;
-
-      const hostWithOverrides: Host = host
-        ? {
-            ...host,
-            protocol: session.protocol ?? host.protocol,
-            port: session.port ?? host.port,
-            moshEnabled: session.moshEnabled ?? host.moshEnabled,
-          }
-        : {
-            // Quick Connect / temporary session — build minimal host from session data
-            id: session.hostId || sessionId,
-            hostname: session.hostname,
-            username: session.username,
-            port: session.port ?? 22,
-            protocol: proto,
-            label: session.label || session.hostname,
-          } as Host;
-
-      setSidePanelOpenTabs(prev => {
-        const next = new Map(prev);
-        next.set(tabId, 'sftp');
-        return next;
-      });
-      setSftpHostForTab(prev => {
-        const next = new Map(prev);
-        next.set(tabId, hostWithOverrides);
-        return next;
-      });
-    }
   }, [onUpdateSessionStatus]);
 
   const handleSessionExit = useCallback((sessionId: string, evt: { exitCode?: number; signal?: number; error?: string; reason?: "exited" | "error" | "timeout" | "closed" }) => {
@@ -1288,11 +1240,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     });
   }, [activeTabId, activeWorkspace, focusedSessionId, activeSession, sessionHostsMap]);
 
-  // Toggle SFTP from activity bar header
-  const handleToggleSftpFromBar = useCallback(() => {
-    handleSwitchSidePanelTab('sftp');
-  }, [handleSwitchSidePanelTab]);
-
   // Open scripts side panel (called from Terminal toolbar)
   const handleOpenScripts = useCallback(() => {
     handleSwitchSidePanelTab('scripts');
@@ -1317,10 +1264,24 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
   // Listen for global sidebar toggle (from TopTabs button)
   useEffect(() => {
-    const handler = () => handleToggleSftpFromBar();
+    const handler = () => {
+      if (!activeTabId) return;
+      const currentPanel = sidePanelOpenTabsRef.current.get(activeTabId);
+      if (currentPanel) {
+        // Sidebar is open — close it
+        setSidePanelOpenTabs(prev => {
+          const next = new Map(prev);
+          next.delete(activeTabId);
+          return next;
+        });
+      } else {
+        // Sidebar is closed — open Scripts
+        handleOpenScripts();
+      }
+    };
     window.addEventListener('netcatty:toggle-sidebar', handler);
     return () => window.removeEventListener('netcatty:toggle-sidebar', handler);
-  }, [handleToggleSftpFromBar]);
+  }, [activeTabId, handleOpenScripts]);
 
   useEffect(() => {
     const sessionIdsToClear = getSessionActivityIdsToClear(activeTabId, sessions);
@@ -1905,8 +1866,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
         }}
       >
         <div className={cn("flex-1 flex min-h-0 relative", sidePanelPosition === 'right' && "flex-row-reverse")}>
-        {/* Side panel with tab header + content (SFTP / Scripts / Theme) */}
-        {(isSidePanelOpenForCurrentTab || mountedSftpTabIds.length > 0 || mountedAiTabIds.length > 0) && (
+        {/* Side panel with tab header + content (Scripts / Theme / AI) */}
+        {(isSidePanelOpenForCurrentTab || mountedAiTabIds.length > 0) && (
           <>
             <div
               style={{ width: isSidePanelOpenForCurrentTab ? sidePanelWidth : 0 }}
@@ -1945,20 +1906,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                       borderBottom: '1px solid var(--terminal-sidepanel-border)',
                     }}
                   >
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-md p-0 hover:bg-transparent"
-                      style={{
-                        color: activeSidePanelTab === 'sftp'
-                          ? 'var(--terminal-sidepanel-fg)'
-                          : 'var(--terminal-sidepanel-muted)',
-                      }}
-                      onClick={handleToggleSftpFromBar}
-                      title="SFTP"
-                    >
-                      <FolderTree size={15} />
-                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -2029,41 +1976,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   </div>
                 )}
                 <div className="flex-1 min-h-0 relative">
-                  {/* SFTP sub-panel */}
-                  {mountedSftpTabIds.map((tabId) => {
-                    const isVisibleSftpPanel = activeTabId === tabId && activeSidePanelTab === 'sftp';
-                    return (
-                        <SftpSidePanel
-                          key={tabId}
-                          hosts={hosts}
-                          keys={keys}
-                          identities={identities}
-                          updateHosts={updateHosts}
-                          sftpDefaultViewMode={sftpDefaultViewMode}
-                          activeHost={isVisibleSftpPanel ? sftpActiveHost : null}
-                          initialLocation={
-                            isVisibleSftpPanel
-                              ? (sftpInitialLocationForTab.get(tabId) ?? null)
-                              : null
-                          }
-                          showWorkspaceHostHeader={isVisibleSftpPanel && !!activeWorkspace}
-                          isVisible={isVisibleSftpPanel}
-                          renderOverlays={isVisibleSftpPanel}
-                          pendingUpload={sftpPendingUploadsForTab.get(tabId) ?? null}
-                          onPendingUploadHandled={(requestId) => handlePendingUploadHandled(tabId, requestId)}
-                          sftpDoubleClickBehavior={sftpDoubleClickBehavior}
-                          sftpAutoSync={isVisibleSftpPanel ? sftpAutoSync : false}
-                          sftpShowHiddenFiles={sftpShowHiddenFiles}
-                          sftpUseCompressedUpload={sftpUseCompressedUpload}
-                          hotkeyScheme={hotkeyScheme}
-                          keyBindings={keyBindings}
-                          editorWordWrap={editorWordWrap}
-                          setEditorWordWrap={setEditorWordWrap}
-                          onGetTerminalCwd={getTerminalCwd}
-                        />
-                    );
-                  })}
-
                   {/* Scripts sub-panel */}
                   {activeSidePanelTab === 'scripts' && (
                     <div className="absolute inset-0 z-10">
@@ -2246,7 +2158,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   hotkeyScheme={hotkeyScheme}
                   keyBindings={keyBindings}
                   onHotkeyAction={onHotkeyAction}
-                  onOpenSftp={handleOpenSftp}
                   onOpenScripts={handleOpenScripts}
                   onOpenTheme={handleOpenTheme}
                   onCloseSession={handleCloseSession}
