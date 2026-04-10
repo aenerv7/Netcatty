@@ -1181,12 +1181,6 @@ const zhCN: Messages = {
   'settings.sftp.autoSync.enable': '启用自动同步',
   'settings.sftp.autoSync.enableDesc': '在外部应用程序中保存文件时，更改将自动上传到远程服务器',
 
-  // Settings > SFTP 自动打开侧栏
-  'settings.sftp.autoOpenSidebar': '连接时自动打开侧栏',
-  'settings.sftp.autoOpenSidebar.desc': '连接到主机时自动打开 SFTP 文件浏览器侧栏',
-  'settings.sftp.autoOpenSidebar.enable': '启用自动打开侧栏',
-  'settings.sftp.autoOpenSidebar.enableDesc': '当终端会话连接到远程主机时，SFTP 侧栏将自动打开',
-
   'settings.sftp.defaultViewMode': '默认视图模式',
   'settings.sftp.defaultViewMode.desc': '选择打开新 SFTP 标签页时的默认视图模式。每个主机的偏好设置会覆盖此全局设置。',
   'settings.sftp.defaultViewMode.list': '列表视图',

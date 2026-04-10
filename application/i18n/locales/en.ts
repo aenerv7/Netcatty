@@ -859,12 +859,6 @@ const en: Messages = {
   'settings.sftp.autoSync.enable': 'Enable auto-sync',
   'settings.sftp.autoSync.enableDesc': 'When you save a file in an external application, changes will be automatically uploaded to the remote server',
 
-  // Settings > SFTP Auto Open Sidebar
-  'settings.sftp.autoOpenSidebar': 'Auto-open sidebar on connect',
-  'settings.sftp.autoOpenSidebar.desc': 'Automatically open the SFTP file browser sidebar when connecting to a host',
-  'settings.sftp.autoOpenSidebar.enable': 'Enable auto-open sidebar',
-  'settings.sftp.autoOpenSidebar.enableDesc': 'The SFTP sidebar will open automatically when a terminal session connects to a remote host',
-
   'settings.sftp.defaultViewMode': 'Default View Mode',
   'settings.sftp.defaultViewMode.desc': 'Choose the default view mode when opening a new SFTP tab. Per-host preferences override this setting.',
   'settings.sftp.defaultViewMode.list': 'List View',

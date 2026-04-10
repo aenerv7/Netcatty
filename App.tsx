@@ -209,7 +209,6 @@ function App({ settings }: { settings: SettingsState }) {
     sftpAutoSync,
     sftpShowHiddenFiles,
     sftpUseCompressedUpload,
-    sftpAutoOpenSidebar,
     sftpDefaultViewMode,
     editorWordWrap,
     setEditorWordWrap,
@@ -1545,7 +1544,6 @@ function App({ settings }: { settings: SettingsState }) {
           sftpAutoSync={sftpAutoSync}
           sftpShowHiddenFiles={sftpShowHiddenFiles}
           sftpUseCompressedUpload={sftpUseCompressedUpload}
-          sftpAutoOpenSidebar={sftpAutoOpenSidebar}
           editorWordWrap={editorWordWrap}
           setEditorWordWrap={setEditorWordWrap}
           sessionLogsEnabled={sessionLogsEnabled}

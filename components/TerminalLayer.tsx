@@ -387,7 +387,6 @@ interface TerminalLayerProps {
   sftpAutoSync: boolean;
   sftpShowHiddenFiles: boolean;
   sftpUseCompressedUpload: boolean;
-  sftpAutoOpenSidebar: boolean;
   editorWordWrap: boolean;
   setEditorWordWrap: (value: boolean) => void;
   // Session log settings for real-time streaming
@@ -440,7 +439,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   sftpAutoSync,
   sftpShowHiddenFiles,
   sftpUseCompressedUpload,
-  sftpAutoOpenSidebar,
   editorWordWrap,
   setEditorWordWrap,
   sessionLogsEnabled,
@@ -2282,7 +2280,6 @@ const terminalLayerAreEqual = (prev: TerminalLayerProps, next: TerminalLayerProp
     prev.sftpAutoSync === next.sftpAutoSync &&
     prev.sftpShowHiddenFiles === next.sftpShowHiddenFiles &&
     prev.sftpUseCompressedUpload === next.sftpUseCompressedUpload &&
-    prev.sftpAutoOpenSidebar === next.sftpAutoOpenSidebar &&
     prev.editorWordWrap === next.editorWordWrap &&
     prev.setEditorWordWrap === next.setEditorWordWrap &&
     prev.onHotkeyAction === next.onHotkeyAction &&
