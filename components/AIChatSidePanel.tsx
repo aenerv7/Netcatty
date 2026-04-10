@@ -141,7 +141,7 @@ function generateId(): string {
 }
 
 function buildAcpHistoryMessages(messages: ChatMessage[]): Array<{ role: 'user' | 'assistant'; content: string }> {
-  return messages.flatMap((message) => {
+  return messages.flatMap((message): Array<{ role: 'user' | 'assistant'; content: string }> => {
     if (message.role === 'system') return [];
 
     if (message.role === 'user') {

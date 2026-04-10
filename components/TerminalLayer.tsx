@@ -43,12 +43,13 @@ import { AIChatSidePanel } from './AIChatSidePanel';
 import { cleanupOrphanedAISessions, useAIState } from '../application/state/useAIState';
 import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 import { TERMINAL_THEMES } from '../infrastructure/config/terminalThemes';
+import { ExecutorContext } from '../infrastructure/ai/cattyAgent/executor';
 import { useCustomThemes } from '../application/state/customThemeStore';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { setupMcpApprovalBridge } from '../infrastructure/ai/shared/approvalGate';
 
-type SidePanelTab = 'scripts' | 'theme' | 'ai';
+type SidePanelTab = 'scripts' | 'theme' | 'ai' | 'sftp';
 
 type WorkspaceRect = { x: number; y: number; w: number; h: number };
 

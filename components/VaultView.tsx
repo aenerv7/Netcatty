@@ -23,7 +23,7 @@ import {
   Settings,
   Square,
   Star,
-  TerminalSquare,
+
   Trash2,
   Upload,
   Usb,
@@ -124,7 +124,6 @@ interface VaultViewProps {
   terminalFontSize: number;
   onOpenSettings: () => void;
   onOpenQuickSwitcher: () => void;
-  onCreateLocalTerminal: () => void;
   onConnectSerial?: (config: SerialConfig, options?: { charset?: string }) => void;
   onDeleteHost: (id: string) => void;
   onConnect: (host: Host) => void;
@@ -170,7 +169,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   terminalFontSize,
   onOpenSettings,
   onOpenQuickSwitcher,
-  onCreateLocalTerminal,
   onConnectSerial,
   onDeleteHost,
   onConnect,
@@ -631,22 +629,14 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
 
         if (isManaged && !filePath) {
           // Cannot proceed with managed import without a valid file path
-          toast({
-            title: t("vault.import.sshConfig.noFilePath"),
-            description: t("vault.import.sshConfig.noFilePathDesc"),
-            variant: "destructive",
-          });
+          toast.error(t("vault.import.sshConfig.noFilePathDesc"), { title: t("vault.import.sshConfig.noFilePath") });
           return;
         }
 
         if (isManaged) {
           const existingSource = managedSources.find(s => s.filePath === filePath);
           if (existingSource) {
-            toast({
-              title: t("vault.import.sshConfig.alreadyManaged"),
-              description: t("vault.import.sshConfig.alreadyManagedDesc", { group: existingSource.groupName }),
-              variant: "destructive",
-            });
+            toast.error(t("vault.import.sshConfig.alreadyManagedDesc", { group: existingSource.groupName }), { title: t("vault.import.sshConfig.alreadyManaged") });
             return;
           }
         }
@@ -1448,7 +1438,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     if (!a || !b) return a === b;
     if (a.kind !== b.kind) return false;
     if (a.kind === "root") return true;
-    return a.path === b.path;
+    return "path" in a && "path" in b && a.path === b.path;
   }, []);
 
   const pulseDropTarget = useCallback((target: DropTarget) => {
@@ -1874,14 +1864,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 </DropdownContent>
               </Dropdown>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-10 px-3 app-no-drag bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
-              onClick={onCreateLocalTerminal}
-            >
-              <TerminalSquare size={14} className="mr-2" /> {t("common.terminal")}
-            </Button>
             <Button
               size="sm"
               variant="secondary"

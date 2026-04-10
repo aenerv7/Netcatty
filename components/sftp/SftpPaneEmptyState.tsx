@@ -13,7 +13,7 @@ interface SftpPaneEmptyStateProps {
   hostSearch: string;
   setHostSearch: (value: string) => void;
   hosts: Host[];
-  onConnect: (hostId: string) => void;
+  onConnect: (host: Host | "local") => void;
 }
 
 export const SftpPaneEmptyState: React.FC<SftpPaneEmptyStateProps> = ({

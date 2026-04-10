@@ -489,7 +489,6 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
           setFileOpenerTarget={setFileOpenerTarget}
           handleFileOpenerSelect={handleFileOpenerSelect}
           handleSelectSystemApp={handleSelectSystemApp}
-          t={t}
         />
       </div>
     </SftpContextProvider>

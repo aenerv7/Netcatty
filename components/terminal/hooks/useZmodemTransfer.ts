@@ -48,6 +48,7 @@ export function useZmodemTransfer(sessionId: string | null) {
             total: 0,
             fileIndex: 0,
             fileCount: 0,
+            finalizing: false,
             error: null,
           });
           break;

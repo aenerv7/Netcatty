@@ -38,7 +38,7 @@ export const clearHostFontSizeOverride = (host: Host): Host => ({
   fontSizeOverride: false,
 });
 
-export const resolveHostTerminalThemeId = (host: Host | null | undefined, defaultThemeId: string): string =>
+export const resolveHostTerminalThemeId = (host: Pick<Host, 'theme' | 'themeOverride'> | null | undefined, defaultThemeId: string): string =>
   hasHostThemeOverride(host) && host?.theme ? host.theme : defaultThemeId;
 
 export const resolveHostTerminalFontFamilyId = (host: Host | null | undefined, defaultFontFamilyId: string): string =>

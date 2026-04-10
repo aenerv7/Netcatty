@@ -52,7 +52,7 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
 
     const isLocalTerminal = host?.protocol === 'local' || host?.id?.startsWith('local-');
     const isSerialTerminal = host?.protocol === 'serial' || host?.id?.startsWith('serial-');
-    const isSSHSession = !isLocalTerminal && !isSerialTerminal && host?.protocol !== 'telnet' && host?.protocol !== 'mosh' && !host?.moshEnabled && host?.hostname !== 'localhost';
+    const isSSHSession = !isLocalTerminal && !isSerialTerminal && host?.protocol !== 'telnet' && !host?.moshEnabled && host?.hostname !== 'localhost';
 
     return (
         <TooltipProvider delayDuration={500} skipDelayDuration={100} disableHoverableContent>

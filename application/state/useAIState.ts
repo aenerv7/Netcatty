@@ -43,7 +43,7 @@ function cleanupAcpSessions(sessionIds: string[]) {
   const bridge = getAIBridge();
   if (!bridge?.aiAcpCleanup || sessionIds.length === 0) return;
   for (const sessionId of sessionIds) {
-    void bridge.aiAcpCleanup(sessionId).catch(() => {});
+    void (bridge.aiAcpCleanup(sessionId) as Promise<void>).catch(() => {});
   }
 }
 

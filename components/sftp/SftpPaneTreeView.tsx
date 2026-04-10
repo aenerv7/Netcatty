@@ -1129,7 +1129,7 @@ export const SftpPaneTreeView = React.memo<SftpPaneTreeViewProps>(({
             <AlertCircle size={12} /> {tRef.current('sftp.tree.loadError')}
           </div>
         );
-      } else {
+      } else if (descriptor.type === 'node') {
         content = (
           <TreeNode
             entry={descriptor.entry}

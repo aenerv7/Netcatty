@@ -428,6 +428,8 @@ const SelectHostPanel: React.FC<SelectHostPanelProps> = ({
           groups={customGroups}
           managedSources={managedSources}
           allHosts={hosts}
+          terminalThemeId=""
+          terminalFontSize={14}
           onSave={(host) => {
             onSaveHost(host);
             setShowNewHostPanel(false);

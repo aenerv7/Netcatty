@@ -98,8 +98,8 @@ interface UseSftpViewFileOpsResult {
   onOpenFileWithRight: (file: SftpFileEntry, fullPath?: string) => void;
   onDownloadFileLeft: (file: SftpFileEntry, fullPath?: string) => void;
   onDownloadFileRight: (file: SftpFileEntry, fullPath?: string) => void;
-  onUploadExternalFilesLeft: (dataTransfer: DataTransfer, targetPath?: string) => void;
-  onUploadExternalFilesRight: (dataTransfer: DataTransfer, targetPath?: string) => void;
+  onUploadExternalFilesLeft: (dataTransfer: DataTransfer, targetPath?: string) => Promise<void>;
+  onUploadExternalFilesRight: (dataTransfer: DataTransfer, targetPath?: string) => Promise<void>;
 }
 
 export const useSftpViewFileOps = ({

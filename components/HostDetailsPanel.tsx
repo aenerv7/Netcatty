@@ -1610,7 +1610,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
             <select
               className="h-8 rounded-md border border-input bg-background px-2 text-xs"
               value={form.backspaceBehavior ?? ""}
-              onChange={(e) => update("backspaceBehavior", e.target.value || undefined)}
+              onChange={(e) => update("backspaceBehavior", (e.target.value || undefined) as "ctrl-h" | undefined)}
             >
               <option value="">{t("hostDetails.backspaceBehavior.default")}</option>
               <option value="ctrl-h">^H (0x08)</option>

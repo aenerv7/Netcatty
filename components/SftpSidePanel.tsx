@@ -679,7 +679,6 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
           setFileOpenerTarget={setFileOpenerTarget}
           handleFileOpenerSelect={handleFileOpenerSelect}
           handleSelectSystemApp={handleSelectSystemApp}
-          t={t}
         />
       )}
     </SftpContextProvider>

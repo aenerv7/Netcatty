@@ -1381,7 +1381,7 @@ const zhCN: Messages = {
   'settings.shortcuts.binding.next-tab': '下一个标签页',
   'settings.shortcuts.binding.prev-tab': '上一个标签页',
   'settings.shortcuts.binding.close-tab': '关闭标签页',
-  'settings.shortcuts.binding.new-tab': '新建本地标签页',
+  'settings.shortcuts.binding.new-tab': '新建标签页',
   'settings.shortcuts.binding.copy': '从终端复制',
   'settings.shortcuts.binding.paste': '粘贴到终端',
   'settings.shortcuts.binding.select-all': '全选终端内容',

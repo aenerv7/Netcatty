@@ -17,7 +17,7 @@ function formatToolResult(result: unknown): string {
       const obj = JSON.parse(parsed);
       if (obj && typeof obj === 'object') parsed = obj;
     } catch {
-      return parsed;
+      return parsed as string;
     }
   }
 

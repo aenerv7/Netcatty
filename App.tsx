@@ -387,7 +387,7 @@ function App({ settings }: { settings: SettingsState }) {
     () =>
       portForwardingRules.map((rule) => ({
         ...rule,
-        status: "inactive",
+        status: "inactive" as const,
         error: undefined,
         lastUsedAt: undefined,
       })),
@@ -954,6 +954,8 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
       case 'newTab':
+        setIsQuickSwitcherOpen(true);
+        break;
       case 'openLocal':
         // Add connection log for local terminal
         addConnectionLogRef.current({
@@ -1436,7 +1438,6 @@ function App({ settings }: { settings: SettingsState }) {
             terminalFontSize={terminalFontSize}
             onOpenSettings={handleOpenSettings}
             onOpenQuickSwitcher={handleOpenQuickSwitcher}
-            onCreateLocalTerminal={handleCreateLocalTerminal}
             onConnectSerial={handleConnectSerial}
             onDeleteHost={handleDeleteHost}
             onConnect={handleConnectToHost}
@@ -1588,10 +1589,6 @@ function App({ settings }: { settings: SettingsState }) {
               handleCreateLocalTerminal(shell);
               setIsQuickSwitcherOpen(false);
               setQuickSearch('');
-            }}
-            onCreateWorkspace={() => {
-              setIsQuickSwitcherOpen(false);
-              setIsCreateWorkspaceOpen(true);
             }}
             onClose={() => {
               setIsQuickSwitcherOpen(false);

@@ -613,7 +613,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
   const effectiveTheme = useMemo(() => {
     const themeId = themePreviewId ?? resolveHostTerminalThemeId(
-      { theme: host.theme, themeOverride: host.themeOverride } as Pick<Host, 'theme' | 'themeOverride'>,
+      { theme: host.theme, themeOverride: host.themeOverride },
       terminalTheme.id,
     );
     if (themeId) {
@@ -699,7 +699,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     t,
     onSessionAttached: (id: string) => {
       // Sync terminal encoding to SSH backend before first data arrives
-      const isSSH = host.protocol !== 'local' && host.protocol !== 'serial' && host.protocol !== 'telnet' && host.protocol !== 'mosh' && !host.moshEnabled && !host.id?.startsWith('local-') && !host.id?.startsWith('serial-') && host.hostname !== 'localhost';
+      const isSSH = host.protocol !== 'local' && host.protocol !== 'serial' && host.protocol !== 'telnet' && !host.moshEnabled && !host.id?.startsWith('local-') && !host.id?.startsWith('serial-') && host.hostname !== 'localhost';
       if (isSSH) {
         setSessionEncoding(id, terminalEncodingRef.current);
       }

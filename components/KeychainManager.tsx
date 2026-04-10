@@ -731,7 +731,7 @@ echo $3 >> "$FILE"`);
                 <KeyCard
                   key={key.id}
                   keyItem={key}
-                  viewMode={viewMode}
+                  viewMode={viewMode as "grid" | "list"}
                   isSelected={
                     (panel.type === "view" && panel.key.id === key.id) ||
                     (panel.type === "export" && panel.key.id === key.id)
@@ -771,7 +771,7 @@ echo $3 >> "$FILE"`);
                   <ContextMenuTrigger>
                     <IdentityCard
                       identity={identity}
-                      viewMode={viewMode}
+                      viewMode={viewMode as "grid" | "list"}
                       isSelected={
                         panel.type === "identity" &&
                         panel.identity?.id === identity.id

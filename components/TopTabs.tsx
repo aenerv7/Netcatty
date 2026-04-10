@@ -121,7 +121,7 @@ const SessionTabIcon: React.FC<{ host: Host | undefined; isActive: boolean; prot
   }
 
   // Fallback: generic server icon for remote, terminal for unknown
-  if (host && host.protocol !== 'local') {
+  if (host && (host.protocol as string) !== 'local') {
     return (
       <div className={boxBase} style={{ backgroundColor: 'color-mix(in srgb, var(--top-tabs-accent, hsl(var(--accent))) 15%, transparent)', color: 'var(--top-tabs-accent, hsl(var(--accent)))' }}>
         <Server className={iconSize} />

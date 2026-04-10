@@ -389,7 +389,7 @@ export const DEFAULT_KEY_BINDINGS: KeyBinding[] = [
   { id: 'next-tab', action: 'nextTab', label: 'Next Tab', mac: '⌘ + Shift + ]', pc: 'Ctrl + Tab', category: 'tabs' },
   { id: 'prev-tab', action: 'prevTab', label: 'Previous Tab', mac: '⌘ + Shift + [', pc: 'Ctrl + Shift + Tab', category: 'tabs' },
   { id: 'close-tab', action: 'closeTab', label: 'Close Tab', mac: '⌘ + W', pc: 'Ctrl + W', category: 'tabs' },
-  { id: 'new-tab', action: 'newTab', label: 'New Local Tab', mac: '⌘ + T', pc: 'Ctrl + T', category: 'tabs' },
+  { id: 'new-tab', action: 'newTab', label: 'New Tab', mac: '⌘ + T', pc: 'Ctrl + T', category: 'tabs' },
 
   // Terminal Operations
   { id: 'copy', action: 'copy', label: 'Copy from Terminal', mac: '⌘ + C', pc: 'Ctrl + Shift + C', category: 'terminal' },

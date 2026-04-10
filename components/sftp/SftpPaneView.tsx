@@ -130,8 +130,8 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
   useRenderTracker(`SftpPaneView[${side}]`, {
     side,
     paneId: pane.id,
-    paneConnected: pane.connected,
-    panePath: pane.currentPath,
+    paneConnected: pane.connection?.status === 'connected',
+    panePath: pane.connection?.currentPath,
     showHeader,
     draggedFilesCount: draggedFiles?.length ?? 0,
   });

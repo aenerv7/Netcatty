@@ -42,7 +42,7 @@ const getProtocolInfo = (host: Host): { i18nKey: string; showPort: boolean; port
     if (host.moshEnabled) {
         return { i18nKey: 'terminal.connection.protocol.mosh', showPort: true, port: host.port || 22 };
     }
-    const protocol = host.protocol || 'ssh';
+    const protocol: string = host.protocol || 'ssh';
     switch (protocol) {
         case 'local':
             return { i18nKey: 'terminal.connection.protocol.local', showPort: false, port: 0 };

@@ -46,6 +46,8 @@ interface UseSftpViewPaneCallbacksParams {
   ) => Promise<{ transferId: string; totalBytes?: number; error?: string }>;
   getSftpIdForConnection?: (connectionId: string) => string | undefined;
   listLocalFiles: (path: string) => Promise<RemoteFile[]>;
+  mkdirLocal?: (path: string) => Promise<void>;
+  deleteLocalFile?: (path: string) => Promise<void>;
 }
 
 export const useSftpViewPaneCallbacks = ({

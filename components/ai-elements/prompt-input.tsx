@@ -28,7 +28,7 @@ import { Spinner } from '../ui/spinner';
 // PromptInput (form wrapper)
 // ---------------------------------------------------------------------------
 
-export interface PromptInputProps extends HTMLAttributes<HTMLFormElement> {
+export interface PromptInputProps extends Omit<HTMLAttributes<HTMLFormElement>, 'onSubmit'> {
   onSubmit: (text: string, event: FormEvent<HTMLFormElement>) => void | Promise<void>;
 }
 

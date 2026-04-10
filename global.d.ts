@@ -98,6 +98,8 @@ declare global {
     sessionLog?: { enabled: boolean; directory: string; format: string };
     // Local SSH key file paths (from SSH config IdentityFile)
     identityFilePaths?: string[];
+    // Use SCP mode instead of SFTP subsystem
+    useScp?: boolean;
   }
 
   interface SftpStatResult {
@@ -789,6 +791,8 @@ declare global {
       available: boolean;
       supported?: boolean;
       checking?: boolean;
+      ready?: boolean;
+      downloading?: boolean;
       version?: string;
       releaseNotes?: string;
       releaseDate?: string | null;

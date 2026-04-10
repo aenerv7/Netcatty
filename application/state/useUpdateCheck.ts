@@ -150,7 +150,7 @@ export function useUpdateCheck(options?: { autoUpdateEnabled?: boolean }): UseUp
         return {
           ...prev,
           hasUpdate: isAvailableOnly ? true : prev.hasUpdate,
-          autoDownloadStatus: isAvailableOnly ? 'idle' : snapshot.status,
+          autoDownloadStatus: isAvailableOnly ? 'idle' : snapshot.status as AutoDownloadStatus,
           downloadPercent: isAvailableOnly ? 0 : snapshot.percent,
           downloadError: isAvailableOnly ? null : snapshot.error,
           // Use snapshot version if no release data or if versions differ

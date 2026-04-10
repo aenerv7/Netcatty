@@ -86,7 +86,7 @@ export type CreateXTermRuntimeContext = {
   >;
 
   // Snippets for shortkey support
-  snippetsRef?: RefObject<{ id: string; command: string; shortkey?: string }[]>;
+  snippetsRef?: RefObject<{ id: string; command: string; shortkey?: string; noAutoRun?: boolean }[]>;
 
   sessionId: string;
   statusRef: RefObject<TerminalSession["status"]>;
