@@ -1295,6 +1295,71 @@ export class CloudSyncManager {
     }
   }
 
+  // ========================================================================
+  // Gist Revision History (#679)
+  // ========================================================================
+
+  /**
+   * Get the GitHub Gist revision history. Returns an array of
+   * `{ version (SHA), date }` entries, newest first.
+   */
+  async getGistRevisionHistory(): Promise<Array<{ version: string; date: Date }>> {
+    let adapter: import('./adapters/GitHubAdapter').default;
+    try {
+      adapter = await this.getConnectedAdapter('github') as import('./adapters/GitHubAdapter').default;
+    } catch {
+      return [];
+    }
+    if (!adapter.getHistory) return [];
+    return adapter.getHistory();
+  }
+
+  /**
+   * Download and decrypt a specific historical Gist revision.
+   * Returns a structured preview (entity counts) plus the full
+   * SyncPayload so the caller can offer a one-click restore.
+   *
+   * Throws if the revision cannot be decrypted (e.g. encrypted with a
+   * different master password).
+   */
+  async downloadGistRevision(sha: string): Promise<{
+    payload: SyncPayload;
+    meta: import('../../domain/sync').SyncFileMeta;
+    preview: {
+      hostCount: number;
+      keyCount: number;
+      snippetCount: number;
+      identityCount: number;
+      portForwardingRuleCount: number;
+    };
+  } | null> {
+    if (this.state.securityState !== 'UNLOCKED' || !this.masterPassword) {
+      throw new Error('Vault is locked');
+    }
+    let adapter: import('./adapters/GitHubAdapter').default;
+    try {
+      adapter = await this.getConnectedAdapter('github') as import('./adapters/GitHubAdapter').default;
+    } catch {
+      throw new Error('GitHub adapter not available');
+    }
+    if (!adapter.downloadRevision) throw new Error('GitHub adapter not available');
+    const syncedFile = await adapter.downloadRevision(sha);
+    if (!syncedFile) return null;
+
+    const payload = await EncryptionService.decryptPayload(syncedFile, this.masterPassword);
+    return {
+      payload,
+      meta: syncedFile.meta,
+      preview: {
+        hostCount: payload.hosts?.length ?? 0,
+        keyCount: payload.keys?.length ?? 0,
+        snippetCount: payload.snippets?.length ?? 0,
+        identityCount: payload.identities?.length ?? 0,
+        portForwardingRuleCount: payload.portForwardingRules?.length ?? 0,
+      },
+    };
+  }
+
   /**
    * Resolve a sync conflict
    */
