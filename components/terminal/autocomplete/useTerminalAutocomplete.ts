@@ -39,6 +39,14 @@ export const DEFAULT_AUTOCOMPLETE_SETTINGS: AutocompleteSettings = {
   fastTypingThresholdMs: 40,
 };
 
+/**
+ * Cooldown period (ms) after Tab passes through to the remote shell.
+ * During this window, suggestion fetches are suppressed so the remote
+ * shell's native completion response can arrive and the terminal content
+ * can settle before we re-evaluate the prompt.
+ */
+const TAB_PASSTHROUGH_COOLDOWN_MS = 500;
+
 /** Shared empty state to avoid creating new objects on every reset */
 const EMPTY_STATE: AutocompleteState = Object.freeze({
   suggestions: [],
@@ -149,6 +157,10 @@ export function useTerminalAutocomplete(
   const lastAcceptedCommandRef = useRef<string | null>(null);
   /** Monotonic counter to invalidate stale async sub-dir fetches */
   const subDirFetchVersionRef = useRef(0);
+  /** Cooldown timestamp: suppress suggestion fetches until Date.now() exceeds this value.
+   *  Set after Tab passes through to the remote shell so the shell's completion
+   *  response can arrive and settle before we re-evaluate the prompt. */
+  const tabCooldownRef = useRef(0);
 
   // Preload common specs on first mount (only if enabled)
   useEffect(() => {
@@ -441,6 +453,12 @@ export function useTerminalAutocomplete(
       return;
     }
 
+    // If inside Tab-passthrough cooldown, skip — remote shell completion
+    // response may still be arriving.
+    if (Date.now() < tabCooldownRef.current) {
+      return;
+    }
+
     // Capture version at start — if it changes during async work, discard results
     const version = ++fetchVersionRef.current;
 
@@ -589,6 +607,24 @@ export function useTerminalAutocomplete(
         return;
       }
 
+      // Tab passthrough: when autocomplete didn't consume Tab (no popup/ghost),
+      // the \t was sent to the remote shell for native completion. Suppress
+      // suggestion fetching briefly so the remote shell's response can arrive
+      // and settle — otherwise a debounced fetch fires on the partially-updated
+      // terminal content, producing stale/duplicate suggestions.
+      if (data === "\t") {
+        clearState();
+        // Cancel any pending debounce and set a cooldown so the next few
+        // keystrokes (which are actually the remote shell echoing completion
+        // results) don't trigger a premature fetch.
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        tabCooldownRef.current = now + TAB_PASSTHROUGH_COOLDOWN_MS;
+        return;
+      }
+
       // Escape sequences (arrow keys, Home, End, etc.): clear stale suggestions
       // since cursor position may have changed, making current suggestions invalid.
       // Up/Down/Right/Tab are handled by handleKeyEvent; other sequences land here.
@@ -600,6 +636,13 @@ export function useTerminalAutocomplete(
       // User is typing more — invalidate accepted command fallback since the
       // command is being edited further (e.g., accepted "git status" then added " --short")
       lastAcceptedCommandRef.current = null;
+
+      // If we're inside the Tab-passthrough cooldown window, skip suggestion
+      // fetching entirely. The remote shell is still echoing its native
+      // completion results and the terminal content hasn't settled yet.
+      if (now < tabCooldownRef.current) {
+        return;
+      }
 
       // Fast typing suppression: if typing faster than threshold, skip this debounce cycle
       const isFastTyping = timeSinceLastKeystroke < settingsRef.current.fastTypingThresholdMs;
