@@ -21,6 +21,7 @@ import {
 import React, { useCallback, useMemo, useState } from "react";
 import { useI18n } from "../application/i18n/I18nProvider";
 import { customThemeStore } from "../application/state/customThemeStore";
+import { resolveGroupDefaults, resolveGroupTerminalThemeId } from "../domain/groupConfig";
 import { cn } from "../lib/utils";
 import {
   EnvVar,
@@ -39,6 +40,7 @@ import {
 import {
   AsidePanel,
   AsidePanelContent,
+  type AsidePanelLayout,
 } from "./ui/aside-panel";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -60,9 +62,11 @@ interface GroupDetailsPanelProps {
   allHosts: Host[];
   groups: string[];
   terminalThemeId: string;
+  groupConfigs?: GroupConfig[];
   terminalFontSize: number;
   onSave: (config: GroupConfig, newName?: string, newParent?: string | null) => void;
   onCancel: () => void;
+  layout?: AsidePanelLayout;
 }
 
 const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
@@ -73,9 +77,11 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
   allHosts,
   groups,
   terminalThemeId,
+  groupConfigs = [],
   terminalFontSize,
   onSave,
   onCancel,
+  layout = "overlay",
 }) => {
   const { t } = useI18n();
   const availableFonts = useAvailableFonts();
@@ -274,7 +280,14 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
   }, [groups, groupPath, t]);
 
   // Effective theme
-  const effectiveThemeId = form.theme || terminalThemeId;
+  const inheritedThemeId = useMemo(() => {
+    if (!parentGroup || groupConfigs.length === 0) return terminalThemeId;
+    return resolveGroupTerminalThemeId(resolveGroupDefaults(parentGroup, groupConfigs), terminalThemeId);
+  }, [groupConfigs, parentGroup, terminalThemeId]);
+  const effectiveThemeId = form.themeOverride === false
+    ? inheritedThemeId
+    : (form.theme || inheritedThemeId);
+  const hasActiveThemeOverride = form.themeOverride === true || (form.theme != null && form.themeOverride !== false);
 
   // Save handler
   const handleSubmit = () => {
@@ -322,7 +335,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
       }),
       // Shared fields (always saved)
       ...(form.charset !== undefined && { charset: form.charset }),
-      ...(form.theme !== undefined && { theme: form.theme }),
+      ...((form.themeOverride !== false && form.theme !== undefined) && { theme: form.theme }),
       ...(form.themeOverride !== undefined && { themeOverride: form.themeOverride }),
       ...(form.fontFamily !== undefined && { fontFamily: form.fontFamily }),
       ...(form.fontFamilyOverride !== undefined && { fontFamilyOverride: form.fontFamilyOverride }),
@@ -351,6 +364,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         onClearProxy={clearProxyConfig}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -368,6 +382,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         onClearChain={clearHostChain}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -395,6 +410,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         }}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -405,12 +421,17 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         open={true}
         selectedThemeId={effectiveThemeId}
         onSelect={(themeId) => {
+          if (themeId === effectiveThemeId && !hasActiveThemeOverride) {
+            setActiveSubPanel("none");
+            return;
+          }
           setForm((prev) => ({ ...prev, theme: themeId, themeOverride: true }));
           setActiveSubPanel("none");
         }}
         onClose={onCancel}
         onBack={() => setActiveSubPanel("none")}
         showBackButton={true}
+        layout={layout}
       />
     );
   }
@@ -426,7 +447,9 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
       open={true}
       onClose={onCancel}
       width="w-[380px]"
+      dataSection="group-details-panel"
       title={t("vault.groups.details")}
+      layout={layout}
       actions={
         <Button
           variant="ghost"
@@ -1018,7 +1041,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
               {customThemeStore.getThemeById(effectiveThemeId)?.name || "Flexoki Dark"}
             </span>
           </button>
-          {form.themeOverride && (
+          {hasActiveThemeOverride && (
             <Button
               variant="ghost"
               size="sm"

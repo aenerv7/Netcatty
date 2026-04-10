@@ -1,5 +1,5 @@
 import { ArrowLeft, MoreVertical, X } from 'lucide-react';
-import React, { createContext, ReactNode, useCallback, useContext, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { cn } from '../../lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { ScrollArea } from './scroll-area';
@@ -44,6 +44,12 @@ interface AsidePanelProps {
     children: ReactNode;
     className?: string;
     width?: string;
+    layout?: AsidePanelLayout;
+    /**
+     * Optional stable identifier emitted as `data-section` on the panel
+     * root. Used as a targeting hook for Custom CSS (Settings → Appearance).
+     */
+    dataSection?: string;
 }
 
 interface AsidePanelHeaderProps {
@@ -171,7 +177,31 @@ interface AsidePanelStackProps {
     initialItem: AsideContentItem;
     className?: string;
     width?: string;
+    layout?: AsidePanelLayout;
+    /**
+     * Optional stable identifier emitted as `data-section` on the panel
+     * root. Used as a targeting hook for Custom CSS.
+     */
+    dataSection?: string;
 }
+
+export type AsidePanelLayout = 'overlay' | 'inline';
+
+const resolveInlineWidth = (width: string) => {
+    const arbitraryWidthMatch = width.match(/w-\[(.+)\]/);
+    if (arbitraryWidthMatch) {
+        return arbitraryWidthMatch[1];
+    }
+
+    switch (width) {
+        case 'w-full':
+            return '100%';
+        case 'w-screen':
+            return '100vw';
+        default:
+            return '380px';
+    }
+};
 
 export const AsidePanelStack: React.FC<AsidePanelStackProps> = ({
     open,
@@ -179,6 +209,8 @@ export const AsidePanelStack: React.FC<AsidePanelStackProps> = ({
     initialItem,
     className,
     width = 'w-[380px]',
+    layout = 'overlay',
+    dataSection,
 }) => {
     const [stack, setStack] = useState<AsideContentItem[]>([initialItem]);
 
@@ -205,6 +237,13 @@ export const AsidePanelStack: React.FC<AsidePanelStackProps> = ({
 
     const currentItem = stack[stack.length - 1];
     const canGoBack = stack.length > 1;
+    const inlineWidth = useMemo(() => resolveInlineWidth(width), [width]);
+    const inlineStyle = layout === 'inline'
+        ? ({
+            width: inlineWidth,
+            ['--aside-inline-width' as string]: inlineWidth,
+        } as React.CSSProperties)
+        : undefined;
 
     // Reset stack when panel closes/opens
     React.useEffect(() => {
@@ -218,10 +257,14 @@ export const AsidePanelStack: React.FC<AsidePanelStackProps> = ({
     return (
         <AsidePanelContext.Provider value={{ push, pop, replace, clear, canGoBack, currentItem }}>
             <div className={cn(
-                "absolute right-0 top-0 bottom-0 max-w-full border-l border-border/60 bg-background z-30 flex flex-col app-no-drag overflow-hidden",
-                width,
+                layout === 'inline'
+                    ? "relative split-panel-enter shrink-0 h-full min-h-0 max-w-full border-l border-border/60 bg-background z-30 flex flex-col app-no-drag overflow-hidden shadow-[-16px_0_32px_hsl(var(--foreground)/0.08)]"
+                    : "absolute right-0 top-0 bottom-0 max-w-full border-l border-border/60 bg-background z-30 flex flex-col app-no-drag overflow-hidden",
+                layout === 'overlay' && width,
                 className
-            )}>
+            )}
+            style={inlineStyle}
+            data-section={dataSection}>
                 <AsidePanelHeader
                     title={currentItem.title}
                     subtitle={currentItem.subtitle}
@@ -248,15 +291,29 @@ export const AsidePanel: React.FC<AsidePanelProps> = ({
     children,
     className,
     width = 'w-[380px]',
+    layout = 'overlay',
+    dataSection,
 }) => {
     if (!open) return null;
 
+    const inlineWidth = resolveInlineWidth(width);
+    const inlineStyle = layout === 'inline'
+        ? ({
+            width: inlineWidth,
+            ['--aside-inline-width' as string]: inlineWidth,
+        } as React.CSSProperties)
+        : undefined;
+
     return (
         <div className={cn(
-            "absolute right-0 top-0 bottom-0 max-w-full border-l border-border/60 bg-background z-30 flex flex-col app-no-drag overflow-hidden",
-            width,
+            layout === 'inline'
+                ? "relative split-panel-enter shrink-0 h-full min-h-0 max-w-full border-l border-border/60 bg-background z-30 flex flex-col app-no-drag overflow-hidden shadow-[-16px_0_32px_hsl(var(--foreground)/0.08)]"
+                : "absolute right-0 top-0 bottom-0 max-w-full border-l border-border/60 bg-background z-30 flex flex-col app-no-drag overflow-hidden",
+            layout === 'overlay' && width,
             className
-        )}>
+        )}
+        style={inlineStyle}
+        data-section={dataSection}>
             {title && (
                 <AsidePanelHeader
                     title={title}

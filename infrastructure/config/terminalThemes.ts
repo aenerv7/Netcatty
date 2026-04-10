@@ -3,6 +3,23 @@ import { TerminalTheme } from '../../domain/models';
 // Re-export for convenience
 export type TerminalThemeConfig = TerminalTheme;
 
+const UI_MATCH_TERMINAL_THEME_IDS = new Set([
+  'ui-snow',
+  'ui-pure-white',
+  'ui-ivory',
+  'ui-mist',
+  'ui-mint',
+  'ui-sand',
+  'ui-lavender',
+  'ui-pure-black',
+  'ui-midnight',
+  'ui-deep-blue',
+  'ui-vscode',
+  'ui-graphite',
+  'ui-obsidian',
+  'ui-forest',
+]);
+
 export const TERMINAL_THEMES: TerminalTheme[] = [
   {
     id: 'netcatty-dark',
@@ -58,6 +75,114 @@ export const TERMINAL_THEMES: TerminalTheme[] = [
       brightWhite: '#8c959f'
     }
   },
+  // ====================================================================
+  // UI-matched terminal themes — background color matched to each built-in
+  // UI theme preset so the terminal blends seamlessly with the app chrome.
+  // ANSI palette based on netcatty-light (for light) / netcatty-dark (for dark).
+  // ====================================================================
+
+  // Light UI matches
+  { id: 'ui-snow', name: 'Snow (UI Match)', type: 'light', colors: {
+    background: '#f1f4f8', foreground: '#24292f', cursor: '#0969da', selection: '#add6ff',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+  { id: 'ui-pure-white', name: 'Pure White (UI Match)', type: 'light', colors: {
+    background: '#ffffff', foreground: '#24292f', cursor: '#0969da', selection: '#add6ff',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+  { id: 'ui-ivory', name: 'Ivory (UI Match)', type: 'light', colors: {
+    background: '#f7f4ed', foreground: '#24292f', cursor: '#b45309', selection: '#fde68a',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+  { id: 'ui-mist', name: 'Mist (UI Match)', type: 'light', colors: {
+    background: '#f6f7f9', foreground: '#24292f', cursor: '#0891b2', selection: '#a5f3fc',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+  { id: 'ui-mint', name: 'Mint (UI Match)', type: 'light', colors: {
+    background: '#f2f8f5', foreground: '#24292f', cursor: '#059669', selection: '#a7f3d0',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+  { id: 'ui-sand', name: 'Sand (UI Match)', type: 'light', colors: {
+    background: '#f4f0eb', foreground: '#24292f', cursor: '#c2410c', selection: '#fed7aa',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+  { id: 'ui-lavender', name: 'Lavender (UI Match)', type: 'light', colors: {
+    background: '#f7f5fa', foreground: '#24292f', cursor: '#7c3aed', selection: '#ddd6fe',
+    black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700',
+    blue: '#0969da', magenta: '#8250df', cyan: '#0e7574', white: '#6e7781',
+    brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#7d4e00',
+    brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#0c7875', brightWhite: '#8c959f',
+  }},
+
+  // Dark UI matches
+  { id: 'ui-pure-black', name: 'Pure Black (UI Match)', type: 'dark', colors: {
+    background: '#000000', foreground: '#c9d1d9', cursor: '#58a6ff', selection: '#264f78',
+    black: '#000000', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+    brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+    brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc',
+  }},
+  { id: 'ui-midnight', name: 'Midnight (UI Match)', type: 'dark', colors: {
+    background: '#0f121a', foreground: '#c9d1d9', cursor: '#58a6ff', selection: '#264f78',
+    black: '#0f121a', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+    brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+    brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc',
+  }},
+  { id: 'ui-deep-blue', name: 'Deep Blue (UI Match)', type: 'dark', colors: {
+    background: '#111722', foreground: '#c9d1d9', cursor: '#58a6ff', selection: '#264f78',
+    black: '#111722', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+    brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+    brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc',
+  }},
+  { id: 'ui-vscode', name: 'VS Code (UI Match)', type: 'dark', colors: {
+    background: '#1f1f1f', foreground: '#cccccc', cursor: '#aeafad', selection: '#264f78',
+    black: '#1f1f1f', red: '#f44747', green: '#6a9955', yellow: '#dcdcaa',
+    blue: '#569cd6', magenta: '#c586c0', cyan: '#4ec9b0', white: '#d4d4d4',
+    brightBlack: '#808080', brightRed: '#f44747', brightGreen: '#6a9955', brightYellow: '#dcdcaa',
+    brightBlue: '#569cd6', brightMagenta: '#c586c0', brightCyan: '#4ec9b0', brightWhite: '#e5e5e5',
+  }},
+  { id: 'ui-graphite', name: 'Graphite (UI Match)', type: 'dark', colors: {
+    background: '#1c1e21', foreground: '#c9d1d9', cursor: '#58a6ff', selection: '#264f78',
+    black: '#1c1e21', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+    brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+    brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc',
+  }},
+  { id: 'ui-obsidian', name: 'Obsidian (UI Match)', type: 'dark', colors: {
+    background: '#131316', foreground: '#c9d1d9', cursor: '#a78bfa', selection: '#3b3175',
+    black: '#131316', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+    brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+    brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc',
+  }},
+  { id: 'ui-forest', name: 'Forest (UI Match)', type: 'dark', colors: {
+    background: '#161d1a', foreground: '#c9d1d9', cursor: '#34d399', selection: '#1a4a3a',
+    black: '#161d1a', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+    blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+    brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+    brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc',
+  }},
+
   {
     id: 'flexoki-dark',
     name: 'Flexoki Dark',
@@ -2003,3 +2128,10 @@ export const TERMINAL_THEMES: TerminalTheme[] = [
     }
   },
 ];
+
+export const isUiMatchTerminalThemeId = (themeId: string): boolean =>
+  UI_MATCH_TERMINAL_THEME_IDS.has(themeId);
+
+export const USER_VISIBLE_TERMINAL_THEMES: TerminalTheme[] = TERMINAL_THEMES.filter(
+  (theme) => !isUiMatchTerminalThemeId(theme.id),
+);

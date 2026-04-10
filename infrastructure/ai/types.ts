@@ -125,6 +125,7 @@ export interface AISessionScope {
 
 // Permission model
 export type AIPermissionMode = 'observer' | 'confirm' | 'autonomous';
+export type AIToolIntegrationMode = 'mcp' | 'skills';
 
 export interface HostAIPermission {
   hostId: string;
@@ -214,6 +215,7 @@ export interface AISettings {
   activeProviderId: string;
   activeModelId: string;
   globalPermissionMode: AIPermissionMode;
+  toolIntegrationMode: AIToolIntegrationMode;
   externalAgents: ExternalAgentConfig[];
   defaultAgentId: string;
   commandBlocklist: string[];    // global command blocklist patterns
@@ -247,6 +249,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   activeProviderId: '',
   activeModelId: '',
   globalPermissionMode: 'confirm',
+  toolIntegrationMode: 'mcp',
   externalAgents: [],
   defaultAgentId: 'catty',
   commandBlocklist: [...DEFAULT_COMMAND_BLOCKLIST],

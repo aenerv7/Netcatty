@@ -28,6 +28,7 @@ import {
 import {
   resolveHostTerminalThemeId,
 } from "../domain/terminalAppearance";
+import { classifyDistroId } from "../domain/host";
 import { resolveHostAuth } from "../domain/sshAuth";
 import { useTerminalBackend } from "../application/state/useTerminalBackend";
 import KnownHostConfirmDialog, { HostKeyInfo } from "./KnownHostConfirmDialog";
@@ -122,6 +123,7 @@ interface TerminalProps {
   fontFamilyId: string;
   fontSize: number;
   terminalTheme: TerminalTheme;
+  followAppTerminalTheme?: boolean;
   terminalSettings?: TerminalSettings;
   sessionId: string;
   startupCommand?: string;
@@ -196,6 +198,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   fontFamilyId,
   fontSize,
   terminalTheme,
+  followAppTerminalTheme = false,
   terminalSettings,
   sessionId,
   startupCommand,
@@ -510,12 +513,33 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const isLocalConnection = host.protocol === "local";
   const isSerialConnection = host.protocol === "serial";
 
-  // Server stats (CPU, Memory, Disk) — only for Linux/macOS
+  // Server stats (CPU, Memory, Disk) — only for Linux/macOS, and never
+  // for hosts classified as network devices (either via explicit
+  // deviceType='network' or via SSH banner detection that populated
+  // host.distro with a network-vendor ID). See #674: polling the stats
+  // command on Cisco / Huawei / Juniper etc. generates one AAA session
+  // log entry per poll because each exec channel is counted as a new
+  // session on those devices.
+  //
+  // IMPORTANT: this gating must NOT go through getEffectiveHostDistro()
+  // because that honors the manual distro override (`distroMode: 'manual'`
+  // + `manualDistro`) which is purely a cosmetic icon choice. A user who
+  // pinned an "ubuntu" icon on what is actually a Cisco host would
+  // otherwise silently re-enable the polling loop and re-introduce the
+  // AAA log flood this patch is meant to eliminate. The display icon can
+  // still be overridden (see DistroAvatar) — gating uses the raw detected
+  // `host.distro` and the explicit `host.deviceType` only.
+  const detectedDeviceClass = classifyDistroId(host.distro);
+  const isNetworkDevice =
+    host.deviceType === 'network' || detectedDeviceClass === 'network-device';
+  const isSupportedOs =
+    !isNetworkDevice &&
+    (host.os === 'linux' || host.os === 'macos' || detectedDeviceClass === 'linux-like');
   const { stats: serverStats } = useServerStats({
     sessionId,
     enabled: terminalSettings?.showServerStats ?? true,
     refreshInterval: terminalSettings?.serverStatsRefreshInterval ?? 5,
-    isSupportedOs: host.os === 'linux' || host.os === 'macos',
+    isSupportedOs,
     isConnected: status === 'connected',
     isVisible,
   });
@@ -612,6 +636,10 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   }, [availableFonts, fontFamilyId, hasFontFamilyOverride, host.fontFamily]);
 
   const effectiveTheme = useMemo(() => {
+    // When "Follow Application Theme" is on and there's no active
+    // preview, skip per-host overrides — all terminals should use the
+    // UI-matched theme passed via terminalTheme prop.
+    if (followAppTerminalTheme && !themePreviewId) return terminalTheme;
     const themeId = themePreviewId ?? resolveHostTerminalThemeId(
       { theme: host.theme, themeOverride: host.themeOverride },
       terminalTheme.id,
@@ -622,7 +650,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       if (hostTheme) return hostTheme;
     }
     return terminalTheme;
-  }, [customThemes, host.theme, host.themeOverride, terminalTheme, themePreviewId]);
+  }, [customThemes, followAppTerminalTheme, host.theme, host.themeOverride, terminalTheme, themePreviewId]);
 
   const resolvedChainHosts =
     chainHosts;

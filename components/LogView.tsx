@@ -36,19 +36,35 @@ const LogViewComponent: React.FC<LogViewProps> = ({
     const [isReady, setIsReady] = useState(false);
     const [themeModalOpen, setThemeModalOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [previewTheme, setPreviewTheme] = useState<TerminalTheme | null>(null);
 
     // Subscribe to custom theme changes so editing triggers re-render
     const customThemes = useCustomThemes();
+    const explicitThemeId = useMemo(() => {
+        if (!log.themeId) return undefined;
+        const exists = TERMINAL_THEMES.some((theme) => theme.id === log.themeId)
+            || customThemes.some((theme) => theme.id === log.themeId);
+        return exists ? log.themeId : undefined;
+    }, [customThemes, log.themeId]);
+
+    useEffect(() => {
+        if (log.themeId && !explicitThemeId) {
+            onUpdateLog(log.id, { themeId: undefined });
+        }
+    }, [explicitThemeId, log.id, log.themeId, onUpdateLog]);
 
     // Use log's saved theme/fontSize or fall back to defaults
     const currentTheme = useMemo(() => {
-        if (log.themeId) {
-            return TERMINAL_THEMES.find(t => t.id === log.themeId)
-                || customThemes.find(t => t.id === log.themeId)
+        if (previewTheme) {
+            return previewTheme;
+        }
+        if (explicitThemeId) {
+            return TERMINAL_THEMES.find(t => t.id === explicitThemeId)
+                || customThemes.find(t => t.id === explicitThemeId)
                 || defaultTerminalTheme;
         }
         return defaultTerminalTheme;
-    }, [log.themeId, defaultTerminalTheme, customThemes]);
+    }, [customThemes, defaultTerminalTheme, explicitThemeId, previewTheme]);
 
     const currentFontSize = log.fontSize ?? defaultFontSize;
 
@@ -68,6 +84,12 @@ const LogViewComponent: React.FC<LogViewProps> = ({
     const handleThemeChange = useCallback((themeId: string) => {
         onUpdateLog(log.id, { themeId });
     }, [log.id, onUpdateLog]);
+
+    useEffect(() => {
+        if (!themeModalOpen) {
+            setPreviewTheme(null);
+        }
+    }, [themeModalOpen]);
 
     // Handle font size change
     const handleFontSizeChange = useCallback((fontSize: number) => {
@@ -295,10 +317,13 @@ const LogViewComponent: React.FC<LogViewProps> = ({
             <ThemeCustomizeModal
                 open={themeModalOpen}
                 onClose={() => setThemeModalOpen(false)}
-                currentThemeId={currentTheme.id}
+                currentThemeId={explicitThemeId}
+                displayThemeId={currentTheme.id}
                 currentFontSize={currentFontSize}
                 onThemeChange={handleThemeChange}
+                onThemeReset={() => onUpdateLog(log.id, { themeId: undefined })}
                 onFontSizeChange={handleFontSizeChange}
+                onPreviewThemeChange={setPreviewTheme}
             />
         </div>
     );

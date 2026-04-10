@@ -139,6 +139,7 @@ declare global {
     proxy?: NetcattyProxyConfig;
     jumpHosts?: NetcattyJumpHost[];
     identityFilePaths?: string[];
+    legacyAlgorithms?: boolean;
   }
 
   interface PortForwardResult {
@@ -232,6 +233,30 @@ declare global {
     }): Promise<{ stdout: string; stderr: string; code: number | null }>;
     /** Get current working directory from an active SSH session */
     getSessionPwd?(sessionId: string): Promise<{ success: boolean; cwd?: string; error?: string }>;
+    /**
+     * Get metadata about an already-connected SSH session — currently the
+     * SSH server identification string (the `software` part of the
+     * SSH-2.0 banner). Used to classify network-device vendors from the
+     * banner without opening any additional exec channel.
+     */
+    getSessionRemoteInfo?(sessionId: string): Promise<{
+      success: boolean;
+      remoteSshVersion?: string;
+      error?: string;
+    }>;
+    /**
+     * Probe the remote distro by running
+     * `cat /etc/os-release 2>/dev/null || uname -a` on the existing SSH
+     * connection's exec channel (not a brand-new connection). Used as a
+     * fallback when banner classification could not identify a network
+     * device vendor and we still want a distro-specific icon.
+     */
+    getSessionDistroInfo?(sessionId: string): Promise<{
+      success: boolean;
+      stdout?: string;
+      stderr?: string;
+      error?: string;
+    }>;
     /** Get server stats (CPU, Memory, Disk, Network) from an active SSH session */
     getServerStats?(sessionId: string): Promise<{
       success: boolean;
@@ -486,7 +511,9 @@ declare global {
     // Known Hosts
     readKnownHosts?(): Promise<string | null>;
 
-    // Open URL in default browser
+    // Open URL in default browser. Resolves when the URL is handled by
+    // either the system browser or the in-app fallback BrowserWindow.
+    // Rejects only in the rare case where both paths fail.
     openExternal?(url: string): Promise<void>;
 
     // App info (name/version/platform) for About screens
@@ -770,11 +797,12 @@ declare global {
       deviceType?: string;
       connected: boolean;
     }>, chatSessionId?: string): Promise<{ ok: boolean }>;
+    aiMcpSetToolIntegrationMode?(mode: 'mcp' | 'skills'): Promise<{ ok: boolean; error?: string }>;
     aiSpawnAgent?(agentId: string, command: string, args?: string[], env?: Record<string, string>, options?: { closeStdin?: boolean }): Promise<{ ok: boolean; pid?: number; error?: string }>;
     aiWriteToAgent?(agentId: string, data: string): Promise<{ ok: boolean; error?: string }>;
     aiCloseAgentStdin?(agentId: string): Promise<{ ok: boolean; error?: string }>;
     aiKillAgent?(agentId: string): Promise<{ ok: boolean; error?: string }>;
-    aiAcpStream?(requestId: string, chatSessionId: string, acpCommand: string, acpArgs: string[], prompt: string, cwd?: string, providerId?: string, model?: string, existingSessionId?: string, historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>, images?: Array<{ base64Data: string; mediaType: string; filename?: string }>): Promise<{ ok: boolean; error?: string }>;
+    aiAcpStream?(requestId: string, chatSessionId: string, acpCommand: string, acpArgs: string[], prompt: string, cwd?: string, providerId?: string, model?: string, existingSessionId?: string, historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>, images?: Array<{ base64Data: string; mediaType: string; filename?: string }>, toolIntegrationMode?: 'mcp' | 'skills', defaultTargetSession?: { sessionId: string; hostname: string; label: string; os?: string; username?: string; protocol?: string; shellType?: string; deviceType?: string; connected: boolean; source: 'scope-target' | 'only-connected-in-scope' }): Promise<{ ok: boolean; error?: string }>;
     aiAcpCancel?(requestId: string, chatSessionId?: string): Promise<{ ok: boolean; error?: string }>;
     aiAcpCleanup?(chatSessionId: string): Promise<{ ok: boolean }>;
     onAiAcpEvent?(requestId: string, cb: (event: Record<string, unknown>) => void): () => void;

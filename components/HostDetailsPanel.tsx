@@ -31,7 +31,12 @@ import {
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useI18n } from "../application/i18n/I18nProvider";
 import { useApplicationBackend } from "../application/state/useApplicationBackend";
-import { getEffectiveHostDistro, LINUX_DISTRO_OPTIONS } from "../domain/host";
+import { resolveGroupDefaults, resolveGroupTerminalThemeId } from "../domain/groupConfig";
+import {
+  getEffectiveHostDistro,
+  LINUX_DISTRO_OPTIONS,
+  NETWORK_DEVICE_OPTIONS,
+} from "../domain/host";
 import { customThemeStore } from "../application/state/customThemeStore";
 import {
   clearHostFontSizeOverride,
@@ -43,7 +48,7 @@ import {
 } from "../domain/terminalAppearance";
 import { MIN_FONT_SIZE, MAX_FONT_SIZE } from "../infrastructure/config/fonts";
 import { cn } from "../lib/utils";
-import { EnvVar, Host, Identity, ManagedSource, ProxyConfig, SSHKey } from "../types";
+import { EnvVar, GroupConfig, Host, Identity, ManagedSource, ProxyConfig, SSHKey } from "../types";
 import { DISTRO_COLORS, DISTRO_LOGOS } from "./DistroAvatar";
 import { DistroAvatar } from "./DistroAvatar";
 import ThemeSelectPanel from "./ThemeSelectPanel";
@@ -51,6 +56,7 @@ import {
   AsidePanel,
   AsidePanelContent,
   AsidePanelFooter,
+  type AsidePanelLayout,
 } from "./ui/aside-panel";
 import { Badge } from "./ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -82,7 +88,10 @@ type SubPanel =
   | "theme-select"
   | "telnet-theme-select";
 
-const LINUX_DISTRO_OPTION_IDS = [...LINUX_DISTRO_OPTIONS];
+const LINUX_DISTRO_OPTION_IDS = [
+  ...LINUX_DISTRO_OPTIONS,
+  ...NETWORK_DEVICE_OPTIONS,
+];
 
 interface HostDetailsPanelProps {
   initialData?: Host | null;
@@ -100,6 +109,8 @@ interface HostDetailsPanelProps {
   onCreateGroup?: (groupPath: string) => void; // Callback to create a new group
   onCreateTag?: (tag: string) => void; // Callback to create a new tag
   groupDefaults?: Partial<import('../domain/models').GroupConfig>;
+  groupConfigs?: GroupConfig[];
+  layout?: AsidePanelLayout;
 }
 
 const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
@@ -118,6 +129,8 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   onCreateGroup,
   onCreateTag,
   groupDefaults,
+  groupConfigs = [],
+  layout = "overlay",
 }) => {
   const { t } = useI18n();
   const { checkSshAgent } = useApplicationBackend();
@@ -201,9 +214,17 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const effectiveGroupDefaults = useMemo(() => {
+    const currentGroupPath = form.group || defaultGroup;
+    if (currentGroupPath && groupConfigs.length > 0) {
+      return resolveGroupDefaults(currentGroupPath, groupConfigs);
+    }
+    return groupDefaults;
+  }, [defaultGroup, form.group, groupConfigs, groupDefaults]);
+
   const effectiveThemeId = useMemo(
-    () => resolveHostTerminalThemeId(form, terminalThemeId),
-    [form, terminalThemeId],
+    () => resolveHostTerminalThemeId(form, resolveGroupTerminalThemeId(effectiveGroupDefaults, terminalThemeId)),
+    [effectiveGroupDefaults, form, terminalThemeId],
   );
   const effectiveFontSize = useMemo(
     () => resolveHostTerminalFontSize(form, terminalFontSize),
@@ -502,6 +523,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         onSave={handleCreateGroup}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -514,6 +536,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         onClearProxy={clearProxyConfig}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -531,6 +554,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         onClearChain={clearHostChain}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -559,6 +583,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         }}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
+        layout={layout}
       />
     );
   }
@@ -570,12 +595,17 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         open={true}
         selectedThemeId={effectiveThemeId}
         onSelect={(themeId) => {
+          if (themeId === effectiveThemeId && !hasEffectiveThemeOverride) {
+            setActiveSubPanel("none");
+            return;
+          }
           setForm((prev) => ({ ...prev, theme: themeId, themeOverride: true }));
           setActiveSubPanel("none");
         }}
         onClose={onCancel}
         onBack={() => setActiveSubPanel("none")}
         showBackButton={true}
+        layout={layout}
       />
     );
   }
@@ -614,6 +644,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         onClose={onCancel}
         onBack={() => setActiveSubPanel("none")}
         showBackButton={true}
+        layout={layout}
       />
     );
   }
@@ -624,6 +655,8 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
       open={true}
       onClose={onCancel}
       width="w-[420px]"
+      layout={layout}
+      dataSection="host-details-panel"
       title={
         initialData ? t("hostDetails.title.details") : t("hostDetails.title.new")
       }

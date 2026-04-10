@@ -515,12 +515,12 @@ echo $3 >> "$FILE"`);
       {/* Main Content */}
       <div
         className={cn(
-          "flex-1 overflow-y-auto transition-all duration-200",
+          "flex-1 flex flex-col min-h-0 transition-all duration-200",
           panel.type !== "closed" && "mr-[380px]",
         )}
       >
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 bg-secondary/60 border-b border-border/70 px-3 py-1.5">
+        <div className="flex flex-wrap items-center gap-3 bg-secondary/60 border-b border-border/70 px-3 py-1.5 shrink-0">
           {/* Filter Tabs */}
           <div className="flex items-center gap-1">
             {/* KEY button with split interaction: left=switch view, right=dropdown */}
@@ -684,8 +684,10 @@ echo $3 >> "$FILE"`);
           </div>
         </div>
 
-        {/* Keys Section */}
-        <div className="space-y-3 p-3">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Keys Section */}
+          <div className="space-y-3 p-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-muted-foreground">
               {t("keychain.section.keys")}
@@ -817,6 +819,7 @@ echo $3 >> "$FILE"`);
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Slide-out Panel */}

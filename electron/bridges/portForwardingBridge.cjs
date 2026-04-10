@@ -10,7 +10,7 @@ const net = require("node:net");
 const { Client: SSHClient } = require("ssh2");
 const { NetcattyAgent } = require("./netcattyAgent.cjs");
 const keyboardInteractiveHandler = require("./keyboardInteractiveHandler.cjs");
-const { connectThroughChain } = require("./sshBridge.cjs");
+const { connectThroughChain, buildAlgorithms } = require("./sshBridge.cjs");
 const { createProxySocket } = require("./proxyUtils.cjs");
 const { 
   buildAuthHandler, 
@@ -59,6 +59,7 @@ async function startPortForward(event, payload) {
     proxy,
     jumpHosts = [],
     identityFilePaths,
+    legacyAlgorithms,
   } = payload;
 
   const conn = new SSHClient();
@@ -92,6 +93,7 @@ async function startPortForward(event, payload) {
     keepaliveInterval: 10000,
     // Enable keyboard-interactive authentication (required for 2FA/MFA)
     tryKeyboard: true,
+    algorithms: buildAlgorithms(legacyAlgorithms),
   };
 
   const hasCertificate = typeof certificate === "string" && certificate.trim().length > 0;
@@ -188,6 +190,7 @@ async function startPortForward(event, payload) {
           passphrase,
           proxy,
           jumpHosts,
+          legacyAlgorithms,
           _defaultKeys: defaultKeys,
           _connectionsRef: chainConnections,
           _tunnelRef: tunnelState,

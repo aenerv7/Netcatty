@@ -110,6 +110,7 @@ if (!app || !BrowserWindow) {
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
+const { getCliDiscoveryFilePath } = require("./cli/discoveryPath.cjs");
 
 try {
   protocol?.registerSchemesAsPrivileged?.([
@@ -459,10 +460,12 @@ const registerBridges = (win) => {
   };
 
   // Initialize bridges with shared dependencies
+  const cliDiscoveryFilePath = getCliDiscoveryFilePath({ userDataDir: app.getPath("userData") });
   const deps = {
     sessions,
     sftpClients,
     electronModule,
+    cliDiscoveryFilePath,
   };
 
   sshBridge.init(deps);
@@ -666,12 +669,14 @@ const registerBridges = (win) => {
     return true;
   });
 
-  // Open external URL in default browser
+  // Open external URL in default browser. Falls back to an in-app
+  // BrowserWindow when the OS has no handler for the URL (e.g. Windows with
+  // no default browser configured — error 0x483). Rejects only in the rare
+  // case where both the system browser AND the fallback window fail, so
+  // existing callers that rely on rejection semantics still abort cleanly.
   ipcMain.handle("netcatty:openExternal", async (_event, url) => {
     const { shell } = electronModule;
-    if (url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
-      await shell.openExternal(url);
-    }
+    await getWindowManager().tryOpenExternalWithFallback(shell, url);
   });
 
   // App information for About/Application screens

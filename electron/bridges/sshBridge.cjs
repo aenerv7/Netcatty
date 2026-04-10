@@ -1203,6 +1203,14 @@ async function startSSHSession(event, options) {
               lastIdlePrompt: '',
               lastIdlePromptAt: 0,
               _promptTrackTail: '',
+              // SSH server identification string (the `software` part of
+              // `SSH-2.0-<software>`). ssh2 captures this during the header
+              // exchange and stores it on the client as `_remoteVer` — it
+              // is available by the time 'ready' fires, so the renderer can
+              // use it to detect network-device vendors without running any
+              // additional exec channels. See domain/host.ts
+              // `detectVendorFromSshVersion`.
+              remoteSshVersion: (conn && typeof conn._remoteVer === 'string') ? conn._remoteVer : '',
             };
             sessions.set(sessionId, session);
 
@@ -1812,6 +1820,80 @@ async function startSSHSessionWrapper(event, options) {
  * This sends 'pwd' to the existing shell stream and captures the output
  * using unique markers to identify the command output boundaries
  */
+/**
+ * Return metadata about an already-connected session that was captured at
+ * connect time. Currently exposes the SSH server identification string
+ * (the `software` portion of the SSH-2.0 banner) so the renderer can
+ * classify network devices from the banner without running any additional
+ * exec channels.
+ */
+async function getSessionRemoteInfo(_event, payload) {
+  const { sessionId } = payload || {};
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return { success: false, error: 'Session not found' };
+  }
+  return {
+    success: true,
+    remoteSshVersion: session.remoteSshVersion || '',
+  };
+}
+
+/**
+ * Run the distro-identification probe on an already-connected SSH
+ * session's connection. Uses an exec channel on the existing conn —
+ * which is still one extra channel (and therefore one extra AAA
+ * session on vendor CLIs that don't multiplex channels cleanly), but
+ * avoids the full auth round-trip that `execCommand` would do by
+ * creating a brand new SSHClient. The renderer only falls through to
+ * this when banner classification returned no vendor, so in practice
+ * it never runs against Cisco/Huawei/HPE/etc. — only against
+ * Linux-like hosts and OpenSSH-fronted network devices (JUNOS,
+ * NX-OS, EOS) that are already handled by the useServerStats
+ * failure-counter path downstream.
+ */
+async function getSessionDistroInfo(_event, payload) {
+  const { sessionId } = payload || {};
+  const session = sessions.get(sessionId);
+  if (!session || !session.conn) {
+    return { success: false, error: 'Session not found or not connected' };
+  }
+  const command = "cat /etc/os-release 2>/dev/null || uname -a";
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      settle({ success: false, error: 'Timeout probing distro' });
+      // Clean up the exec channel so it doesn't linger.
+      try { if (activeStream) activeStream.close(); } catch { /* ignore */ }
+    }, 5000);
+    let activeStream = null;
+    try {
+      session.conn.exec(command, (err, stream) => {
+        if (err) {
+          settle({ success: false, error: err.message || String(err) });
+          return;
+        }
+        activeStream = stream;
+        let stdout = '';
+        let stderr = '';
+        stream.on('data', (chunk) => { stdout += chunk.toString(); });
+        stream.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+        stream.on('close', () => {
+          settle({ success: true, stdout, stderr });
+        });
+      });
+    } catch (err) {
+      settle({ success: false, error: err?.message || String(err) });
+    }
+  });
+}
+
 async function getSessionPwd(event, payload) {
   const { sessionId } = payload;
   const session = sessions.get(sessionId);
@@ -2409,6 +2491,8 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:start", startSSHSessionWrapper);
   ipcMain.handle("netcatty:ssh:exec", execCommand);
   ipcMain.handle("netcatty:ssh:pwd", getSessionPwd);
+  ipcMain.handle("netcatty:ssh:remoteInfo", getSessionRemoteInfo);
+  ipcMain.handle("netcatty:ssh:distroInfo", getSessionDistroInfo);
   ipcMain.handle("netcatty:ssh:listdir", listSessionDir);
   ipcMain.handle("netcatty:ssh:stats", getServerStats);
   ipcMain.handle("netcatty:key:generate", generateKeyPair);
@@ -2443,4 +2527,5 @@ module.exports = {
   init,
   registerHandlers,
   connectThroughChain,
+  buildAlgorithms,
 };

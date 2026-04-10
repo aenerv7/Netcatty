@@ -96,6 +96,18 @@ export default function SettingsApplicationTab({ updateState, checkNow, openRele
     };
   }, [getApplicationInfo]);
 
+  const handleOpenExternal = async (url: string) => {
+    try {
+      await openExternal(url);
+    } catch (err) {
+      console.warn("[SettingsApplicationTab] openExternal failed:", err);
+      toast.error(
+        t("settings.application.openExternal.failedBody"),
+        t("settings.application.openExternal.failedTitle"),
+      );
+    }
+  };
+
   const handleCheckForUpdates = async () => {
     // In demo mode, allow checking even for dev builds
     if (!isUpdateDemoMode && (!appInfo.version || appInfo.version === '0.0.0')) {
@@ -198,25 +210,25 @@ export default function SettingsApplicationTab({ updateState, checkNow, openRele
               icon={<Bug size={18} />}
               title={t("settings.application.reportProblem")}
               subtitle={t("settings.application.reportProblem.subtitle")}
-              onClick={() => void openExternal(issueUrl)}
+              onClick={() => void handleOpenExternal(issueUrl)}
             />
             <ActionRow
               icon={<MessageCircle size={18} />}
               title={t("settings.application.community")}
               subtitle={t("settings.application.community.subtitle")}
-              onClick={() => void openExternal(discussionsUrl)}
+              onClick={() => void handleOpenExternal(discussionsUrl)}
             />
             <ActionRow
               icon={<Github size={18} />}
               title="GitHub"
               subtitle={t("settings.application.github.subtitle")}
-              onClick={() => void openExternal(REPO_URL)}
+              onClick={() => void handleOpenExternal(REPO_URL)}
             />
             <ActionRow
               icon={<Newspaper size={18} />}
               title={t("settings.application.whatsNew")}
               subtitle={t("settings.application.whatsNew.subtitle")}
-              onClick={() => void openExternal(releasesUrl)}
+              onClick={() => void handleOpenExternal(releasesUrl)}
             />
           </div>
         </div>

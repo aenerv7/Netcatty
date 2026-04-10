@@ -12,6 +12,20 @@ const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
 const { z } = require("zod");
 
+const DEBUG_MCP = process.env.NETCATTY_MCP_DEBUG === "1";
+
+function debugLog(...args) {
+  if (!DEBUG_MCP) return;
+  process.stderr.write(`[netcatty-mcp:debug] ${args.map(arg => {
+    if (typeof arg === "string") return arg;
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      return String(arg);
+    }
+  }).join(" ")}\n`);
+}
+
 // ── TCP Bridge to Netcatty main process ──
 
 const NETCATTY_MCP_PORT = parseInt(process.env.NETCATTY_MCP_PORT, 10);
@@ -100,6 +114,7 @@ function connectTcp() {
   return new Promise((resolve, reject) => {
     const sock = net.createConnection({ host: "127.0.0.1", port: NETCATTY_MCP_PORT }, () => {
       tcpSocket = sock;
+      debugLog("Connected to TCP bridge", { port: NETCATTY_MCP_PORT });
       resolve();
     });
     sock.setEncoding("utf-8");
@@ -118,6 +133,11 @@ function connectTcp() {
         if (!line.trim()) continue;
         try {
           const msg = JSON.parse(line);
+          debugLog("TCP message received", {
+            id: msg?.id,
+            hasError: Boolean(msg?.error),
+            keys: msg ? Object.keys(msg) : [],
+          });
           if (msg.id != null && pendingRequests.has(msg.id)) {
             const { resolve: res, reject: rej } = pendingRequests.get(msg.id);
             pendingRequests.delete(msg.id);
@@ -133,6 +153,7 @@ function connectTcp() {
       }
     });
     sock.on("error", (err) => {
+      debugLog("TCP socket error", { message: err?.message || String(err) });
       reject(err);
       // Reject all pending
       for (const { reject: rej } of pendingRequests.values()) {
@@ -141,6 +162,7 @@ function connectTcp() {
       pendingRequests.clear();
     });
     sock.on("close", () => {
+      debugLog("TCP socket closed");
       // Reject all pending requests on clean close
       for (const { reject: rej } of pendingRequests.values()) {
         rej(new Error("TCP connection closed"));
@@ -159,6 +181,7 @@ function rpcCall(method, params) {
     const id = nextRpcId++;
     pendingRequests.set(id, { resolve, reject });
     const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
+    debugLog("rpcCall", { id, method, params });
     tcpSocket.write(msg);
   });
 }
@@ -204,6 +227,16 @@ server.tool(
     process.stderr.write(`[netcatty-mcp] get_environment called, SCOPED_SESSION_IDS: ${JSON.stringify(SCOPED_SESSION_IDS)}, CHAT_SESSION_ID: ${CHAT_SESSION_ID}\n`);
     const ctx = await rpcCall("netcatty/getContext", scopeParams);
     process.stderr.write(`[netcatty-mcp] get_environment result: hostCount=${ctx.hostCount}, hosts=${JSON.stringify(ctx.hosts?.map(h => h.sessionId))}\n`);
+    debugLog("get_environment payload", {
+      hostCount: ctx?.hostCount,
+      hosts: Array.isArray(ctx?.hosts) ? ctx.hosts.map(h => ({
+        sessionId: h.sessionId,
+        hostname: h.hostname,
+        connected: h.connected,
+        protocol: h.protocol,
+        deviceType: h.deviceType,
+      })) : [],
+    });
     return {
       content: [{
         type: "text",
@@ -216,18 +249,28 @@ server.tool(
 // Tool: terminal_execute
 server.tool(
   "terminal_execute",
-  "Execute a command on a Netcatty terminal session. For shell sessions, the command runs in the session's shell. For serial/raw sessions and network device sessions (deviceType: network), commands are sent as-is without shell wrapping and exit codes are unavailable.",
+  "Execute a short command on a Netcatty terminal session and wait for the full result. Use this only for commands expected to finish within about 60 seconds. For long-running commands such as builds, scans, log-following, or anything likely to exceed that budget, use terminal_start and then terminal_poll instead.",
   {
     sessionId: z.string().describe("The terminal session ID (from get_environment) to execute on."),
     command: z.string().describe("The command to execute in the target session."),
   },
   async ({ sessionId, command }) => {
+    debugLog("terminal_execute called", { sessionId, command });
     // skipBlocklist: bridge layer does session-aware blocklist (serial sessions skip shell patterns)
     const guardErr = guardWriteOperation(command, { skipBlocklist: true });
     if (guardErr) {
+      debugLog("terminal_execute blocked locally", { sessionId, guardErr });
       return { content: [{ type: "text", text: `Error: ${guardErr}` }], isError: true };
     }
     const result = await rpcCall("netcatty/exec", { ...scopeParams, sessionId, command });
+    debugLog("terminal_execute result", {
+      sessionId,
+      ok: result?.ok,
+      error: result?.error,
+      exitCode: result?.exitCode,
+      stdoutLength: result?.stdout?.length || 0,
+      stderrLength: result?.stderr?.length || 0,
+    });
     if (!result.ok) {
       return { content: [{ type: "text", text: `Error: ${result.error || "Command failed"}` }], isError: true };
     }
@@ -242,13 +285,84 @@ server.tool(
   },
 );
 
+server.tool(
+  "terminal_start",
+  "Start a long-running command on a Netcatty terminal session without waiting for final completion. The command still runs in the visible terminal/PTTY so the user can watch live output. Prefer this whenever the command may exceed about 2 minutes, or when it streams output for an extended period, such as builds, scans, watch commands, and log-follow commands. After starting, wait at least about 30 seconds before the first terminal_poll unless you have a strong reason to check sooner.",
+  {
+    sessionId: z.string().describe("The terminal session ID (from get_environment) to execute on."),
+    command: z.string().describe("The command to start in the target session."),
+  },
+  async ({ sessionId, command }) => {
+    const guardErr = guardWriteOperation(command, { skipBlocklist: true });
+    if (guardErr) {
+      return { content: [{ type: "text", text: `Error: ${guardErr}` }], isError: true };
+    }
+    const result = await rpcCall("netcatty/jobStart", { ...scopeParams, sessionId, command });
+    if (!result.ok) {
+      return { content: [{ type: "text", text: `Error: ${result.error || "Failed to start background command"}` }], isError: true };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          jobId: result.jobId,
+          sessionId: result.sessionId,
+          status: result.status,
+          startedAt: result.startedAt,
+          outputMode: result.outputMode,
+          recommendedPollIntervalMs: result.recommendedPollIntervalMs,
+        }, null, 2),
+      }],
+    };
+  },
+);
+
+server.tool(
+  "terminal_poll",
+  "Poll a long-running Netcatty command that was started with terminal_start. Returns incremental output since the given offset and the current status. Use the returned nextOffset for the next poll. If outputTruncated is true, only the retained tail starting at outputBaseOffset is still available. Do not poll aggressively: wait at least about 30 seconds between polls unless the tool output explicitly justifies checking sooner. As soon as completed is true, stop polling and analyze the final result immediately.",
+  {
+    jobId: z.string().describe("The background job ID returned by terminal_start."),
+    offset: z.number().int().min(0).optional().describe("Character offset previously returned as nextOffset. Omit or use 0 on the first poll."),
+  },
+  async ({ jobId, offset }) => {
+    const result = await rpcCall("netcatty/jobPoll", { ...scopeParams, jobId, offset: offset || 0 });
+    if (!result.ok) {
+      return { content: [{ type: "text", text: `Error: ${result.error || "Failed to poll background command"}` }], isError: true };
+    }
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "terminal_stop",
+  "Stop a long-running Netcatty command that was started with terminal_start. This sends Ctrl+C to the running terminal job and returns its latest state.",
+  {
+    jobId: z.string().describe("The background job ID returned by terminal_start."),
+  },
+  async ({ jobId }) => {
+    const result = await rpcCall("netcatty/jobStop", { ...scopeParams, jobId });
+    if (!result.ok) {
+      return { content: [{ type: "text", text: `Error: ${result.error || "Failed to stop background command"}` }], isError: true };
+    }
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
 // ── Start ──
 
 async function main() {
+  debugLog("Starting MCP server", {
+    port: NETCATTY_MCP_PORT,
+    hasToken: Boolean(NETCATTY_MCP_TOKEN),
+    scopedSessionIds: SCOPED_SESSION_IDS,
+    chatSessionId: CHAT_SESSION_ID,
+    permissionMode: PERMISSION_MODE,
+  });
   await connectTcp();
 
   // Authenticate with the TCP bridge before accepting any tool calls
   const authResult = await rpcCall("auth/verify", { token: NETCATTY_MCP_TOKEN });
+  debugLog("auth/verify result", authResult);
   if (!authResult?.ok) {
     throw new Error("TCP bridge authentication failed");
   }

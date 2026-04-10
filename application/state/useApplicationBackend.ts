@@ -15,15 +15,15 @@ export type SshAgentStatus = {
 
 export const useApplicationBackend = () => {
   const openExternal = useCallback(async (url: string) => {
-    try {
-      const bridge = netcattyBridge.get();
-      if (bridge?.openExternal) {
-        await bridge.openExternal(url);
-        return;
-      }
-    } catch {
-      // Ignore and fall back below
+    const bridge = netcattyBridge.get();
+    if (bridge?.openExternal) {
+      // Bridge resolves on success (either via system browser or in-app
+      // fallback window) and rejects only when both paths fail. Let the
+      // rejection propagate so callers can present a user-facing message.
+      await bridge.openExternal(url);
+      return;
     }
+    // Fallback for non-Electron environments (tests, dev server, etc.).
     window.open(url, "_blank", "noopener,noreferrer");
   }, []);
 

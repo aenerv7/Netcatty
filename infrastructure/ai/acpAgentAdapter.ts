@@ -6,7 +6,20 @@
  * and forwards stream events to the renderer via IPC.
  */
 
-import type { ExternalAgentConfig } from './types';
+import type { AIToolIntegrationMode, ExternalAgentConfig } from './types';
+
+export interface DefaultTargetSessionHint {
+  sessionId: string;
+  hostname: string;
+  label: string;
+  os?: string;
+  username?: string;
+  protocol?: string;
+  shellType?: string;
+  deviceType?: string;
+  connected: boolean;
+  source: 'scope-target' | 'only-connected-in-scope';
+}
 
 export interface AcpAgentCallbacks {
   onSessionId?: (sessionId: string) => void;
@@ -33,6 +46,8 @@ interface AcpBridge {
     existingSessionId?: string,
     historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>,
     images?: FileAttachment[],
+    toolIntegrationMode?: AIToolIntegrationMode,
+    defaultTargetSession?: DefaultTargetSessionHint,
   ): Promise<{ ok: boolean; error?: string }>;
   aiAcpCancel(requestId: string, chatSessionId?: string): Promise<{ ok: boolean }>;
   onAiAcpEvent(requestId: string, cb: (event: StreamEvent) => void): () => void;
@@ -70,6 +85,8 @@ export async function runAcpAgentTurn(
   existingSessionId?: string,
   historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>,
   images?: FileAttachment[],
+  toolIntegrationMode?: AIToolIntegrationMode,
+  defaultTargetSession?: DefaultTargetSessionHint,
 ): Promise<void> {
   const acpBridge = bridge as unknown as AcpBridge;
 
@@ -86,16 +103,29 @@ export async function runAcpAgentTurn(
   });
   cleanupFns.push(unsubEvent);
 
+  let settled = false;
+  let resolveDone!: () => void;
+  const settle = (fn?: () => void) => {
+    if (settled) return false;
+    settled = true;
+    fn?.();
+    resolveDone();
+    return true;
+  };
+
   const donePromise = new Promise<void>((resolve) => {
+    resolveDone = resolve;
     const unsubDone = acpBridge.onAiAcpDone(requestId, () => {
-      callbacks.onDone();
-      resolve();
+      settle(() => {
+        callbacks.onDone();
+      });
     });
     cleanupFns.push(unsubDone);
 
     const unsubError = acpBridge.onAiAcpError(requestId, (error: string) => {
-      callbacks.onError(error);
-      resolve();
+      settle(() => {
+        callbacks.onError(error);
+      });
     });
     cleanupFns.push(unsubError);
   });
@@ -107,6 +137,9 @@ export async function runAcpAgentTurn(
       return;
     }
     const onAbort = () => {
+      if (!settle()) {
+        return;
+      }
       acpBridge.aiAcpCancel(requestId, chatSessionId).catch(() => {});
     };
     signal.addEventListener('abort', onAbort, { once: true });
@@ -114,7 +147,7 @@ export async function runAcpAgentTurn(
   }
 
   // Start the ACP stream in the main process
-  acpBridge.aiAcpStream(
+  void acpBridge.aiAcpStream(
     requestId,
     chatSessionId,
     config.acpCommand,
@@ -126,8 +159,22 @@ export async function runAcpAgentTurn(
     existingSessionId,
     historyMessages,
     images?.length ? images : undefined,
-  ).catch((err: Error) => {
-    callbacks.onError(err.message);
+    toolIntegrationMode,
+    defaultTargetSession,
+  ).then((result) => {
+    if (result?.ok === false) {
+      settle(() => {
+        callbacks.onError(result.error || 'Failed to start ACP stream');
+      });
+    }
+  }).catch((err: Error) => {
+    settle(() => {
+      callbacks.onError(err.message);
+    });
+  }).finally(() => {
+    if (settled) {
+      cleanup(cleanupFns);
+    }
   });
 
   // Wait for done or error

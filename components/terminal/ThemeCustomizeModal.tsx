@@ -15,7 +15,7 @@ import { createPortal } from 'react-dom';
 import { Check, Download, Minus, Palette, Pencil, Plus, Sparkles, Type, X } from 'lucide-react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { useAvailableFonts } from '../../application/state/fontStore';
-import { TERMINAL_THEMES, TerminalThemeConfig } from '../../infrastructure/config/terminalThemes';
+import { TERMINAL_THEMES, TerminalThemeConfig, USER_VISIBLE_TERMINAL_THEMES, isUiMatchTerminalThemeId } from '../../infrastructure/config/terminalThemes';
 import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, TerminalFont } from '../../infrastructure/config/fonts';
 import { useCustomThemes, useCustomThemeActions } from '../../application/state/customThemeStore';
 import { parseItermcolors } from '../../infrastructure/parsers/itermcolorsParser';
@@ -125,16 +125,21 @@ interface ThemeCustomizeModalProps {
     open: boolean;
     onClose: () => void;
     currentThemeId?: string;
+    displayThemeId?: string;
     currentFontFamilyId?: string;
     currentFontSize?: number;
     /** Called immediately when user selects a theme (for real-time preview) */
     onThemeChange?: (themeId: string) => void;
+    /** Called when the theme should return to inherited/default state */
+    onThemeReset?: () => void;
     /** Called immediately when user selects a font (for real-time preview) */
     onFontFamilyChange?: (fontFamilyId: string) => void;
     /** Called immediately when user changes font size (for real-time preview) */
     onFontSizeChange?: (fontSize: number) => void;
     /** Called when user clicks Save to persist settings */
     onSave?: () => void;
+    /** Optional live preview callback for consumers that render outside this modal */
+    onPreviewThemeChange?: (theme: TerminalTheme | null) => void;
 }
 
 // Memoized preview component to avoid re-rendering on every state change
@@ -261,26 +266,39 @@ const TerminalPreview = memo(({
 ));
 TerminalPreview.displayName = 'TerminalPreview';
 
+const cloneTheme = (theme: TerminalTheme): TerminalTheme => ({
+    ...theme,
+    colors: { ...theme.colors },
+    isCustom: true,
+});
+
+const serializeTheme = (theme: TerminalTheme): string => JSON.stringify(theme);
+
 export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
     open,
     onClose,
-    currentThemeId = 'termius-dark',
+    currentThemeId,
+    displayThemeId,
     currentFontFamilyId = 'menlo',
     currentFontSize = DEFAULT_FONT_SIZE,
     onThemeChange,
+    onThemeReset,
     onFontFamilyChange,
     onFontSizeChange,
     onSave,
+    onPreviewThemeChange,
 }) => {
     const { t } = useI18n();
     const availableFonts = useAvailableFonts();
     const customThemes = useCustomThemes();
     const { addTheme, updateTheme, deleteTheme } = useCustomThemeActions();
 
+    const resolvedThemeId = currentThemeId ?? displayThemeId ?? TERMINAL_THEMES[0].id;
     const [activeTab, setActiveTab] = useState<TabType>('theme');
-    const [selectedTheme, setSelectedTheme] = useState(currentThemeId);
+    const [selectedTheme, setSelectedTheme] = useState(resolvedThemeId);
     const [selectedFont, setSelectedFont] = useState(currentFontFamilyId);
     const [fontSize, setFontSize] = useState(currentFontSize);
+    const [draftCustomThemes, setDraftCustomThemes] = useState<TerminalTheme[]>(() => customThemes.map(cloneTheme));
 
     // Custom theme editor state
     const [editingTheme, setEditingTheme] = useState<TerminalTheme | null>(null);
@@ -293,30 +311,37 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
         font: currentFontFamilyId,
         fontSize: currentFontSize,
     });
+    const originalCustomThemesRef = useRef<TerminalTheme[]>([]);
+    const wasOpenRef = useRef(false);
 
     // Combine built-in + custom themes
     const allThemes = useMemo(
-        () => [...TERMINAL_THEMES, ...customThemes],
-        [customThemes]
+        () => [...TERMINAL_THEMES, ...draftCustomThemes],
+        [draftCustomThemes]
     );
 
     // Sync state when modal opens
     useEffect(() => {
-        if (open) {
+        if (open && !wasOpenRef.current) {
             // Store original values for potential cancel
             originalValuesRef.current = {
                 theme: currentThemeId,
                 font: currentFontFamilyId,
                 fontSize: currentFontSize,
             };
+            originalCustomThemesRef.current = customThemes.map((theme) => ({
+                ...cloneTheme(theme),
+            }));
             // Initialize selected values
-            setSelectedTheme(currentThemeId);
+            setSelectedTheme(resolvedThemeId);
             setSelectedFont(currentFontFamilyId);
             setFontSize(currentFontSize);
+            setDraftCustomThemes(customThemes.map(cloneTheme));
             setEditingTheme(null);
             setIsNewTheme(false);
         }
-    }, [open, currentThemeId, currentFontFamilyId, currentFontSize]);
+        wasOpenRef.current = open;
+    }, [open, currentThemeId, resolvedThemeId, currentFontFamilyId, currentFontSize, customThemes]);
 
     const currentFont = useMemo(
         (): TerminalFont => availableFonts.find(f => f.id === selectedFont) || availableFonts[0],
@@ -326,6 +351,16 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
         () => editingTheme || allThemes.find(t => t.id === selectedTheme) || TERMINAL_THEMES[0],
         [selectedTheme, allThemes, editingTheme]
     );
+    const hiddenSelectedTheme = useMemo(
+        () => (isUiMatchTerminalThemeId(selectedTheme)
+            ? TERMINAL_THEMES.find((theme) => theme.id === selectedTheme) || null
+            : null),
+        [selectedTheme]
+    );
+
+    useEffect(() => {
+        onPreviewThemeChange?.(open ? currentTheme : null);
+    }, [currentTheme, onPreviewThemeChange, open]);
 
     // Handle theme selection - apply immediately for real-time preview
     const handleThemeSelect = useCallback((themeId: string) => {
@@ -379,7 +414,7 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
             const xml = reader.result as string;
             const parsed = parseItermcolors(xml, name);
             if (parsed) {
-                addTheme(parsed);
+                setDraftCustomThemes((prev) => [...prev, cloneTheme(parsed)]);
                 setSelectedTheme(parsed.id);
                 onThemeChange?.(parsed.id);
                 setActiveTab('theme');
@@ -394,16 +429,16 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
         reader.readAsText(file);
         // Reset file input so the same file can be re-imported
         e.target.value = '';
-    }, [addTheme, onThemeChange, t]);
+    }, [onThemeChange, t]);
 
     const handleEditTheme = useCallback((themeId: string) => {
-        const theme = customThemes.find(t => t.id === themeId);
+        const theme = draftCustomThemes.find(t => t.id === themeId);
         if (theme) {
             setEditingTheme({ ...theme, colors: { ...theme.colors } });
             setIsNewTheme(false);
             setActiveTab('custom');
         }
-    }, [customThemes]);
+    }, [draftCustomThemes]);
 
 
     const handleEditorBack = useCallback(() => {
@@ -412,40 +447,63 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
     }, []);
 
     const handleEditorDelete = useCallback((themeId: string) => {
-        deleteTheme(themeId);
+        setDraftCustomThemes((prev) => prev.filter((theme) => theme.id !== themeId));
         if (selectedTheme === themeId) {
-            setSelectedTheme(TERMINAL_THEMES[0].id);
-            onThemeChange?.(TERMINAL_THEMES[0].id);
+            const originalThemeId = originalValuesRef.current.theme;
+            const fallbackThemeId = originalThemeId && originalThemeId !== themeId
+                ? originalThemeId
+                : (displayThemeId && displayThemeId !== themeId ? displayThemeId : USER_VISIBLE_TERMINAL_THEMES[0].id);
+            setSelectedTheme(fallbackThemeId);
+            if (originalThemeId == null && displayThemeId && displayThemeId !== themeId) {
+                onThemeReset?.();
+            } else {
+                onThemeChange?.(fallbackThemeId);
+            }
         }
         setEditingTheme(null);
         setIsNewTheme(false);
-    }, [deleteTheme, selectedTheme, onThemeChange]);
+    }, [displayThemeId, onThemeChange, onThemeReset, selectedTheme]);
 
     // Save: just close (changes are already applied)
     const handleSave = useCallback(() => {
-        // If editing a custom theme, save it first
-        if (editingTheme) {
-            if (isNewTheme) {
-                addTheme(editingTheme);
-                setSelectedTheme(editingTheme.id);
-                onThemeChange?.(editingTheme.id);
-            } else {
-                updateTheme(editingTheme.id, editingTheme);
+        const originalThemes = originalCustomThemesRef.current;
+        const originalMap = new Map(originalThemes.map((theme) => [theme.id, theme]));
+        const draftMap = new Map(draftCustomThemes.map((theme) => [theme.id, theme]));
+
+        for (const [id, originalTheme] of originalMap) {
+            if (!draftMap.has(id)) {
+                deleteTheme(id);
+                continue;
+            }
+            const nextTheme = draftMap.get(id)!;
+            if (serializeTheme(originalTheme) !== serializeTheme(nextTheme)) {
+                updateTheme(id, nextTheme);
             }
         }
+
+        for (const [id, draftTheme] of draftMap) {
+            if (!originalMap.has(id)) {
+                addTheme(draftTheme);
+            }
+        }
+
         onSave?.();
         onClose();
-    }, [editingTheme, isNewTheme, addTheme, updateTheme, onSave, onClose, onThemeChange]);
+    }, [addTheme, deleteTheme, draftCustomThemes, onClose, onSave, updateTheme]);
 
     // Cancel: revert to original values
     const handleCancel = useCallback(() => {
         const original = originalValuesRef.current;
         // Revert all changes
-        onThemeChange?.(original.theme);
+        if (original.theme) {
+            onThemeChange?.(original.theme);
+        } else {
+            onThemeReset?.();
+        }
         onFontFamilyChange?.(original.font);
         onFontSizeChange?.(original.fontSize);
         onClose();
-    }, [onThemeChange, onFontFamilyChange, onFontSizeChange, onClose]);
+    }, [onThemeChange, onThemeReset, onFontFamilyChange, onFontSizeChange, onClose]);
 
     // Handle ESC key - same as cancel, but skip when child editor is open
     useEffect(() => {
@@ -465,7 +523,7 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
     if (!open) return null;
 
     // Separate built-in and custom themes for display in the theme list
-    const builtinThemes = TERMINAL_THEMES;
+    const builtinThemes = USER_VISIBLE_TERMINAL_THEMES;
 
     const modalContent = (
         <div
@@ -541,6 +599,17 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
                             <div className="flex-1 min-h-0 overflow-y-auto p-2">
                                 {activeTab === 'theme' && (
                                     <div className="space-y-1">
+                                        {hiddenSelectedTheme && (
+                                            <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 mb-2">
+                                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-semibold">
+                                                    {t('terminal.hiddenTheme.title')}
+                                                </div>
+                                                <div className="text-xs font-medium text-foreground">{hiddenSelectedTheme.name}</div>
+                                                <div className="text-[10px] text-muted-foreground mt-1">
+                                                    {t('terminal.hiddenTheme.desc')}
+                                                </div>
+                                            </div>
+                                        )}
                                         {/* Built-in themes */}
                                         {builtinThemes.map(theme => (
                                             <ThemeItem
@@ -551,12 +620,12 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
                                             />
                                         ))}
                                         {/* Custom themes section */}
-                                        {customThemes.length > 0 && (
+                                        {draftCustomThemes.length > 0 && (
                                             <>
                                                 <div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-3 mb-1.5 px-1 font-semibold">
                                                     {t('terminal.customTheme.section')}
                                                 </div>
-                                                {customThemes.map(theme => (
+                                                {draftCustomThemes.map(theme => (
                                                     <ThemeItem
                                                         key={theme.id}
                                                         theme={theme}
@@ -617,12 +686,12 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
                                         />
 
                                         {/* Custom themes list */}
-                                        {customThemes.length > 0 && (
+                                        {draftCustomThemes.length > 0 && (
                                             <>
                                                 <div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-3 mb-1 px-1 font-semibold">
                                                     {t('terminal.customTheme.yourThemes')}
                                                 </div>
-                                                {customThemes.map(theme => (
+                                                {draftCustomThemes.map(theme => (
                                                     <ThemeItem
                                                         key={theme.id}
                                                         theme={theme}
@@ -717,12 +786,16 @@ export const ThemeCustomizeModal: React.FC<ThemeCustomizeModalProps> = ({
                     theme={editingTheme}
                     isNew={isNewTheme}
                     onSave={(theme) => {
+                        setDraftCustomThemes((prev) => {
+                            if (isNewTheme) {
+                                return [...prev, cloneTheme(theme)];
+                            }
+                            return prev.map((entry) => entry.id === theme.id ? cloneTheme(theme) : entry);
+                        });
                         if (isNewTheme) {
-                            addTheme(theme);
                             setSelectedTheme(theme.id);
                             onThemeChange?.(theme.id);
                         } else {
-                            updateTheme(theme.id, theme);
                             if (selectedTheme === theme.id) {
                                 onThemeChange?.(theme.id);
                             }

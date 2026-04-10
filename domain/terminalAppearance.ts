@@ -41,6 +41,34 @@ export const clearHostFontSizeOverride = (host: Host): Host => ({
 export const resolveHostTerminalThemeId = (host: Pick<Host, 'theme' | 'themeOverride'> | null | undefined, defaultThemeId: string): string =>
   hasHostThemeOverride(host) && host?.theme ? host.theme : defaultThemeId;
 
+/**
+ * Map a UI theme preset ID to the terminal theme whose background matches
+ * it exactly. Used when "Follow Application Theme" is enabled so the
+ * terminal blends seamlessly with the app chrome. Returns undefined if no
+ * match exists (caller should fall back to the global terminal theme).
+ */
+const UI_TO_TERMINAL_THEME: Record<string, string> = {
+  // Light
+  'snow': 'ui-snow',
+  'pure-white': 'ui-pure-white',
+  'ivory': 'ui-ivory',
+  'mist': 'ui-mist',
+  'mint': 'ui-mint',
+  'sand': 'ui-sand',
+  'lavender': 'ui-lavender',
+  // Dark
+  'pure-black': 'ui-pure-black',
+  'midnight': 'ui-midnight',
+  'deep-blue': 'ui-deep-blue',
+  'vscode': 'ui-vscode',
+  'graphite': 'ui-graphite',
+  'obsidian': 'ui-obsidian',
+  'forest': 'ui-forest',
+};
+
+export const getTerminalThemeForUiTheme = (uiThemeId: string): string | undefined =>
+  UI_TO_TERMINAL_THEME[uiThemeId];
+
 export const resolveHostTerminalFontFamilyId = (host: Host | null | undefined, defaultFontFamilyId: string): string =>
   hasHostFontFamilyOverride(host) && host?.fontFamily ? host.fontFamily : defaultFontFamilyId;
 

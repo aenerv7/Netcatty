@@ -496,6 +496,7 @@ export const startPortForward = async (
       proxy,
       jumpHosts: jumpHosts && jumpHosts.length > 0 ? jumpHosts : undefined,
       identityFilePaths: host.identityFilePaths,
+      legacyAlgorithms: host.legacyAlgorithms,
     });
     
     if (!result.success) {

@@ -263,6 +263,8 @@ const ThemePreviewButton: React.FC<{
 export default function SettingsTerminalTab(props: {
   terminalThemeId: string;
   setTerminalThemeId: (id: string) => void;
+  followAppTerminalTheme: boolean;
+  setFollowAppTerminalTheme: (value: boolean) => void;
   terminalFontFamilyId: string;
   setTerminalFontFamilyId: (id: string) => void;
   terminalFontSize: number;
@@ -279,6 +281,8 @@ export default function SettingsTerminalTab(props: {
   const {
     terminalThemeId,
     setTerminalThemeId,
+    followAppTerminalTheme,
+    setFollowAppTerminalTheme,
     terminalFontFamilyId,
     setTerminalFontFamilyId,
     terminalFontSize,
@@ -491,11 +495,24 @@ export default function SettingsTerminalTab(props: {
   return (
     <SettingsTabContent value="terminal">
       <SectionHeader title={t("settings.terminal.section.theme")} />
-      <ThemePreviewButton
-        theme={currentTheme}
-        onClick={() => setThemeModalOpen(true)}
-        buttonLabel={t("settings.terminal.theme.selectButton")}
-      />
+      <div className="rounded-lg border bg-card px-4">
+        <SettingRow
+          label={t("settings.terminal.theme.followApp")}
+          description={t("settings.terminal.theme.followApp.desc")}
+        >
+          <Toggle
+            checked={followAppTerminalTheme}
+            onChange={setFollowAppTerminalTheme}
+          />
+        </SettingRow>
+      </div>
+      {!followAppTerminalTheme && (
+        <ThemePreviewButton
+          theme={currentTheme}
+          onClick={() => setThemeModalOpen(true)}
+          buttonLabel={t("settings.terminal.theme.selectButton")}
+        />
+      )}
 
       <ThemeSelectModal
         open={themeModalOpen}

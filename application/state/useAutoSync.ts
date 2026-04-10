@@ -22,6 +22,32 @@ import { localStorageAdapter } from '../../infrastructure/persistence/localStora
 import { getEffectiveKnownHosts } from '../../infrastructure/syncHelpers';
 import { notify } from '../notification';
 
+/**
+ * Check whether a sync payload has any meaningful user data. Covers all
+ * synced entity arrays so that edge cases (e.g. user has 0 hosts but 1
+ * port forwarding rule) are not mistakenly treated as "empty".
+ */
+function isPayloadEffectivelyEmpty(payload: SyncPayload): boolean {
+  // Check all synced entity arrays.
+  const hasEntities =
+    (payload.hosts?.length ?? 0) > 0 ||
+    (payload.keys?.length ?? 0) > 0 ||
+    (payload.snippets?.length ?? 0) > 0 ||
+    (payload.identities?.length ?? 0) > 0 ||
+    (payload.customGroups?.length ?? 0) > 0 ||
+    (payload.snippetPackages?.length ?? 0) > 0 ||
+    (payload.portForwardingRules?.length ?? 0) > 0 ||
+    (payload.knownHosts?.length ?? 0) > 0 ||
+    (payload.groupConfigs?.length ?? 0) > 0;
+  if (hasEntities) return false;
+  // Also consider settings: if any key has a defined value, the user has
+  // customized something worth preserving.
+  if (payload.settings && Object.values(payload.settings).some((v) => v !== undefined)) {
+    return false;
+  }
+  return true;
+}
+
 interface AutoSyncConfig {
   // Data to sync
   hosts: SyncPayload['hosts'];
@@ -42,7 +68,7 @@ interface AutoSyncConfig {
 
 // Get manager singleton for direct state access
 const manager = getCloudSyncManager();
-const AUTO_SYNC_PROVIDER_ORDER: CloudProvider[] = ['webdav', 's3'];
+const AUTO_SYNC_PROVIDER_ORDER: CloudProvider[] = ['github', 'google', 'onedrive', 'webdav', 's3'];
 
 type SyncTrigger = 'auto' | 'manual';
 
@@ -57,9 +83,26 @@ export const useAutoSync = (config: AutoSyncConfig) => {
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncedDataRef = useRef<string>('');
   const hasCheckedRemoteRef = useRef(false);
+  /** True once checkRemoteVersion has completed (success or failure). Until
+   *  this is set, the debounced auto-sync effect will not fire, preventing
+   *  an empty local vault from racing ahead and overwriting a non-empty
+   *  cloud vault before the startup pull has run. See #679. */
+  const remoteCheckDoneRef = useRef(false);
   const isInitializedRef = useRef(false);
   const isSyncRunningRef = useRef(false);
   const skipNextSyncRef = useRef(false);
+
+  // State for the empty-vault-vs-cloud confirmation dialog (Fix D).
+  // When checkRemoteVersion detects that the local vault is empty but
+  // the cloud has data, it pauses and exposes this state so the root
+  // component can render a confirmation dialog.
+  const [emptyVaultConflict, setEmptyVaultConflict] = useState<{
+    remotePayload: SyncPayload;
+    hostCount: number;
+    keyCount: number;
+    snippetCount: number;
+  } | null>(null);
+  const emptyVaultResolveRef = useRef<((action: 'restore' | 'keep-empty') => void) | null>(null);
 
   // Listen for SFTP bookmark changes to trigger auto-sync
   const [bookmarksVersion, setBookmarksVersion] = useState(0);
@@ -173,6 +216,16 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         throw new Error(t('sync.credentialsUnavailable'));
       }
 
+      // Prevent pushing an empty vault to cloud. This is almost always
+      // a sign that the local state was lost (update, import failure,
+      // storage corruption) rather than a deliberate "delete everything".
+      // We only block auto-sync — manual trigger from Settings can still
+      // push if the user explicitly wants to.
+      if (isPayloadEffectivelyEmpty(payload) && trigger === 'auto') {
+        console.warn('[AutoSync] Blocked: refusing to auto-sync an empty vault to cloud');
+        return;
+      }
+
       const results = await sync.syncNow(payload);
 
       // Apply merged payloads first (before checking for failures) so local
@@ -229,22 +282,60 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     if (!connectedProvider) return;
     
     try {
+      // Load base BEFORE downloading (downloadFromProvider overwrites the base)
+      const base = await manager.loadSyncBase(connectedProvider);
       const remotePayload = await sync.downloadFromProvider(connectedProvider);
 
-      if (remotePayload) {
-        // downloadFromProvider already updates localVersion/remoteVersion,
-        // so if we got data, apply it when remote version was higher
-        // (downloadFromProvider only succeeds if remote exists)
-        const updatedState = manager.getState();
-        if (updatedState.localVersion > state.localVersion || state.localVersion === 0) {
-          config.onApplyPayload(remotePayload);
-          notify.success(t('sync.autoSync.syncedMessage'), t('sync.autoSync.syncedTitle'));
+      if (remotePayload && remotePayload.syncedAt > state.localUpdatedAt) {
+        const localPayload = buildPayload();
+        const localIsEmpty = isPayloadEffectivelyEmpty(localPayload);
+        const remoteHasData = !isPayloadEffectivelyEmpty(remotePayload);
+
+        // If local vault is empty but cloud has data, this almost certainly
+        // means the user's data was lost (update, storage corruption, etc.).
+        // Pause and ask the user what to do instead of silently merging.
+        if (localIsEmpty && remoteHasData) {
+          const userAction = await new Promise<'restore' | 'keep-empty'>((resolve) => {
+            emptyVaultResolveRef.current = resolve;
+            setEmptyVaultConflict({
+              remotePayload,
+              hostCount: remotePayload.hosts?.length ?? 0,
+              keyCount: remotePayload.keys?.length ?? 0,
+              snippetCount: remotePayload.snippets?.length ?? 0,
+            });
+          });
+          setEmptyVaultConflict(null);
+          emptyVaultResolveRef.current = null;
+
+          if (userAction === 'restore') {
+            config.onApplyPayload(remotePayload);
+            skipNextSyncRef.current = true;
+            notify.success(t('sync.autoSync.restoredMessage'), t('sync.autoSync.restoredTitle'));
+          } else {
+            // User chose to keep the empty vault. Don't apply remote data.
+            // The next auto-sync will eventually push the empty state if
+            // the user makes another edit.
+            notify.info(t('sync.autoSync.keptLocalMessage'), t('sync.autoSync.keptLocalTitle'));
+          }
+          return;
         }
+
+        const { mergeSyncPayloads } = await import('../../domain/syncMerge');
+        const mergeResult = mergeSyncPayloads(base, localPayload, remotePayload);
+
+        config.onApplyPayload(mergeResult.payload);
+        // Prevent the data-change effect from immediately re-uploading the
+        // merged payload — the merge already incorporated both sides. The
+        // next deliberate edit by the user will trigger a normal sync.
+        skipNextSyncRef.current = true;
+        notify.success(t('sync.autoSync.syncedMessage'), t('sync.autoSync.syncedTitle'));
       }
     } catch (error) {
       console.error('[AutoSync] Failed to check remote version:', error);
+    } finally {
+      remoteCheckDoneRef.current = true;
     }
-  }, [sync, config, t]);
+  }, [sync, config, buildPayload, t]);
   
   // Debounced auto-sync when data changes
   useEffect(() => {
@@ -252,7 +343,15 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     if (!sync.hasAnyConnectedProvider || !sync.autoSyncEnabled || !sync.isUnlocked) {
       return;
     }
-    
+
+    // Don't auto-sync until the startup remote check has completed.
+    // Without this gate, an empty local vault can push to the cloud
+    // before checkRemoteVersion even runs, overwriting a non-empty
+    // remote vault — the exact bug described in #679.
+    if (!remoteCheckDoneRef.current) {
+      return;
+    }
+
     // Skip initial render
     if (!isInitializedRef.current) {
       isInitializedRef.current = true;
@@ -310,19 +409,32 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     }
   }, [sync.hasAnyConnectedProvider, sync.isUnlocked, checkRemoteVersion]);
   
-  // Reset check flag when provider disconnects
+  // Reset check flags when provider disconnects
   useEffect(() => {
     if (!sync.hasAnyConnectedProvider) {
       hasCheckedRemoteRef.current = false;
+      remoteCheckDoneRef.current = false;
     }
   }, [sync.hasAnyConnectedProvider]);
   
+  const resolveEmptyVaultConflict = useCallback((action: 'restore' | 'keep-empty') => {
+    // Guard: resolve only once (prevents double-click from entering an
+    // inconsistent state). The ref is nulled immediately so subsequent
+    // calls are no-ops.
+    const resolve = emptyVaultResolveRef.current;
+    if (!resolve) return;
+    emptyVaultResolveRef.current = null;
+    resolve(action);
+  }, []);
+
   return {
     syncNow,
     buildPayload,
     isSyncing: sync.isSyncing,
     isConnected: sync.hasAnyConnectedProvider,
     autoSyncEnabled: sync.autoSyncEnabled,
+    emptyVaultConflict,
+    resolveEmptyVaultConflict,
   };
 };
 

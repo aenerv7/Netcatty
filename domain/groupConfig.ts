@@ -17,9 +17,29 @@ export function resolveGroupDefaults(
     const config = configMap.get(ancestorPath);
     if (config) {
       for (const [key, value] of Object.entries(config)) {
+        if (
+          (key === 'theme' && config.themeOverride === false) ||
+          (key === 'fontFamily' && config.fontFamilyOverride === false) ||
+          (key === 'fontSize' && config.fontSizeOverride === false) ||
+          (key === 'fontWeight' && config.fontWeightOverride === false)
+        ) {
+          continue;
+        }
         if (key !== 'path' && value !== undefined) {
           merged[key] = value;
         }
+      }
+      if (config.themeOverride === false) {
+        delete merged.themeOverride;
+      }
+      if (config.fontFamilyOverride === false) {
+        delete merged.fontFamilyOverride;
+      }
+      if (config.fontSizeOverride === false) {
+        delete merged.fontSizeOverride;
+      }
+      if (config.fontWeightOverride === false) {
+        delete merged.fontWeightOverride;
       }
     }
   }
@@ -49,4 +69,12 @@ export function applyGroupDefaults(host: Host, groupDefaults: Partial<GroupConfi
     }
   }
   return effective;
+}
+
+export function resolveGroupTerminalThemeId(
+  groupDefaults: Partial<GroupConfig> | undefined,
+  fallbackThemeId: string,
+): string {
+  if (!groupDefaults) return fallbackThemeId;
+  return groupDefaults.theme || fallbackThemeId;
 }
