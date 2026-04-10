@@ -128,13 +128,15 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 <TooltipContent>{t("terminal.toolbar.terminalSettings")}</TooltipContent>
             </Tooltip>
 
-            <HostKeywordHighlightPopover
-                host={host}
-                onUpdateHost={onUpdateHost}
-                isOpen={highlightPopoverOpen}
-                setIsOpen={setHighlightPopoverOpen}
-                buttonClassName={buttonBase}
-            />
+            {!isLocalTerminal && !isSerialTerminal && (
+                <HostKeywordHighlightPopover
+                    host={host}
+                    onUpdateHost={onUpdateHost}
+                    isOpen={highlightPopoverOpen}
+                    setIsOpen={setHighlightPopoverOpen}
+                    buttonClassName={buttonBase}
+                />
+            )}
 
             <Tooltip>
                 <TooltipTrigger asChild>
