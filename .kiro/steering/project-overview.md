@@ -52,6 +52,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - WebDAV 同步文件存放在 `/Netcatty/` 子目录（兼容坚果云等不允许根目录操作的服务）
 - 修复了从托盘退出时 app 挂起的 bug
 - 右上角工具栏精简：移除了通知铃铛和亮暗色切换按钮，AI 按钮仅在有配置时显示
+- Vault 页面移除了"新建本地 Terminal"按钮（`onCreateLocalTerminal`），仅保留 Serial 按钮
 - 构建仅保留 Windows (NSIS) 和 macOS (DMG)，移除 Linux
 - 所有 repo URL 指向 `aenerv7/Netcatty`（更新检查、electron-builder publish、设置页链接等）
 
@@ -59,10 +60,11 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 
 从上游 `binaricat/Netcatty` 同步代码时，必须遵守以下规则：
 
-1. **同步版本号 tag**：每次同步上游后，将上游最新的 `v*` tag 同步到 origin，但 tag 必须指向本项目 merge 后的 commit（即我们自己的 main HEAD），而不是上游的原始 commit。直接推送上游 tag 会导致 CI 使用上游的 workflow 文件构建，从而失败。
-2. **只保留本项目的 Workflow**：`.github/workflows/` 下只使用本项目自己的 workflow 文件。如果上游同步引入了新的或修改过的 workflow 文件，必须丢弃上游的改动，保留本项目版本。
-3. **不加入代码签名**：本项目没有签名证书。workflow 中必须保留 "Disable code signing and notarization" 步骤，并设置 `CSC_IDENTITY_AUTO_DISCOVERY: "false"`。如果上游引入了签名/公证相关配置，不要合入。
-4. **构建触发方式**：只通过打 `v*` tag 的方式触发构建，不使用 `workflow_dispatch`。
+1. **Tag 版本号必须与上游一致**：本项目不自行递增版本号。所有 `v*` tag 必须与上游 `binaricat/Netcatty` 的 tag 保持一致。只有在同步上游新版本后，才使用上游对应的版本号打 tag 触发构建。禁止创建上游不存在的版本号 tag。
+2. **同步版本号 tag**：每次同步上游后，将上游最新的 `v*` tag 同步到 origin，但 tag 必须指向本项目 merge 后的 commit（即我们自己的 main HEAD），而不是上游的原始 commit。直接推送上游 tag 会导致 CI 使用上游的 workflow 文件构建，从而失败。
+3. **只保留本项目的 Workflow**：`.github/workflows/` 下只使用本项目自己的 workflow 文件。如果上游同步引入了新的或修改过的 workflow 文件，必须丢弃上游的改动，保留本项目版本。
+4. **不加入代码签名**：本项目没有签名证书。workflow 中必须保留 "Disable code signing and notarization" 步骤，并设置 `CSC_IDENTITY_AUTO_DISCOVERY: "false"`。如果上游引入了签名/公证相关配置，不要合入。
+5. **构建触发方式**：只通过打 `v*` tag 的方式触发构建，不使用 `workflow_dispatch`。
 
 ## Electron IPC
 - 渲染进程通过 `window.netcatty` 桥接主进程

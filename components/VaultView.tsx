@@ -23,7 +23,6 @@ import {
   Settings,
   Square,
   Star,
-  TerminalSquare,
   Trash2,
   Upload,
   Usb,
@@ -124,7 +123,6 @@ interface VaultViewProps {
   terminalFontSize: number;
   onOpenSettings: () => void;
   onOpenQuickSwitcher: () => void;
-  onCreateLocalTerminal: () => void;
   onConnectSerial?: (config: SerialConfig, options?: { charset?: string }) => void;
   onDeleteHost: (id: string) => void;
   onConnect: (host: Host) => void;
@@ -170,7 +168,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   terminalFontSize,
   onOpenSettings,
   onOpenQuickSwitcher,
-  onCreateLocalTerminal,
   onConnectSerial,
   onDeleteHost,
   onConnect,
@@ -1901,7 +1898,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 </DropdownContent>
               </Dropdown>
             </div>
-            {/* Terminal + Serial — collapse together with an animation when
+            {/* Serial — collapse with an animation when
                 the host details / new-host aside panel is open, freeing
                 horizontal space for the panel. */}
             <div
@@ -1913,15 +1910,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
               )}
               aria-hidden={isHostPanelOpen}
             >
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-10 px-3 app-no-drag bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
-                onClick={onCreateLocalTerminal}
-                tabIndex={isHostPanelOpen ? -1 : 0}
-              >
-                <TerminalSquare size={14} className="mr-2" /> {t("common.terminal")}
-              </Button>
               <Button
                 size="sm"
                 variant="secondary"
