@@ -167,7 +167,7 @@ export const usePortForwardingState = (): UsePortForwardingStateResult => {
     };
   }, [rules]);
 
-  // Listen for storage events for cross-window sync (main window <-> tray panel)
+  // Listen for storage events for cross-window sync
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       // Only handle changes from our specific key

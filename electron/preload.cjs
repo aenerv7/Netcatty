@@ -514,13 +514,6 @@ ipcRenderer.on("netcatty:filewatch:error", (_event, payload) => {
   });
 });
 
-// Buffer the latest tray menu data so it can be replayed when the React
-// component subscribes after lazy-mount (avoiding the first-open race).
-let _lastTrayMenuData = null;
-ipcRenderer.on("netcatty:trayPanel:setMenuData", (_event, data) => {
-  _lastTrayMenuData = data;
-});
-
 const api = {
   getWindowsPtyInfo: () => {
     if (process.platform !== "win32") {
@@ -1087,70 +1080,6 @@ const api = {
   getGlobalHotkeyStatus: () =>
     ipcRenderer.invoke("netcatty:globalHotkey:status"),
 
-  // System Tray / Close to Tray
-  setCloseToTray: (enabled) =>
-    ipcRenderer.invoke("netcatty:tray:setCloseToTray", { enabled }),
-  isCloseToTray: () =>
-    ipcRenderer.invoke("netcatty:tray:isCloseToTray"),
-  updateTrayMenuData: (data) =>
-    ipcRenderer.invoke("netcatty:tray:updateMenuData", data),
-  // Listen for tray menu actions
-  onTrayFocusSession: (callback) => {
-    const handler = (_event, sessionId) => callback(sessionId);
-    ipcRenderer.on("netcatty:tray:focusSession", handler);
-    return () => ipcRenderer.removeListener("netcatty:tray:focusSession", handler);
-  },
-  onTrayTogglePortForward: (callback) => {
-    const handler = (_event, ruleId, start) => callback(ruleId, start);
-    ipcRenderer.on("netcatty:tray:togglePortForward", handler);
-    return () => ipcRenderer.removeListener("netcatty:tray:togglePortForward", handler);
-  },
-
-  // Tray panel actions forwarded to main window
-  onTrayPanelJumpToSession: (callback) => {
-    const handler = (_event, sessionId) => callback(sessionId);
-    ipcRenderer.on("netcatty:trayPanel:jumpToSession", handler);
-    return () => ipcRenderer.removeListener("netcatty:trayPanel:jumpToSession", handler);
-  },
-  onTrayPanelConnectToHost: (callback) => {
-    const handler = (_event, hostId) => callback(hostId);
-    ipcRenderer.on("netcatty:trayPanel:connectToHost", handler);
-    return () => ipcRenderer.removeListener("netcatty:trayPanel:connectToHost", handler);
-  },
-
-  // Tray panel window
-  hideTrayPanel: () => ipcRenderer.invoke("netcatty:trayPanel:hide"),
-  openMainWindow: () => ipcRenderer.invoke("netcatty:trayPanel:openMainWindow"),
-  quitApp: () => ipcRenderer.invoke("netcatty:trayPanel:quitApp"),
-  jumpToSessionFromTrayPanel: (sessionId) =>
-    ipcRenderer.invoke("netcatty:trayPanel:jumpToSession", sessionId),
-  connectToHostFromTrayPanel: (hostId) =>
-    ipcRenderer.invoke("netcatty:trayPanel:connectToHost", hostId),
-  onTrayPanelCloseRequest: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on("netcatty:trayPanel:closeRequest", handler);
-    return () => ipcRenderer.removeListener("netcatty:trayPanel:closeRequest", handler);
-  },
-
-  onTrayPanelRefresh: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on("netcatty:trayPanel:refresh", handler);
-    return () => ipcRenderer.removeListener("netcatty:trayPanel:refresh", handler);
-  },
-
-  onTrayPanelMenuData: (callback) => {
-    // Replay buffered data so late subscribers (e.g. after React lazy-mount) don't miss
-    // the initial payload that was sent before the useEffect listener was registered.
-    if (_lastTrayMenuData) {
-      queueMicrotask(() => callback(_lastTrayMenuData));
-    }
-    const handler = (_event, data) => {
-      _lastTrayMenuData = data;
-      callback(data);
-    };
-    ipcRenderer.on("netcatty:trayPanel:setMenuData", handler);
-    return () => ipcRenderer.removeListener("netcatty:trayPanel:setMenuData", handler);
-  },
 
   // Get file path from File object (for drag-and-drop)
   getPathForFile: (file) => {

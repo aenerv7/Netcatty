@@ -11,7 +11,6 @@ import App from './App';
 import { ToastProvider } from './components/ui/toast';
 
 const LazySettingsPage = lazy(() => import('./components/SettingsPage'));
-const LazyTrayPanel = lazy(() => import('./components/TrayPanel'));
 
 function SettingsWindowFallback() {
   return (
@@ -90,9 +89,6 @@ const getRoute = () => {
   if (hash === '#/settings' || hash.startsWith('#/settings')) {
     return 'settings';
   }
-  if (hash === '#/tray' || hash.startsWith('#/tray')) {
-    return 'tray';
-  }
   return 'main';
 };
 
@@ -105,14 +101,6 @@ const renderApp = () => {
       <ToastProvider>
         <Suspense fallback={<SettingsWindowFallback />}>
           <LazySettingsPage />
-        </Suspense>
-      </ToastProvider>
-    );
-  } else if (route === 'tray') {
-    root.render(
-      <ToastProvider>
-        <Suspense fallback={<div style={{ padding: 12, color: '#fff' }}>Loading tray panel…</div>}>
-          <LazyTrayPanel />
         </Suspense>
       </ToastProvider>
     );

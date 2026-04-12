@@ -8,9 +8,6 @@ const fs = require("node:fs");
 
 const V8_CACHE_OPTIONS = "bypassHeatCheck";
 
-function getGlobalShortcutBridge() {
-  return require("./globalShortcutBridge.cjs");
-}
 
 // Theme colors configuration
 const THEME_COLORS = {
@@ -989,17 +986,6 @@ async function createWindow(electronModule, options) {
 
   // Save state when window is about to close
   win.on("close", (event) => {
-    // Check if close-to-tray is enabled
-    if (!isQuitting && getGlobalShortcutBridge().handleWindowClose(event, win)) {
-      // Window was hidden to tray - save state before returning
-      if (saveStateTimer) clearTimeout(saveStateTimer);
-      const state = getWindowBoundsState(win, lastNormalBounds);
-      if (state) saveWindowStateSync(state);
-      hideSettingsWindow();
-      windowStateCloseRequested = false;
-      return;
-    }
-
     // Guard against re-entrant close during pendingWindowStateWrite flow.
     // Reset the flag if a previous quit attempt failed (window still alive).
     if (windowStateCloseRequested && !pendingWindowStateWrite) {
@@ -1326,7 +1312,7 @@ function closeSettingsWindow() {
 }
 
 /**
- * Hide the settings window without destroying it (used when main window hides to tray).
+ * Hide the settings window without destroying it.
  */
 function hideSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) {

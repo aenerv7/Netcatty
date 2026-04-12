@@ -1081,8 +1081,6 @@ if (!gotLock) {
 
     // Re-create or focus window on macOS dock click
     app.on("activate", () => {
-      // If the main window was hidden (e.g. "close to tray"), clicking the Dock icon
-      // should bring it back. Fallback to creating a new window if none exists.
       try {
         const mainWin = getWindowManager().getMainWindow?.();
         if (mainWin && !mainWin.isDestroyed?.()) {

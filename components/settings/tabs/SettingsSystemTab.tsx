@@ -77,8 +77,6 @@ interface SettingsSystemTabProps {
   setSessionLogsFormat: (format: SessionLogFormat) => void;
   toggleWindowHotkey: string;
   setToggleWindowHotkey: (hotkey: string) => void;
-  closeToTray: boolean;
-  setCloseToTray: (enabled: boolean) => void;
   hotkeyRegistrationError: string | null;
   globalHotkeyEnabled: boolean;
   setGlobalHotkeyEnabled: (enabled: boolean) => void;
@@ -101,8 +99,6 @@ const SettingsSystemTab: React.FC<SettingsSystemTabProps> = ({
   setSessionLogsFormat,
   toggleWindowHotkey,
   setToggleWindowHotkey,
-  closeToTray,
-  setCloseToTray,
   hotkeyRegistrationError,
   globalHotkeyEnabled,
   setGlobalHotkeyEnabled,
@@ -916,17 +912,6 @@ const SettingsSystemTab: React.FC<SettingsSystemTabProps> = ({
                   <p className="text-sm text-destructive mt-2">{hotkeyError || hotkeyRegistrationError}</p>
                 )}
               </div>
-
-              {/* Close to Tray */}
-              <SettingRow
-                label={t("settings.globalHotkey.closeToTray")}
-                description={t("settings.globalHotkey.closeToTrayDesc")}
-              >
-                <Toggle
-                  checked={closeToTray}
-                  onChange={setCloseToTray}
-                />
-              </SettingRow>
             </div>
 
             <p className="text-xs text-muted-foreground">

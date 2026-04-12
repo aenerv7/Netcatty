@@ -146,26 +146,9 @@ const zhCN: Messages = {
   'settings.globalHotkey.toggleWindowDesc': '按下组合键以设置显示/隐藏窗口的全局快捷键。',
   'settings.globalHotkey.notSet': '未设置',
   'settings.globalHotkey.reset': '恢复默认',
-  'settings.globalHotkey.closeToTray': '关闭时最小化到托盘',
-  'settings.globalHotkey.closeToTrayDesc': '启用后，关闭窗口将最小化到系统托盘而不是退出程序。',
   'settings.globalHotkey.enabled': '启用全局快捷键',
   'settings.globalHotkey.enabledDesc': '注册系统级键盘快捷键。禁用后将取消所有全局快捷键注册。',
   'settings.globalHotkey.hint': '全局快捷键在系统范围内工作，可快速显示或隐藏窗口（下拉式终端风格）。',
-
-  // Tray Panel
-  'tray.openMainWindow': '打开主窗口',
-  'tray.sessions': '会话',
-  'tray.portForwarding': '端口转发',
-  'tray.status.connected': '已连接',
-  'tray.status.connecting': '连接中',
-  'tray.status.disconnected': '已断开',
-  'tray.status.active': '已启用',
-  'tray.status.inactive': '未启用',
-  'tray.status.error': '错误',
-  'tray.recentHosts': '最近连接的主机',
-  'tray.empty.title': '一切都很安静',
-  'tray.empty.subtitle': '去连接个服务器吧，它们想念你了 🚀',
-  'tray.quit': '退出 Netcatty',
 
   // Vault Sidebar
   'vault.sidebar.collapse': '收起侧边栏',

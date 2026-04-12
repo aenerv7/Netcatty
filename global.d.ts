@@ -853,48 +853,6 @@ declare global {
     // Auto-Update toggle
     getAutoUpdate?(): Promise<{ enabled: boolean }>;
     setAutoUpdate?(enabled: boolean): Promise<{ success: boolean }>;
-
-    // System Tray / Close to Tray
-    setCloseToTray?(enabled: boolean): Promise<{ success: boolean; enabled: boolean }>;
-    isCloseToTray?(): Promise<{ enabled: boolean }>;
-    updateTrayMenuData?(data: {
-      sessions?: Array<{ id: string; label: string; hostLabel: string; status: "connecting" | "connected" | "disconnected"; workspaceId?: string; workspaceTitle?: string }>;
-      portForwardRules?: Array<{
-        id: string;
-        label: string;
-        type: "local" | "remote" | "dynamic";
-        localPort: number;
-        remoteHost?: string;
-        remotePort?: number;
-        status: "inactive" | "connecting" | "active" | "error";
-      }>;
-    }): Promise<{ success: boolean }>;
-    onTrayFocusSession?(callback: (sessionId: string) => void): () => void;
-    onTrayTogglePortForward?(callback: (ruleId: string, start: boolean) => void): () => void;
-
-    onTrayPanelJumpToSession?(callback: (sessionId: string) => void): () => void;
-    onTrayPanelConnectToHost?(callback: (hostId: string) => void): () => void;
-
-    hideTrayPanel?(): Promise<{ success: boolean }>;
-    openMainWindow?(): Promise<{ success: boolean }>;
-    quitApp?(): Promise<{ success: boolean }>;
-    jumpToSessionFromTrayPanel?(sessionId: string): Promise<{ success: boolean }>;
-    connectToHostFromTrayPanel?(hostId: string): Promise<{ success: boolean }>;
-    onTrayPanelCloseRequest?(callback: () => void): () => void;
-    onTrayPanelRefresh?(callback: () => void): () => void;
-    onTrayPanelMenuData?(callback: (data: {
-      sessions?: Array<{ id: string; label: string; hostLabel: string; status: "connecting" | "connected" | "disconnected"; workspaceId?: string; workspaceTitle?: string }>;
-      portForwardRules?: Array<{
-        id: string;
-        label: string;
-        type: "local" | "remote" | "dynamic";
-        localPort: number;
-        remoteHost?: string;
-        remotePort?: number;
-        status: "inactive" | "connecting" | "active" | "error";
-        hostId?: string;
-      }>;
-    }) => void): () => void;
   }
 
   interface Window {

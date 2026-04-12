@@ -29,7 +29,6 @@ import {
   STORAGE_KEY_SESSION_LOGS_DIR,
   STORAGE_KEY_SESSION_LOGS_FORMAT,
   STORAGE_KEY_TOGGLE_WINDOW_HOTKEY,
-  STORAGE_KEY_CLOSE_TO_TRAY,
   STORAGE_KEY_GLOBAL_HOTKEY_ENABLED,
   STORAGE_KEY_AUTO_UPDATE_ENABLED,
   STORAGE_KEY_WORKSPACE_FOCUS_STYLE,
@@ -286,12 +285,6 @@ export const useSettingsState = () => {
     // Default: Ctrl+` (Control+backtick) - similar to VS Code terminal toggle
     const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
     return isMac ? '⌃ + `' : 'Ctrl + `';
-  });
-  const [closeToTray, setCloseToTray] = useState<boolean>(() => {
-    const stored = readStoredString(STORAGE_KEY_CLOSE_TO_TRAY);
-    // Default to true (enabled)
-    if (stored === null) return true;
-    return stored === 'true';
   });
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState<boolean>(() => {
     const stored = readStoredString(STORAGE_KEY_AUTO_UPDATE_ENABLED);
@@ -1014,20 +1007,6 @@ export const useSettingsState = () => {
     notifySettingsChanged(STORAGE_KEY_GLOBAL_HOTKEY_ENABLED, globalHotkeyEnabled);
   }, [globalHotkeyEnabled, notifySettingsChanged]);
 
-  // Persist and sync close to tray setting
-  useEffect(() => {
-    // Update main process tray behavior (needed on mount)
-    const bridge = netcattyBridge.get();
-    if (bridge?.setCloseToTray) {
-      bridge.setCloseToTray(closeToTray).catch((err) => {
-        console.warn('[SystemTray] Failed to set close-to-tray:', err);
-      });
-    }
-    localStorageAdapter.writeString(STORAGE_KEY_CLOSE_TO_TRAY, closeToTray ? 'true' : 'false');
-    // Skip IPC on initial mount
-    if (!persistMountedRef.current) return;
-    notifySettingsChanged(STORAGE_KEY_CLOSE_TO_TRAY, closeToTray);
-  }, [closeToTray, notifySettingsChanged]);
 
   // Hydrate auto-update state from the main-process preference file on mount.
   // This reconciles localStorage (renderer) with auto-update-pref.json (main)
@@ -1220,8 +1199,6 @@ export const useSettingsState = () => {
     // Global Toggle Window (Quake Mode)
     toggleWindowHotkey,
     setToggleWindowHotkey,
-    closeToTray,
-    setCloseToTray,
     autoUpdateEnabled,
     setAutoUpdateEnabled,
     hotkeyRegistrationError,

@@ -162,26 +162,9 @@ const en: Messages = {
   'settings.globalHotkey.toggleWindowDesc': 'Press a key combination to set a global shortcut for showing/hiding the window.',
   'settings.globalHotkey.notSet': 'Not set',
   'settings.globalHotkey.reset': 'Reset to default',
-  'settings.globalHotkey.closeToTray': 'Close to System Tray',
-  'settings.globalHotkey.closeToTrayDesc': 'When enabled, closing the window will minimize to the system tray instead of quitting.',
   'settings.globalHotkey.enabled': 'Enable Global Hotkey',
   'settings.globalHotkey.enabledDesc': 'Register system-wide keyboard shortcuts. When disabled, all global hotkeys are unregistered.',
   'settings.globalHotkey.hint': 'Global hotkey works system-wide to quickly show or hide the window (Quake-style terminal).',
-
-  // Tray Panel
-  'tray.openMainWindow': 'Open Main Window',
-  'tray.sessions': 'Sessions',
-  'tray.portForwarding': 'Port Forwarding',
-  'tray.status.connected': 'Connected',
-  'tray.status.connecting': 'Connecting',
-  'tray.status.disconnected': 'Disconnected',
-  'tray.status.active': 'Active',
-  'tray.status.inactive': 'Inactive',
-  'tray.status.error': 'Error',
-  'tray.recentHosts': 'Recent Hosts',
-  'tray.empty.title': 'Nothing here yet',
-  'tray.empty.subtitle': 'Go connect to a server, they miss you 🚀',
-  'tray.quit': 'Quit Netcatty',
 
   // Vault Sidebar
   'vault.sidebar.collapse': 'Collapse sidebar',
