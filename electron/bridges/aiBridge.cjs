@@ -2103,8 +2103,17 @@ function registerHandlers(ipcMain) {
       const apiKey = resolvedProvider?.apiKey || undefined;
 
       const agentEnv = withCliDiscoveryEnv({ ...shellEnv });
-      if (apiKey) {
+      if (isCodexAgent && apiKey) {
         agentEnv.CODEX_API_KEY = apiKey;
+      }
+      if (isCodexAgent && resolvedProvider?.provider?.baseURL) {
+        agentEnv.OPENAI_BASE_URL = resolvedProvider.provider.baseURL;
+      }
+      if (isClaudeAgent && apiKey) {
+        agentEnv.ANTHROPIC_API_KEY = apiKey;
+      }
+      if (isClaudeAgent && resolvedProvider?.provider?.baseURL) {
+        agentEnv.ANTHROPIC_BASE_URL = resolvedProvider.provider.baseURL;
       }
 
       if (isCopilotAgent) {
@@ -2266,7 +2275,11 @@ function registerHandlers(ipcMain) {
         }
       }
 
-      const authFingerprint = isCodexAgent ? getCodexAuthFingerprint(apiKey) : null;
+      const authFingerprint = isCodexAgent
+        ? getCodexAuthFingerprint(apiKey)
+        : isClaudeAgent
+          ? getCodexAuthFingerprint(apiKey + (resolvedProvider?.provider?.baseURL || ""))
+          : null;
       const mcpSnapshot = isCodexAgent
         ? await resolveCodexMcpSnapshot(sessionCwd)
         : { mcpServers: [], fingerprint: getCodexMcpFingerprint([]) };
@@ -2333,8 +2346,17 @@ function registerHandlers(ipcMain) {
         cleanupAcpProvider(chatSessionId);
 
         const agentEnv = withCliDiscoveryEnv({ ...shellEnv });
-        if (apiKey) {
+        if (isCodexAgent && apiKey) {
           agentEnv.CODEX_API_KEY = apiKey;
+        }
+        if (isCodexAgent && resolvedProvider?.provider?.baseURL) {
+          agentEnv.OPENAI_BASE_URL = resolvedProvider.provider.baseURL;
+        }
+        if (isClaudeAgent && apiKey) {
+          agentEnv.ANTHROPIC_API_KEY = apiKey;
+        }
+        if (isClaudeAgent && resolvedProvider?.provider?.baseURL) {
+          agentEnv.ANTHROPIC_BASE_URL = resolvedProvider.provider.baseURL;
         }
         let copilotConfigInfo = null;
         if (isCopilotAgent) {
@@ -2452,8 +2474,17 @@ function registerHandlers(ipcMain) {
             : acpArgs || [],
           env: (() => {
             const fallbackEnv = withCliDiscoveryEnv(
-              apiKey ? { ...shellEnv, CODEX_API_KEY: apiKey } : { ...shellEnv },
+              isCodexAgent && apiKey ? { ...shellEnv, CODEX_API_KEY: apiKey } : { ...shellEnv },
             );
+            if (isCodexAgent && resolvedProvider?.provider?.baseURL) {
+              fallbackEnv.OPENAI_BASE_URL = resolvedProvider.provider.baseURL;
+            }
+            if (isClaudeAgent && apiKey) {
+              fallbackEnv.ANTHROPIC_API_KEY = apiKey;
+            }
+            if (isClaudeAgent && resolvedProvider?.provider?.baseURL) {
+              fallbackEnv.ANTHROPIC_BASE_URL = resolvedProvider.provider.baseURL;
+            }
             if (isCopilotAgent) {
               const fallbackCopilotConfig = prepareCopilotHome(shellEnv, mcpSnapshot.mcpServers, chatSessionId);
               fallbackEnv.COPILOT_HOME = fallbackCopilotConfig.copilotHome;

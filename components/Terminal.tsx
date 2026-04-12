@@ -989,7 +989,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       if (terminalSettings) {
         termRef.current.options.cursorStyle = terminalSettings.cursorShape;
         termRef.current.options.cursorBlink = terminalSettings.cursorBlink;
-        termRef.current.options.scrollback = terminalSettings.scrollback;
+        termRef.current.options.scrollback = terminalSettings.scrollback === 0 ? 999999 : terminalSettings.scrollback;
         termRef.current.options.fontWeight = effectiveFontWeight as
           | 100
           | 200

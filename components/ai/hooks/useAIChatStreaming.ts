@@ -30,6 +30,7 @@ import { createCattyTools } from '../../../infrastructure/ai/sdk/tools';
 import type { NetcattyBridge, ExecutorContext } from '../../../infrastructure/ai/cattyAgent/executor';
 import { runExternalAgentTurn } from '../../../infrastructure/ai/externalAgentAdapter';
 import { runAcpAgentTurn } from '../../../infrastructure/ai/acpAgentAdapter';
+import { matchesManagedAgentConfig } from '../../../infrastructure/ai/managedAgents';
 import { classifyError } from '../../../infrastructure/ai/errorClassifier';
 
 // -------------------------------------------------------------------
@@ -553,8 +554,21 @@ export function useAIChatStreaming({
 
       // Pass only the provider ID — the main process resolves and decrypts the API key itself,
       // avoiding plaintext key transit across the IPC boundary.
-      const openaiProvider = context.providers.find(p => p.providerId === 'openai' && p.enabled && p.apiKey);
-      const agentProviderId = openaiProvider?.id;
+      // Resolve the correct provider based on agent type:
+      // - Claude agent → anthropic provider (prefer over generic custom)
+      // - Codex agent  → openai provider
+      const agentProviderId = (() => {
+        if (matchesManagedAgentConfig(agentConfig, 'claude')) {
+          return (
+            context.providers.find(p => p.providerId === 'anthropic' && p.enabled && p.apiKey)?.id
+            ?? context.providers.find(p => p.providerId === 'custom' && p.enabled && p.apiKey && p.baseURL)?.id
+          );
+        }
+        if (matchesManagedAgentConfig(agentConfig, 'codex')) {
+          return context.providers.find(p => p.providerId === 'openai' && p.enabled && p.apiKey)?.id;
+        }
+        return undefined;
+      })();
 
       // Mutable flag: set after tool-result, cleared when new assistant msg is created
       let needsNewAssistantMsg = false;
