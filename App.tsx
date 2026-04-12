@@ -307,6 +307,12 @@ function App({ settings }: { settings: SettingsState }) {
   const activeTabId = useActiveTabId();
   const customThemes = useCustomThemes();
 
+  useEffect(() => {
+    if (!settings.showSftpTab && activeTabId === 'sftp') {
+      setActiveTabId('vault');
+    }
+  }, [settings.showSftpTab, activeTabId, setActiveTabId]);
+
   // Resolve the effective TerminalTheme for the currently focused terminal tab
   const hostById = useMemo(
     () => new Map(hosts.map((host) => [host.id, host])),
@@ -893,13 +899,18 @@ function App({ settings }: { settings: SettingsState }) {
 
   // Shared hotkey action handler - used by both global handler and terminal callback
   const executeHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
+    // Build complete tab list: vault + (sftp when visible) + sessions/workspaces.
+    // Hiding the SFTP tab must also remove it from keyboard cycling so nextTab
+    // doesn't land on a hidden tab (which would get redirected back) and so
+    // number shortcuts don't shift.
+    const allTabs = settings.showSftpTab
+      ? ['vault', 'sftp', ...orderedTabs]
+      : ['vault', ...orderedTabs];
     switch (action) {
       case 'switchToTab': {
         // Get the number key pressed (1-9)
         const num = parseInt(e.key, 10);
         if (num >= 1 && num <= 9) {
-          // Build complete tab list: vault + sftp + sessions/workspaces
-          const allTabs = ['vault', 'sftp', ...orderedTabs];
           if (num <= allTabs.length) {
             setActiveTabId(allTabs[num - 1]);
           }
@@ -907,8 +918,6 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
       case 'nextTab': {
-        // Build complete tab list: vault + sftp + sessions/workspaces
-        const allTabs = ['vault', 'sftp', ...orderedTabs];
         const currentId = activeTabStore.getActiveTabId();
         const currentIdx = allTabs.indexOf(currentId);
         if (currentIdx !== -1 && allTabs.length > 0) {
@@ -920,8 +929,6 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
       case 'prevTab': {
-        // Build complete tab list: vault + sftp + sessions/workspaces
-        const allTabs = ['vault', 'sftp', ...orderedTabs];
         const currentId = activeTabStore.getActiveTabId();
         const currentIdx = allTabs.indexOf(currentId);
         if (currentIdx !== -1 && allTabs.length > 0) {
@@ -968,7 +975,9 @@ function App({ settings }: { settings: SettingsState }) {
         setActiveTabId('vault');
         break;
       case 'openSftp':
-        setActiveTabId('sftp');
+        if (settings.showSftpTab) {
+          setActiveTabId('sftp');
+        }
         break;
       case 'quickSwitch':
       case 'commandPalette':
@@ -1056,7 +1065,7 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
     }
-  }, [orderedTabs, sessions, workspaces, setActiveTabId, closeSession, closeWorkspace, createLocalTerminalWithCurrentShell, splitSessionWithCurrentShell, moveFocusInWorkspace, toggleBroadcast]);
+  }, [orderedTabs, sessions, workspaces, setActiveTabId, closeSession, closeWorkspace, createLocalTerminalWithCurrentShell, splitSessionWithCurrentShell, moveFocusInWorkspace, toggleBroadcast, settings.showSftpTab]);
 
   // Callback for terminal to invoke app-level hotkey actions
   const handleHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
@@ -1424,6 +1433,7 @@ function App({ settings }: { settings: SettingsState }) {
         onStartSessionDrag={setDraggingSessionId}
         onEndSessionDrag={handleEndSessionDrag}
         onReorderTabs={reorderTabs}
+        showSftpTab={settings.showSftpTab}
       />
 
       <div className="flex-1 relative min-h-0">
@@ -1584,6 +1594,7 @@ function App({ settings }: { settings: SettingsState }) {
             results={quickResults}
             sessions={sessions}
             workspaces={workspaces}
+            showSftpTab={settings.showSftpTab}
             onQueryChange={setQuickSearch}
             onSelect={handleHostConnectWithProtocolCheck}
             onSelectTab={(tabId) => {

@@ -188,6 +188,8 @@ const zhCN: Messages = {
   'settings.vault.showRecentHostsDesc': '在主机列表顶部显示最近连接过的主机',
   'settings.vault.showOnlyUngroupedHostsInRoot': '根目录只显示未分组主机',
   'settings.vault.showOnlyUngroupedHostsInRootDesc': '开启后，主机库根目录的主机列表只显示没有分组的主机，已分组主机请从左侧分组进入查看。',
+  'settings.vault.showSftpTab': '显示 SFTP 标签页',
+  'settings.vault.showSftpTabDesc': '在顶部标签栏显示独立的 SFTP 视图。关闭后可改用会话内左侧的 SFTP 侧栏。',
 
   // Update notifications
   'update.available.title': '发现新版本',

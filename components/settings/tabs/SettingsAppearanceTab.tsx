@@ -29,6 +29,8 @@ export default function SettingsAppearanceTab(props: {
   setShowRecentHosts: (enabled: boolean) => void;
   showOnlyUngroupedHostsInRoot: boolean;
   setShowOnlyUngroupedHostsInRoot: (enabled: boolean) => void;
+  showSftpTab: boolean;
+  setShowSftpTab: (enabled: boolean) => void;
 }) {
   const { t } = useI18n();
   const availableUIFonts = useAvailableUIFonts();
@@ -53,6 +55,8 @@ export default function SettingsAppearanceTab(props: {
     setShowRecentHosts,
     showOnlyUngroupedHostsInRoot,
     setShowOnlyUngroupedHostsInRoot,
+    showSftpTab,
+    setShowSftpTab,
   } = props;
 
   const getHslStyle = useCallback((hsl: string) => ({ backgroundColor: `hsl(${hsl})` }), []);
@@ -278,6 +282,12 @@ export default function SettingsAppearanceTab(props: {
             checked={showOnlyUngroupedHostsInRoot}
             onChange={setShowOnlyUngroupedHostsInRoot}
           />
+        </SettingRow>
+        <SettingRow
+          label={t('settings.vault.showSftpTab')}
+          description={t('settings.vault.showSftpTabDesc')}
+        >
+          <Toggle checked={showSftpTab} onChange={setShowSftpTab} />
         </SettingRow>
       </div>
 

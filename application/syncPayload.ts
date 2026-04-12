@@ -44,6 +44,7 @@ import {
   STORAGE_KEY_CUSTOM_THEMES,
   STORAGE_KEY_SHOW_RECENT_HOSTS,
   STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT,
+  STORAGE_KEY_SHOW_SFTP_TAB,
 } from '../infrastructure/config/storageKeys';
 
 // ---------------------------------------------------------------------------
@@ -176,6 +177,8 @@ export function collectSyncableSettings(): SyncPayload['settings'] {
   if (showRecent != null) settings.showRecentHosts = showRecent;
   const showOnlyUngroupedHostsInRoot = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT);
   if (showOnlyUngroupedHostsInRoot != null) settings.showOnlyUngroupedHostsInRoot = showOnlyUngroupedHostsInRoot;
+  const showSftpTab = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_SFTP_TAB);
+  if (showSftpTab != null) settings.showSftpTab = showSftpTab;
 
   return Object.keys(settings).length > 0 ? settings : undefined;
 }
@@ -246,6 +249,9 @@ function applySyncableSettings(settings: NonNullable<SyncPayload['settings']>): 
       STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT,
       settings.showOnlyUngroupedHostsInRoot,
     );
+  }
+  if (settings.showSftpTab != null) {
+    localStorageAdapter.writeBoolean(STORAGE_KEY_SHOW_SFTP_TAB, settings.showSftpTab);
   }
 }
 

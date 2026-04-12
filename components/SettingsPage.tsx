@@ -290,6 +290,8 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
                             setShowRecentHosts={settings.setShowRecentHosts}
                             showOnlyUngroupedHostsInRoot={settings.showOnlyUngroupedHostsInRoot}
                             setShowOnlyUngroupedHostsInRoot={settings.setShowOnlyUngroupedHostsInRoot}
+                            showSftpTab={settings.showSftpTab}
+                            setShowSftpTab={settings.setShowSftpTab}
                         />
                     )}
 

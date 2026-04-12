@@ -114,6 +114,9 @@ export const STORAGE_KEY_IMMERSIVE_MODE = 'netcatty_immersive_mode_v1';
 export const STORAGE_KEY_SHOW_RECENT_HOSTS = 'netcatty_show_recent_hosts_v1';
 export const STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT = 'netcatty_show_only_ungrouped_hosts_in_root_v1';
 
+// Top tabs: Show standalone SFTP view tab
+export const STORAGE_KEY_SHOW_SFTP_TAB = 'netcatty_show_sftp_tab_v1';
+
 // Group Configurations (default settings inherited by hosts)
 export const STORAGE_KEY_GROUP_CONFIGS = 'netcatty_group_configs_v1';
 

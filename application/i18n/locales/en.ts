@@ -204,6 +204,8 @@ const en: Messages = {
   'settings.vault.showRecentHostsDesc': 'Display a section of recently connected hosts at the top of the vault',
   'settings.vault.showOnlyUngroupedHostsInRoot': 'Only show ungrouped hosts at root',
   'settings.vault.showOnlyUngroupedHostsInRootDesc': 'When enabled, the root host list only shows hosts without a group. Open a group from the sidebar to see grouped hosts.',
+  'settings.vault.showSftpTab': 'Show SFTP tab',
+  'settings.vault.showSftpTabDesc': 'Display the standalone SFTP view in the top tab bar. When hidden, use the in-session SFTP side panel instead.',
 
   // Update notifications
   'update.available.title': 'Update Available',
