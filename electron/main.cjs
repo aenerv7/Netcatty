@@ -1143,6 +1143,18 @@ if (!gotLock) {
       console.warn("Error during SCP bridge cleanup:", err);
     }
 
+    // When quitAndInstall is in progress, let the quit proceed without
+    // deferral.  electron-updater hooks into the normal quit lifecycle to
+    // swap the app bundle (macOS) or launch the NSIS installer (Windows).
+    // Calling event.preventDefault() + app.exit(0) bypasses that mechanism
+    // and the update silently fails to apply.
+    if (getAutoUpdateBridge().isInstallingUpdate()) {
+      console.log("[Main] Update install in progress — skipping async cleanup deferral");
+      // Best-effort synchronous flush; don't block the quit.
+      try { sessionLogStreamManager.cleanupAllSync?.(); } catch {}
+      return;
+    }
+
     // Async cleanup (session log streams involve file I/O).
     // Defer quit until streams are flushed, with a hard timeout to
     // guarantee the app never hangs.

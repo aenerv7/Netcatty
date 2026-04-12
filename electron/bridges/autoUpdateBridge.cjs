@@ -75,6 +75,9 @@ let _isDownloading = false;
 /** Track whether a checkForUpdates call is in flight (set before call, cleared on result event) */
 let _isChecking = false;
 
+/** Track whether quitAndInstall has been called — will-quit must not preventDefault */
+let _isInstallingUpdate = false;
+
 /**
  * Snapshot of the last known update status so newly opened windows can hydrate
  * without waiting for the next IPC event.
@@ -374,6 +377,13 @@ function registerHandlers(ipcMain) {
       // ignore — bridge may not be available
     }
 
+    // Mark that we're installing an update so the will-quit handler does NOT
+    // call event.preventDefault() + app.exit(0).  electron-updater hooks into
+    // the normal quit lifecycle to swap the app bundle (macOS) or launch the
+    // installer (Windows).  A hard app.exit() bypasses that mechanism and the
+    // update silently fails to apply.
+    _isInstallingUpdate = true;
+
     updater.quitAndInstall(false, true);
   });
 
@@ -408,4 +418,4 @@ function registerHandlers(ipcMain) {
   console.log("[AutoUpdate] Handlers registered");
 }
 
-module.exports = { init, registerHandlers, isAutoUpdateSupported, startAutoCheck };
+module.exports = { init, registerHandlers, isAutoUpdateSupported, startAutoCheck, isInstallingUpdate: () => _isInstallingUpdate };
