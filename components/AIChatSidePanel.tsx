@@ -541,6 +541,10 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     () => currentAgentConfig ? matchesManagedAgentConfig(currentAgentConfig, 'codex') : false,
     [currentAgentConfig],
   );
+  const isClaudeManagedAgent = useMemo(
+    () => currentAgentConfig ? matchesManagedAgentConfig(currentAgentConfig, 'claude') : false,
+    [currentAgentConfig],
+  );
 
   // For Codex, pick up the model declared in ~/.codex/config.toml (if any)
   // so the picker can show just that model instead of the hardcoded ChatGPT
@@ -579,7 +583,12 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
 
   useEffect(() => {
     if (!currentAgentConfig?.acpCommand) return;
-    if (!isCopilotExternalAgent) return;
+    // Codex has its own path via aiCodexGetIntegration (reads config.toml).
+    // Everyone else that speaks ACP can be asked for their available models
+    // directly — in particular, Claude Code through claude-agent-acp
+    // advertises the real catalog (including Bedrock/Vertex model ids when
+    // the user configured those) instead of the hardcoded CLAUDE_MODEL_PRESETS.
+    if (!isCopilotExternalAgent && !isClaudeManagedAgent) return;
 
     const bridge = getNetcattyBridge();
     if (!bridge?.aiAcpListModels) return;
@@ -592,7 +601,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
       undefined,
       `models_${currentAgentId}`,
     ).then((result) => {
-      if (cancelled || !result?.ok || !Array.isArray(result.models)) return;
+      if (cancelled || !result?.ok || !Array.isArray(result.models) || result.models.length === 0) return;
       const knownModelIds = new Set(result.models.map((model) => model.id));
       setRuntimeAgentModelPresets((prev) => ({
         ...prev,
@@ -611,7 +620,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentAgentConfig, currentAgentId, isCopilotExternalAgent, setAgentModel]);
+  }, [currentAgentConfig, currentAgentId, isCopilotExternalAgent, isClaudeManagedAgent, setAgentModel]);
 
   // When Codex is backed by a ~/.codex/config.toml custom provider, the
   // stock CODEX_MODEL_PRESETS catalog is invalid for that endpoint.
