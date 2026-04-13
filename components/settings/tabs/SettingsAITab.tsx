@@ -18,7 +18,6 @@ import type {
   WebSearchConfig,
 } from "../../../infrastructure/ai/types";
 import {
-  findManagedAgentProvider,
   getManagedAgentStoredPath,
   matchesManagedAgentConfig,
   type ManagedAgentKey,
@@ -309,8 +308,6 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
       .map((a) => ({ value: a.id, label: a.name, icon: <AgentIconBadge agent={a} size="xs" variant="plain" /> })),
   ], [externalAgents, t]);
 
-  const hasCodexCompatibleProvider = Boolean(findManagedAgentProvider(providers, "codex"));
-
   const refreshCodexIntegration = useCallback(async (opts?: { refreshShellEnv?: boolean }) => {
     const bridge = getBridge();
     if (!bridge?.aiCodexGetIntegration) return;
@@ -575,7 +572,6 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
               integration={codexIntegration}
               loginSession={codexLoginSession}
               isLoading={isCodexLoading}
-              hasCompatibleProvider={hasCodexCompatibleProvider}
               error={codexError}
               onRefresh={() => void refreshCodexIntegration({ refreshShellEnv: true })}
               onConnect={() => void handleStartCodexLogin()}

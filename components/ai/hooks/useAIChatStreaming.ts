@@ -611,15 +611,11 @@ export function useAIChatStreaming({
 
       // Pass only the provider ID — the main process resolves and decrypts the API key itself,
       // avoiding plaintext key transit across the IPC boundary.
-      // Resolve the correct provider based on agent type:
-      // - Claude agent → anthropic provider (prefer over generic custom)
-      // - Codex agent  → openai provider (fallback to openai-compatible custom)
+      // Codex agent auth is owned entirely by ~/.codex/auth.json or ~/.codex/config.toml
+      // and must not be affected by netcatty's provider list (see issue #705).
       const agentProviderId = (() => {
         if (matchesManagedAgentConfig(agentConfig, 'claude')) {
           return findManagedAgentProvider(context.providers, 'claude')?.id;
-        }
-        if (matchesManagedAgentConfig(agentConfig, 'codex')) {
-          return findManagedAgentProvider(context.providers, 'codex')?.id;
         }
         return undefined;
       })();

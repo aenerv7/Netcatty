@@ -15,7 +15,6 @@ export const CodexConnectionCard: React.FC<{
   integration: CodexIntegrationStatus | null;
   loginSession: CodexLoginSession | null;
   isLoading: boolean;
-  hasCompatibleProvider: boolean;
   error: string | null;
   onRefresh: () => void;
   onConnect: () => void;
@@ -31,7 +30,6 @@ export const CodexConnectionCard: React.FC<{
   integration,
   loginSession,
   isLoading,
-  hasCompatibleProvider,
   error,
   onRefresh,
   onConnect,
@@ -191,12 +189,6 @@ export const CodexConnectionCard: React.FC<{
                 </p>
               )}
             </>
-          )}
-
-          {hasCompatibleProvider && integration?.state !== "connected_custom_config" && (
-            <p className="text-xs text-emerald-500">
-              {t('ai.codex.apiKeyHint')}
-            </p>
           )}
         </>
       )}

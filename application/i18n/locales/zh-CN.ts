@@ -1772,7 +1772,6 @@ const zhCN: Messages = {
   'ai.codex.logout': '退出登录',
   'ai.codex.connectChatGPT': '连接 ChatGPT',
   'ai.codex.refreshStatus': '刷新状态',
-  'ai.codex.apiKeyHint': '检测到已启用的兼容 OpenAI 的 API Key。Codex ACP 也可以不走 ChatGPT 登录直接使用它。',
 
   // AI Claude Code
   'ai.claude.title': 'Claude Code',
