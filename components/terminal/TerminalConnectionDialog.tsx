@@ -182,11 +182,12 @@ export const TerminalConnectionDialog: React.FC<TerminalConnectionDialogProps> =
                         <div className="flex-1 h-1.5 rounded-full bg-border/60 overflow-hidden relative">
                             <div
                                 className={cn(
-                                    "absolute inset-y-0 left-0 rounded-full transition-all duration-300",
+                                    "absolute inset-y-0 left-0 rounded-full",
                                     error ? "bg-destructive" : "bg-primary"
                                 )}
                                 style={{
                                     width: needsAuth ? '0%' : status === 'connecting' ? `${progressValue}%` : error ? '100%' : '100%',
+                                    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                                 }}
                             />
                         </div>

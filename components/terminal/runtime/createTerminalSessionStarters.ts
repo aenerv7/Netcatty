@@ -541,7 +541,8 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
 
         ctx.setProgressLogs((prev) => [...prev, logLine]);
         const hopProgress = (hop / total) * 80 + 10;
-        ctx.setProgressValue(Math.min(95, hopProgress));
+        // Monotonic: never decrease progress (the simulated timer may already be ahead)
+        ctx.setProgressValue((prev) => Math.max(prev, Math.min(95, hopProgress)));
       });
       if (unsub) unsubscribeChainProgress = unsub;
     }

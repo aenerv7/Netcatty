@@ -332,7 +332,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const [timeLeft, setTimeLeft] = useState(CONNECTION_TIMEOUT / 1000);
   const [isCancelling, setIsCancelling] = useState(false);
   const [showSFTP, setShowSFTP] = useState(false);
-  const [progressValue, setProgressValue] = useState(15);
+  const [progressValue, setProgressValue] = useState(0);
   const [hasSelection, setHasSelection] = useState(false);
   const [isDisconnectedDialogDismissed, setIsDisconnectedDialogDismissed] = useState(false);
 
@@ -904,10 +904,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       setProgressValue((prev) => {
         if (prev >= 95) return prev;
         const remaining = 95 - prev;
-        const increment = Math.max(1, remaining * 0.15);
+        // Use a small increment so the simulated progress never jumps ahead
+        // of real hop-based progress updates from the session starters.
+        const increment = Math.max(0.5, remaining * 0.08);
         return Math.min(95, prev + increment);
       });
-    }, 200);
+    }, 300);
 
     return () => {
       clearInterval(countdown);
@@ -1482,6 +1484,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     setIsDisconnectedDialogDismissed(false);
     setStatus("connecting");
     setError(null);
+    setProgressValue(0);
     setProgressLogs(["Retrying secure channel..."]);
     setShowLogs(true);
 
