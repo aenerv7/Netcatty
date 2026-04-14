@@ -177,13 +177,14 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isStreaming
             return (
               <React.Fragment key={message.id}>
                 {message.toolResults?.map((tr) => (
-                  <ToolCall
-                    key={tr.toolCallId}
-                    name={toolCallNames.get(tr.toolCallId) || tr.toolCallId}
-                    args={toolCallArgs.get(tr.toolCallId)}
-                    result={tr.content}
-                    isError={tr.isError}
-                  />
+                  <div key={tr.toolCallId}>
+                    <ToolCall
+                      name={toolCallNames.get(tr.toolCallId) || tr.toolCallId}
+                      args={toolCallArgs.get(tr.toolCallId)}
+                      result={tr.content}
+                      isError={tr.isError}
+                    />
+                  </div>
                 ))}
               </React.Fragment>
             );
@@ -255,15 +256,16 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isStreaming
                         ? 'denied' as const
                         : undefined;
                   return (
-                    <ToolCall
-                      key={tc.id}
-                      name={tc.name}
-                      args={tc.arguments}
-                      isInterrupted={!isPending}
-                      approvalStatus={approvalStatus}
-                      onApprove={() => handleApprove(tc.id)}
-                      onReject={() => handleReject(tc.id)}
-                    />
+                    <div key={tc.id}>
+                      <ToolCall
+                        name={tc.name}
+                        args={tc.arguments}
+                        isInterrupted={!isPending}
+                        approvalStatus={approvalStatus}
+                        onApprove={() => handleApprove(tc.id)}
+                        onReject={() => handleReject(tc.id)}
+                      />
+                    </div>
                   );
                 })}
 
@@ -308,34 +310,35 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isStreaming
                 ? 'denied' as const
                 : undefined;
           return (
-            <ToolCall
-              key={tc.id}
-              name={tc.name}
-              args={tc.arguments}
-              isLoading={isStreaming && lastAssistantMessage.executionStatus === 'running' && !isPending}
-              approvalStatus={approvalStatus}
-              onApprove={() => handleApprove(tc.id)}
-              onReject={() => handleReject(tc.id)}
-            />
+            <div key={tc.id}>
+              <ToolCall
+                name={tc.name}
+                args={tc.arguments}
+                isLoading={isStreaming && lastAssistantMessage.executionStatus === 'running' && !isPending}
+                approvalStatus={approvalStatus}
+                onApprove={() => handleApprove(tc.id)}
+                onReject={() => handleReject(tc.id)}
+              />
+            </div>
           );
         })}
 
         {/* Standalone MCP/ACP approval requests (not tied to SDK tool calls) */}
         {Array.from(pendingApprovals.entries())
-          .filter((entry) => entry[0].startsWith('mcp_approval_') && (!activeSessionId || entry[1].chatSessionId === activeSessionId))
-          .map((entry) => {
-            const [id, req] = entry;
+          .filter(([id, req]) => id.startsWith('mcp_approval_') && (!activeSessionId || req.chatSessionId === activeSessionId))
+          .map(([id, req]) => {
             return (
-              <ToolCall
-                key={id}
-                name={req.toolName}
-                args={req.args}
-                isLoading={false}
-                isInterrupted={false}
-                approvalStatus={'pending'}
-                onApprove={() => handleApprove(id)}
-                onReject={() => handleReject(id)}
-              />
+              <div key={id}>
+                <ToolCall
+                  name={req.toolName}
+                  args={req.args}
+                  isLoading={false}
+                  isInterrupted={false}
+                  approvalStatus={'pending'}
+                  onApprove={() => handleApprove(id)}
+                  onReject={() => handleReject(id)}
+                />
+              </div>
             );
           })}
         {/* Streaming indicator — only when no content and no thinking yet */}

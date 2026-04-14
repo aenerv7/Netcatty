@@ -6,16 +6,13 @@ declare module "*.cjs" {
   export = value;
 }
 
-declare global {
-  // Extend HTMLInputElement to support webkitdirectory attribute
-  namespace JSX {
-    interface IntrinsicElements {
-      input: React.DetailedHTMLProps<React.InputHTMLAttributes<HTMLInputElement> & {
-        webkitdirectory?: string;
-      }, HTMLInputElement>;
-    }
+declare module 'react' {
+  interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
+    webkitdirectory?: string | boolean;
   }
+}
 
+declare global {
   // Proxy configuration for SSH connections
   interface NetcattyProxyConfig {
     type: 'http' | 'socks5';
@@ -735,11 +732,21 @@ declare global {
       acpCommand?: string;
       acpArgs?: string[];
     }>>;
-    aiCodexGetIntegration?(): Promise<{
-      state: 'connected_chatgpt' | 'connected_api_key' | 'not_logged_in' | 'unknown';
+    aiCodexGetIntegration?(options?: { refreshShellEnv?: boolean }): Promise<{
+      state: 'connected_chatgpt' | 'connected_api_key' | 'connected_custom_config' | 'not_logged_in' | 'unknown';
       isConnected: boolean;
       rawOutput: string;
       exitCode: number | null;
+      customConfig?: {
+        providerName: string;
+        displayName: string;
+        baseUrl: string | null;
+        envKey: string | null;
+        envKeyPresent: boolean;
+        hasHardcodedApiKey: boolean;
+        model: string | null;
+        authHash: string | null;
+      } | null;
     }>;
     aiCodexStartLogin?(): Promise<{
       ok: boolean;
@@ -798,11 +805,54 @@ declare global {
       connected: boolean;
     }>, chatSessionId?: string): Promise<{ ok: boolean }>;
     aiMcpSetToolIntegrationMode?(mode: 'mcp' | 'skills'): Promise<{ ok: boolean; error?: string }>;
+    aiUserSkillsGetStatus?(): Promise<{
+      ok: boolean;
+      directoryPath?: string;
+      readyCount?: number;
+      warningCount?: number;
+      skills?: Array<{
+        id: string;
+        slug: string;
+        directoryName: string;
+        directoryPath: string;
+        skillPath: string;
+        name: string;
+        description: string;
+        status: 'ready' | 'warning';
+        warnings: string[];
+      }>;
+      warnings?: string[];
+      error?: string;
+    }>;
+    aiUserSkillsOpenFolder?(): Promise<{
+      ok: boolean;
+      directoryPath?: string;
+      readyCount?: number;
+      warningCount?: number;
+      skills?: Array<{
+        id: string;
+        slug: string;
+        directoryName: string;
+        directoryPath: string;
+        skillPath: string;
+        name: string;
+        description: string;
+        status: 'ready' | 'warning';
+        warnings: string[];
+      }>;
+      warnings?: string[];
+      error?: string;
+    }>;
+    aiUserSkillsBuildContext?(prompt: string, selectedSkillSlugs?: string[]): Promise<{
+      ok: boolean;
+      context?: string;
+      error?: string;
+    }>;
     aiSpawnAgent?(agentId: string, command: string, args?: string[], env?: Record<string, string>, options?: { closeStdin?: boolean }): Promise<{ ok: boolean; pid?: number; error?: string }>;
     aiWriteToAgent?(agentId: string, data: string): Promise<{ ok: boolean; error?: string }>;
     aiCloseAgentStdin?(agentId: string): Promise<{ ok: boolean; error?: string }>;
     aiKillAgent?(agentId: string): Promise<{ ok: boolean; error?: string }>;
-    aiAcpStream?(requestId: string, chatSessionId: string, acpCommand: string, acpArgs: string[], prompt: string, cwd?: string, providerId?: string, model?: string, existingSessionId?: string, historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>, images?: Array<{ base64Data: string; mediaType: string; filename?: string }>, toolIntegrationMode?: 'mcp' | 'skills', defaultTargetSession?: { sessionId: string; hostname: string; label: string; os?: string; username?: string; protocol?: string; shellType?: string; deviceType?: string; connected: boolean; source: 'scope-target' | 'only-connected-in-scope' }): Promise<{ ok: boolean; error?: string }>;
+    aiAcpStream?(requestId: string, chatSessionId: string, acpCommand: string, acpArgs: string[], prompt: string, cwd?: string, providerId?: string, model?: string, existingSessionId?: string, historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>, images?: Array<{ base64Data: string; mediaType: string; filename?: string }>, toolIntegrationMode?: 'mcp' | 'skills', defaultTargetSession?: { sessionId: string; hostname: string; label: string; os?: string; username?: string; protocol?: string; shellType?: string; deviceType?: string; connected: boolean; source: 'scope-target' | 'only-connected-in-scope' }, userSkillsContext?: string): Promise<{ ok: boolean; error?: string }>;
     aiAcpCancel?(requestId: string, chatSessionId?: string): Promise<{ ok: boolean; error?: string }>;
     aiAcpCleanup?(chatSessionId: string): Promise<{ ok: boolean }>;
     onAiAcpEvent?(requestId: string, cb: (event: Record<string, unknown>) => void): () => void;

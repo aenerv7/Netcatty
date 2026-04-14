@@ -7,8 +7,6 @@ import { SUPPORTED_UI_LOCALES } from "../../../infrastructure/config/i18n";
 import { cn } from "../../../lib/utils";
 import { SectionHeader, SettingsTabContent, SettingRow, Toggle, Select } from "../settings-ui";
 import { FontSelect } from "../FontSelect";
-import { STORAGE_KEY_SHOW_RECENT_HOSTS } from "../../../infrastructure/config/storageKeys";
-import { useStoredBoolean } from "../../../application/state/useStoredBoolean";
 
 export default function SettingsAppearanceTab(props: {
   theme: "dark" | "light" | "system";
@@ -27,6 +25,12 @@ export default function SettingsAppearanceTab(props: {
   setUiLanguage: (language: string) => void;
   customCSS: string;
   setCustomCSS: (css: string) => void;
+  showRecentHosts: boolean;
+  setShowRecentHosts: (enabled: boolean) => void;
+  showOnlyUngroupedHostsInRoot: boolean;
+  setShowOnlyUngroupedHostsInRoot: (enabled: boolean) => void;
+  showSftpTab: boolean;
+  setShowSftpTab: (enabled: boolean) => void;
 }) {
   const { t } = useI18n();
   const availableUIFonts = useAvailableUIFonts();
@@ -47,12 +51,13 @@ export default function SettingsAppearanceTab(props: {
     setUiLanguage,
     customCSS,
     setCustomCSS,
+    showRecentHosts,
+    setShowRecentHosts,
+    showOnlyUngroupedHostsInRoot,
+    setShowOnlyUngroupedHostsInRoot,
+    showSftpTab,
+    setShowSftpTab,
   } = props;
-
-  const [showRecentHosts, setShowRecentHosts] = useStoredBoolean(
-    STORAGE_KEY_SHOW_RECENT_HOSTS,
-    true,
-  );
 
   const getHslStyle = useCallback((hsl: string) => ({ backgroundColor: `hsl(${hsl})` }), []);
 
@@ -268,6 +273,21 @@ export default function SettingsAppearanceTab(props: {
           description={t('settings.vault.showRecentHostsDesc')}
         >
           <Toggle checked={showRecentHosts} onChange={setShowRecentHosts} />
+        </SettingRow>
+        <SettingRow
+          label={t('settings.vault.showOnlyUngroupedHostsInRoot')}
+          description={t('settings.vault.showOnlyUngroupedHostsInRootDesc')}
+        >
+          <Toggle
+            checked={showOnlyUngroupedHostsInRoot}
+            onChange={setShowOnlyUngroupedHostsInRoot}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t('settings.vault.showSftpTab')}
+          description={t('settings.vault.showSftpTabDesc')}
+        >
+          <Toggle checked={showSftpTab} onChange={setShowSftpTab} />
         </SettingRow>
       </div>
 

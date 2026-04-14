@@ -30,7 +30,6 @@ import { createCattyTools } from '../../../infrastructure/ai/sdk/tools';
 import type { NetcattyBridge, ExecutorContext } from '../../../infrastructure/ai/cattyAgent/executor';
 import { runExternalAgentTurn } from '../../../infrastructure/ai/externalAgentAdapter';
 import { runAcpAgentTurn } from '../../../infrastructure/ai/acpAgentAdapter';
-import { matchesManagedAgentConfig } from '../../../infrastructure/ai/managedAgents';
 import { classifyError } from '../../../infrastructure/ai/errorClassifier';
 
 // -------------------------------------------------------------------
@@ -122,6 +121,17 @@ export interface PanelBridge extends NetcattyBridge {
     chatSessionId?: string,
   ) => Promise<{ ok: boolean; models?: Array<{ id: string; name: string; description?: string }>; currentModelId?: string | null; error?: string }>;
   aiAcpCleanup?: (chatSessionId: string) => Promise<{ ok: boolean }>;
+  aiUserSkillsGetStatus?: () => Promise<{
+    ok: boolean;
+    skills?: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      description: string;
+      status: 'ready' | 'warning';
+    }>;
+  }>;
+  aiUserSkillsBuildContext?: (prompt: string, selectedSkillSlugs?: string[]) => Promise<{ ok: boolean; context?: string; error?: string }>;
   [key: string]: ((...args: unknown[]) => unknown) | undefined;
 }
 
@@ -154,6 +164,45 @@ export function getNetcattyBridge(): PanelBridge | undefined {
 
 function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const USER_SKILLS_CONTEXT_TIMEOUT_MS = 500;
+
+interface UserSkillsContextResult {
+  ok: boolean;
+  context?: string;
+  error?: string;
+}
+
+function buildExplicitUserSkillsFallback(selectedUserSkillSlugs?: string[]): string {
+  if (!selectedUserSkillSlugs?.length) return '';
+  return `The user explicitly selected these Netcatty user skills for this request: ${selectedUserSkillSlugs.map((slug) => `/${slug}`).join(', ')}. Honor those selections even if their expanded skill content is unavailable.`;
+}
+
+async function resolveUserSkillsContext(
+  bridge: PanelBridge | undefined,
+  prompt: string,
+  selectedUserSkillSlugs?: string[],
+): Promise<string> {
+  if (!bridge?.aiUserSkillsBuildContext) {
+    return buildExplicitUserSkillsFallback(selectedUserSkillSlugs);
+  }
+
+  const buildContextPromise: Promise<UserSkillsContextResult> = bridge
+    .aiUserSkillsBuildContext(prompt, selectedUserSkillSlugs)
+    .catch(() => ({ ok: false, context: '' }));
+
+  const hasExplicitSelections = (selectedUserSkillSlugs?.length ?? 0) > 0;
+  const result = hasExplicitSelections
+    ? await buildContextPromise
+    : await Promise.race([
+        buildContextPromise,
+        new Promise<UserSkillsContextResult>((resolve) =>
+          setTimeout(() => resolve({ ok: false, context: '' }), USER_SKILLS_CONTEXT_TIMEOUT_MS),
+        ),
+      ]);
+
+  return result.context || buildExplicitUserSkillsFallback(selectedUserSkillSlugs);
 }
 
 const sharedStreamingSessionIds = new Set<string>();
@@ -240,6 +289,7 @@ export interface SendToCattyContext {
   webSearchConfig?: WebSearchConfig | null;
   getExecutorContext?: () => ExecutorContext;
   autoTitleSession: (sessionId: string, text: string) => void;
+  selectedUserSkillSlugs?: string[];
 }
 
 /** Context values needed by sendToExternalAgent that change frequently. */
@@ -252,6 +302,7 @@ export interface SendToExternalContext {
   providers: ProviderConfig[];
   selectedAgentModel?: string;
   toolIntegrationMode: AIToolIntegrationMode;
+  selectedUserSkillSlugs?: string[];
 }
 
 // -------------------------------------------------------------------
@@ -543,6 +594,11 @@ export function useAIChatStreaming({
     context: SendToExternalContext,
   ) => {
     const bridge = getNetcattyBridge();
+    const userSkillsContext = await resolveUserSkillsContext(
+      bridge,
+      trimmed,
+      context.selectedUserSkillSlugs,
+    );
 
     if (agentConfig.acpCommand && bridge) {
       const requestId = `acp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -551,24 +607,6 @@ export function useAIChatStreaming({
       if (bridge?.aiMcpUpdateSessions) {
         await bridge.aiMcpUpdateSessions(context.terminalSessions, sessionId);
       }
-
-      // Pass only the provider ID — the main process resolves and decrypts the API key itself,
-      // avoiding plaintext key transit across the IPC boundary.
-      // Resolve the correct provider based on agent type:
-      // - Claude agent → anthropic provider (prefer over generic custom)
-      // - Codex agent  → openai provider
-      const agentProviderId = (() => {
-        if (matchesManagedAgentConfig(agentConfig, 'claude')) {
-          return (
-            context.providers.find(p => p.providerId === 'anthropic' && p.enabled && p.apiKey)?.id
-            ?? context.providers.find(p => p.providerId === 'custom' && p.enabled && p.apiKey && p.baseURL)?.id
-          );
-        }
-        if (matchesManagedAgentConfig(agentConfig, 'codex')) {
-          return context.providers.find(p => p.providerId === 'openai' && p.enabled && p.apiKey)?.id;
-        }
-        return undefined;
-      })();
 
       // Mutable flag: set after tool-result, cleared when new assistant msg is created
       let needsNewAssistantMsg = false;
@@ -651,19 +689,23 @@ export function useAIChatStreaming({
           onDone: () => {},
         },
         abortController.signal,
-        agentProviderId,
+        // Managed ACP agents (codex, claude) must resolve auth from their own
+        // CLI config/login state, so we deliberately pass no providerId here.
+        // See issue #705 for Codex; same reasoning for Claude.
+        undefined,
         context.selectedAgentModel,
         context.existingSessionId,
         context.historyMessages,
         attachedImages.length > 0 ? attachedImages : undefined,
         context.toolIntegrationMode,
         context.defaultTargetSession,
+        userSkillsContext,
       );
     } else {
       // Fallback: spawn as raw process
       await runExternalAgentTurn(
         agentConfig,
-        trimmed,
+        userSkillsContext ? `${userSkillsContext}\n\nUser request:\n${trimmed}` : trimmed,
         {
           onTextDelta: (text: string) => {
             updateLastMessage(sessionId, msg => ({ ...msg, content: msg.content + text }));
@@ -697,6 +739,11 @@ export function useAIChatStreaming({
     attachments?: ChatMessageAttachment[],
   ) => {
     const bridge = getNetcattyBridge();
+    const userSkillsContext = await resolveUserSkillsContext(
+      bridge,
+      trimmed,
+      context.selectedUserSkillSlugs,
+    );
     const getExecutorContext = context.getExecutorContext ?? (() => ({
       sessions: context.terminalSessions,
       workspaceId: context.scopeType === 'workspace' ? context.scopeTargetId : undefined,
@@ -724,6 +771,7 @@ export function useAIChatStreaming({
       })),
       permissionMode: context.globalPermissionMode,
       webSearchEnabled: isWebSearchReady(context.webSearchConfig),
+      userSkillsContext,
     });
 
     // Guard: activeProvider must exist for Catty agent path

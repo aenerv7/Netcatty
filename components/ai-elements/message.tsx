@@ -62,7 +62,7 @@ export const MessageResponse = memo(
         // Style the rendered markdown
         // Code: base styles (code-block overrides are in index.css)
         '[&_code]:text-[12px] [&_code]:font-mono',
-        '[&_p_code]:px-[0.4em] [&_p_code]:py-[0.15em] [&_p_code]:rounded [&_p_code]:bg-foreground/[0.06] [&_p_code]:text-[85%]',
+        '[&_p_code]:px-[0.4em] [&_p_code]:py-[0.15em] [&_p_code]:rounded [&_p_code]:bg-foreground/[0.06] [&_p_code]:text-[85%] [&_p_code]:whitespace-normal [&_p_code]:[overflow-wrap:anywhere]',
         '[&_p]:my-1.5',
         '[&_ul]:my-1.5 [&_ul]:pl-4 [&_ul]:list-disc',
         '[&_ol]:my-1.5 [&_ol]:pl-4 [&_ol]:list-decimal',

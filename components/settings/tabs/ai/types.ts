@@ -10,14 +10,27 @@ import type {
 export type CodexIntegrationState =
   | "connected_chatgpt"
   | "connected_api_key"
+  | "connected_custom_config"
   | "not_logged_in"
   | "unknown";
+
+export interface CodexCustomProviderConfig {
+  providerName: string;
+  displayName: string;
+  baseUrl: string | null;
+  envKey: string | null;
+  envKeyPresent: boolean;
+  hasHardcodedApiKey: boolean;
+  model: string | null;
+  authHash: string | null;
+}
 
 export interface CodexIntegrationStatus {
   state: CodexIntegrationState;
   isConnected: boolean;
   rawOutput: string;
   exitCode: number | null;
+  customConfig?: CodexCustomProviderConfig | null;
 }
 
 export type CodexLoginState = "running" | "success" | "error" | "cancelled";
@@ -35,6 +48,28 @@ export interface AgentPathInfo {
   path: string | null;
   version: string | null;
   available: boolean;
+}
+
+export interface UserSkillStatusItem {
+  id: string;
+  slug: string;
+  directoryName: string;
+  directoryPath: string;
+  skillPath: string;
+  name: string;
+  description: string;
+  status: "ready" | "warning";
+  warnings: string[];
+}
+
+export interface UserSkillsStatusResult {
+  ok: boolean;
+  directoryPath?: string;
+  readyCount?: number;
+  warningCount?: number;
+  skills?: UserSkillStatusItem[];
+  warnings?: string[];
+  error?: string;
 }
 
 export interface ProviderFormState {
@@ -57,12 +92,14 @@ export interface FetchBridge {
 }
 
 export interface NetcattyAiBridge {
-  aiCodexGetIntegration?: () => Promise<CodexIntegrationStatus>;
+  aiCodexGetIntegration?: (options?: { refreshShellEnv?: boolean }) => Promise<CodexIntegrationStatus>;
   aiCodexStartLogin?: () => Promise<{ ok: boolean; session?: CodexLoginSession; error?: string }>;
   aiCodexGetLoginSession?: (sessionId: string) => Promise<{ ok: boolean; session?: CodexLoginSession; error?: string }>;
   aiCodexCancelLogin?: (sessionId: string) => Promise<{ ok: boolean; found?: boolean; session?: CodexLoginSession; error?: string }>;
   aiCodexLogout?: () => Promise<{ ok: boolean; state?: CodexIntegrationState; isConnected?: boolean; rawOutput?: string; logoutOutput?: string; error?: string }>;
   aiResolveCli?: (params: { command: string; customPath?: string }) => Promise<AgentPathInfo>;
+  aiUserSkillsGetStatus?: () => Promise<UserSkillsStatusResult>;
+  aiUserSkillsOpenFolder?: () => Promise<UserSkillsStatusResult>;
   openExternal?: (url: string) => Promise<void>;
 }
 

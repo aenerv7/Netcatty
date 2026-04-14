@@ -48,6 +48,7 @@ interface AcpBridge {
     images?: FileAttachment[],
     toolIntegrationMode?: AIToolIntegrationMode,
     defaultTargetSession?: DefaultTargetSessionHint,
+    userSkillsContext?: string,
   ): Promise<{ ok: boolean; error?: string }>;
   aiAcpCancel(requestId: string, chatSessionId?: string): Promise<{ ok: boolean }>;
   onAiAcpEvent(requestId: string, cb: (event: StreamEvent) => void): () => void;
@@ -87,6 +88,7 @@ export async function runAcpAgentTurn(
   images?: FileAttachment[],
   toolIntegrationMode?: AIToolIntegrationMode,
   defaultTargetSession?: DefaultTargetSessionHint,
+  userSkillsContext?: string,
 ): Promise<void> {
   const acpBridge = bridge as unknown as AcpBridge;
 
@@ -161,6 +163,7 @@ export async function runAcpAgentTurn(
     images?.length ? images : undefined,
     toolIntegrationMode,
     defaultTargetSession,
+    userSkillsContext,
   ).then((result) => {
     if (result?.ok === false) {
       settle(() => {

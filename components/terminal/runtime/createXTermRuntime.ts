@@ -425,12 +425,6 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       if (!consumed) return false; // Event was consumed by autocomplete
     }
 
-    if ((e.ctrlKey || e.metaKey) && e.key === "f" && e.type === "keydown") {
-      e.preventDefault();
-      ctx.setIsSearchOpen(true);
-      return false;
-    }
-
     const currentScheme = ctx.hotkeySchemeRef.current;
     // Use shared utility for platform detection when hotkey scheme is disabled
     const isMac = currentScheme === "mac" || (currentScheme === "disabled" && isMacPlatform());

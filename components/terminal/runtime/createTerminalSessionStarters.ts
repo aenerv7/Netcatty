@@ -328,12 +328,6 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
   };
 
   const startSSH = async (term: XTerm) => {
-    try {
-      term.clear?.();
-    } catch (err) {
-      logger.warn("Failed to clear terminal before connect", err);
-    }
-
     if (!ctx.terminalBackend.backendAvailable()) {
       ctx.setError("Native SSH bridge unavailable. Launch via Electron app.");
       term.writeln(
@@ -717,12 +711,6 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
   };
 
   const startTelnet = async (term: XTerm) => {
-    try {
-      term.clear?.();
-    } catch (err) {
-      logger.warn("Failed to clear terminal before connect", err);
-    }
-
     if (!ctx.terminalBackend.telnetAvailable()) {
       ctx.setError("Telnet bridge unavailable. Please run the desktop build.");
       term.writeln("\r\n[Telnet bridge unavailable. Please run the desktop build.]");
@@ -756,12 +744,6 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
   };
 
   const startMosh = async (term: XTerm) => {
-    try {
-      term.clear?.();
-    } catch (err) {
-      logger.warn("Failed to clear terminal before connect", err);
-    }
-
     if (!ctx.terminalBackend.moshAvailable()) {
       ctx.setError("Mosh bridge unavailable. Please run the desktop build.");
       term.writeln("\r\n[Mosh bridge unavailable. Please run the desktop build.]");
@@ -812,12 +794,6 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
   };
 
   const startLocal = async (term: XTerm) => {
-    try {
-      term.clear?.();
-    } catch (err) {
-      logger.warn("Failed to clear terminal before connect", err);
-    }
-
     if (!ctx.terminalBackend.localAvailable()) {
       ctx.setError("Local shell bridge unavailable. Please run the desktop build.");
       term.writeln(

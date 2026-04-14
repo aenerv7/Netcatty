@@ -32,7 +32,9 @@ import {
   STORAGE_KEY_GLOBAL_HOTKEY_ENABLED,
   STORAGE_KEY_AUTO_UPDATE_ENABLED,
   STORAGE_KEY_WORKSPACE_FOCUS_STYLE,
-
+  STORAGE_KEY_SHOW_RECENT_HOSTS,
+  STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT,
+  STORAGE_KEY_SHOW_SFTP_TAB,
 } from '../../infrastructure/config/storageKeys';
 import { DEFAULT_UI_LOCALE, resolveSupportedLocale } from '../../infrastructure/config/i18n';
 import { TERMINAL_THEMES } from '../../infrastructure/config/terminalThemes';
@@ -68,6 +70,9 @@ const DEFAULT_SFTP_AUTO_SYNC = false;
 const DEFAULT_SFTP_SHOW_HIDDEN_FILES = false;
 const DEFAULT_SFTP_USE_COMPRESSED_UPLOAD = true;
 const DEFAULT_SFTP_DEFAULT_VIEW_MODE: 'list' | 'tree' = 'list';
+const DEFAULT_SHOW_RECENT_HOSTS = true;
+const DEFAULT_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT = false;
+const DEFAULT_SHOW_SFTP_TAB = true;
 
 // Editor defaults
 const DEFAULT_EDITOR_WORD_WRAP = false;
@@ -252,6 +257,18 @@ export const useSettingsState = () => {
   const [sftpDefaultViewMode, setSftpDefaultViewMode] = useState<'list' | 'tree'>(() => {
     const stored = readStoredString(STORAGE_KEY_SFTP_DEFAULT_VIEW_MODE);
     return (stored === 'list' || stored === 'tree') ? stored : DEFAULT_SFTP_DEFAULT_VIEW_MODE;
+  });
+  const [showRecentHosts, setShowRecentHostsState] = useState<boolean>(() => {
+    const stored = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_RECENT_HOSTS);
+    return stored ?? DEFAULT_SHOW_RECENT_HOSTS;
+  });
+  const [showOnlyUngroupedHostsInRoot, setShowOnlyUngroupedHostsInRootState] = useState<boolean>(() => {
+    const stored = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT);
+    return stored ?? DEFAULT_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT;
+  });
+  const [showSftpTab, setShowSftpTabState] = useState<boolean>(() => {
+    const stored = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_SFTP_TAB);
+    return stored ?? DEFAULT_SHOW_SFTP_TAB;
   });
   const [sftpTransferConcurrency, setSftpTransferConcurrencyState] = useState<number>(() => {
     const stored = localStorageAdapter.readNumber(STORAGE_KEY_SFTP_TRANSFER_CONCURRENCY);
@@ -448,6 +465,12 @@ export const useSettingsState = () => {
     if (storedCompress === 'true' || storedCompress === 'false') setSftpUseCompressedUpload(storedCompress === 'true');
     const storedDefaultViewMode = readStoredString(STORAGE_KEY_SFTP_DEFAULT_VIEW_MODE);
     if (storedDefaultViewMode === 'list' || storedDefaultViewMode === 'tree') setSftpDefaultViewMode(storedDefaultViewMode);
+    const storedShowRecentHosts = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_RECENT_HOSTS);
+    setShowRecentHostsState(storedShowRecentHosts ?? DEFAULT_SHOW_RECENT_HOSTS);
+    const storedShowOnlyUngroupedHostsInRoot = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT);
+    setShowOnlyUngroupedHostsInRootState(storedShowOnlyUngroupedHostsInRoot ?? DEFAULT_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT);
+    const storedShowSftpTab = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_SFTP_TAB);
+    setShowSftpTabState(storedShowSftpTab ?? DEFAULT_SHOW_SFTP_TAB);
 
     // Workspace focus style
     const storedFocusStyle = readStoredString(STORAGE_KEY_WORKSPACE_FOCUS_STYLE);
@@ -643,7 +666,8 @@ export const useSettingsState = () => {
     customCSS, uiFontFamilyId, hotkeyScheme, uiLanguage,
     terminalThemeId, followAppTerminalTheme, terminalFontFamilyId, terminalFontSize,
     sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles,
-    sftpUseCompressedUpload, sftpDefaultViewMode,
+    sftpUseCompressedUpload, sftpAutoOpenSidebar, sftpDefaultViewMode,
+    showRecentHosts, showOnlyUngroupedHostsInRoot, showSftpTab,
     editorWordWrap, sessionLogsEnabled, sessionLogsDir, sessionLogsFormat,
     globalHotkeyEnabled, autoUpdateEnabled,
   });
@@ -652,7 +676,8 @@ export const useSettingsState = () => {
     customCSS, uiFontFamilyId, hotkeyScheme, uiLanguage,
     terminalThemeId, followAppTerminalTheme, terminalFontFamilyId, terminalFontSize,
     sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles,
-    sftpUseCompressedUpload, sftpDefaultViewMode,
+    sftpUseCompressedUpload, sftpAutoOpenSidebar, sftpDefaultViewMode,
+    showRecentHosts, showOnlyUngroupedHostsInRoot, showSftpTab,
     editorWordWrap, sessionLogsEnabled, sessionLogsDir, sessionLogsFormat,
     globalHotkeyEnabled, autoUpdateEnabled,
   };
@@ -809,6 +834,24 @@ export const useSettingsState = () => {
           setSftpDefaultViewMode(e.newValue);
         }
       }
+      if (e.key === STORAGE_KEY_SHOW_RECENT_HOSTS && e.newValue !== null) {
+        const newValue = e.newValue === 'true';
+        if (newValue !== s.showRecentHosts) {
+          setShowRecentHostsState(newValue);
+        }
+      }
+      if (e.key === STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT && e.newValue !== null) {
+        const newValue = e.newValue === 'true';
+        if (newValue !== s.showOnlyUngroupedHostsInRoot) {
+          setShowOnlyUngroupedHostsInRootState(newValue);
+        }
+      }
+      if (e.key === STORAGE_KEY_SHOW_SFTP_TAB && e.newValue !== null) {
+        const newValue = e.newValue === 'true';
+        if (newValue !== s.showSftpTab) {
+          setShowSftpTabState(newValue);
+        }
+      }
       // Sync global hotkey enabled setting from other windows
       if (e.key === STORAGE_KEY_GLOBAL_HOTKEY_ENABLED && e.newValue !== null) {
         const newValue = e.newValue === 'true';
@@ -896,6 +939,27 @@ export const useSettingsState = () => {
   const setIsHotkeyRecording = useCallback((isRecording: boolean) => {
     setIsHotkeyRecordingState(isRecording);
     notifySettingsChanged(STORAGE_KEY_HOTKEY_RECORDING, isRecording);
+  }, [notifySettingsChanged]);
+
+  const setShowRecentHosts = useCallback((enabled: boolean) => {
+    setShowRecentHostsState(enabled);
+    localStorageAdapter.writeBoolean(STORAGE_KEY_SHOW_RECENT_HOSTS, enabled);
+    if (!persistMountedRef.current) return;
+    notifySettingsChanged(STORAGE_KEY_SHOW_RECENT_HOSTS, enabled);
+  }, [notifySettingsChanged]);
+
+  const setShowOnlyUngroupedHostsInRoot = useCallback((enabled: boolean) => {
+    setShowOnlyUngroupedHostsInRootState(enabled);
+    localStorageAdapter.writeBoolean(STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT, enabled);
+    if (!persistMountedRef.current) return;
+    notifySettingsChanged(STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT, enabled);
+  }, [notifySettingsChanged]);
+
+  const setShowSftpTab = useCallback((enabled: boolean) => {
+    setShowSftpTabState(enabled);
+    localStorageAdapter.writeBoolean(STORAGE_KEY_SHOW_SFTP_TAB, enabled);
+    if (!persistMountedRef.current) return;
+    notifySettingsChanged(STORAGE_KEY_SHOW_SFTP_TAB, enabled);
   }, [notifySettingsChanged]);
 
   // Apply and persist custom CSS
@@ -1180,6 +1244,12 @@ export const useSettingsState = () => {
     setSftpUseCompressedUpload,
     sftpDefaultViewMode,
     setSftpDefaultViewMode,
+    showRecentHosts,
+    setShowRecentHosts,
+    showOnlyUngroupedHostsInRoot,
+    setShowOnlyUngroupedHostsInRoot,
+    showSftpTab,
+    setShowSftpTab,
     sftpTransferConcurrency,
     setSftpTransferConcurrency,
     // Editor Settings
@@ -1215,7 +1285,8 @@ export const useSettingsState = () => {
       uiFontFamilyId, uiLanguage, customCSS,
       terminalThemeId, terminalFontFamilyId, terminalFontSize, terminalSettings,
       customKeyBindings, editorWordWrap,
-      sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles, sftpUseCompressedUpload, sftpDefaultViewMode,
+      sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles, sftpUseCompressedUpload, sftpAutoOpenSidebar, sftpDefaultViewMode,
+      showRecentHosts, showOnlyUngroupedHostsInRoot, showSftpTab,
       customThemes, workspaceFocusStyle,
     ]),
   };

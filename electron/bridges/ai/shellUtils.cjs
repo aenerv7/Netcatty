@@ -211,6 +211,15 @@ async function getShellEnv() {
   return _cachedShellEnv;
 }
 
+/**
+ * Drop the shell-env cache so the next getShellEnv() call re-spawns the
+ * login shell. Useful when the user has just exported a new variable in
+ * their rc file and clicks "Refresh Status" without restarting the app.
+ */
+function invalidateShellEnvCache() {
+  _cachedShellEnv = null;
+}
+
 // ── Claude Code ACP binary resolution ──
 
 /**
@@ -316,5 +325,6 @@ module.exports = {
   resolveClaudeAcpBinaryPath,
   toUnpackedAsarPath,
   getShellEnv,
+  invalidateShellEnvCache,
   serializeStreamChunk,
 };

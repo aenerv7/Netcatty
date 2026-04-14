@@ -7,7 +7,7 @@
  *   - CodexConnectionCard, ClaudeCodeCard
  *   - SafetySettings
  */
-import { Bot, Globe } from "lucide-react";
+import { AlertTriangle, Bot, FolderOpen, Globe, Link, Package, RefreshCcw } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AIPermissionMode,
@@ -25,6 +25,7 @@ import {
 import { PROVIDER_PRESETS } from "../../../infrastructure/ai/types";
 import { useI18n } from "../../../application/i18n/I18nProvider";
 import { TabsContent } from "../../ui/tabs";
+import { Button } from "../../ui/button";
 import { Select, SettingRow } from "../settings-ui";
 import { AgentIconBadge } from "../../ai/AgentIconBadge";
 
@@ -32,6 +33,7 @@ import type {
   AgentPathInfo,
   CodexIntegrationStatus,
   CodexLoginSession,
+  UserSkillsStatusResult,
 } from "./ai/types";
 import {
   AGENT_DEFAULTS,
@@ -187,6 +189,8 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
   const [copilotPathInfo, setCopilotPathInfo] = useState<AgentPathInfo | null>(null);
   const [copilotCustomPath, setCopilotCustomPath] = useState("");
   const [isResolvingCopilot, setIsResolvingCopilot] = useState(false);
+  const [userSkillsStatus, setUserSkillsStatus] = useState<UserSkillsStatusResult | null>(null);
+  const [isLoadingUserSkills, setIsLoadingUserSkills] = useState(false);
 
   // Ref to read current defaultAgentId without adding it as a dependency.
   const defaultAgentIdRef = useRef(defaultAgentId);
@@ -304,18 +308,14 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
       .map((a) => ({ value: a.id, label: a.name, icon: <AgentIconBadge agent={a} size="xs" variant="plain" /> })),
   ], [externalAgents, t]);
 
-  const hasOpenAiProviderKey = providers.some(
-    (provider) => provider.providerId === "openai" && provider.enabled && !!provider.apiKey,
-  );
-
-  const refreshCodexIntegration = useCallback(async () => {
+  const refreshCodexIntegration = useCallback(async (opts?: { refreshShellEnv?: boolean }) => {
     const bridge = getBridge();
     if (!bridge?.aiCodexGetIntegration) return;
 
     setIsCodexLoading(true);
     setCodexError(null);
     try {
-      const integration = await bridge.aiCodexGetIntegration();
+      const integration = await bridge.aiCodexGetIntegration(opts);
       setCodexIntegration(integration);
     } catch (err) {
       setCodexError(normalizeCodexBridgeError(err));
@@ -425,6 +425,54 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
     }
   }, [refreshCodexIntegration]);
 
+  const refreshUserSkillsStatus = useCallback(async () => {
+    const bridge = getBridge();
+    if (!bridge?.aiUserSkillsGetStatus) {
+      setUserSkillsStatus({
+        ok: false,
+        error: t('ai.userSkills.unavailable'),
+      });
+      return;
+    }
+
+    setIsLoadingUserSkills(true);
+    try {
+      const result = await bridge.aiUserSkillsGetStatus();
+      setUserSkillsStatus(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setUserSkillsStatus({ ok: false, error: message });
+    } finally {
+      setIsLoadingUserSkills(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void refreshUserSkillsStatus().then(() => {
+      if (cancelled) return;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshUserSkillsStatus]);
+
+  const handleOpenUserSkillsFolder = useCallback(async () => {
+    const bridge = getBridge();
+    if (!bridge?.aiUserSkillsOpenFolder) return;
+
+    setIsLoadingUserSkills(true);
+    try {
+      const result = await bridge.aiUserSkillsOpenFolder();
+      setUserSkillsStatus(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setUserSkillsStatus({ ok: false, error: message });
+    } finally {
+      setIsLoadingUserSkills(false);
+    }
+  }, []);
+
   return (
     <TabsContent
       value="ai"
@@ -524,9 +572,8 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
               integration={codexIntegration}
               loginSession={codexLoginSession}
               isLoading={isCodexLoading}
-              hasOpenAiProviderKey={hasOpenAiProviderKey}
               error={codexError}
-              onRefresh={() => void refreshCodexIntegration()}
+              onRefresh={() => void refreshCodexIntegration({ refreshShellEnv: true })}
               onConnect={() => void handleStartCodexLogin()}
               onCancel={() => void handleCancelCodexLogin()}
               onOpenUrl={handleOpenCodexLoginUrl}
@@ -592,7 +639,7 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
 
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Bot size={18} className="text-muted-foreground" />
+              <Link size={18} className="text-muted-foreground" />
               <h3 className="text-base font-medium">{t('ai.toolAccess.title')}</h3>
             </div>
 
@@ -611,6 +658,106 @@ const SettingsAITab: React.FC<SettingsAITabProps> = ({
                   className="w-48"
                 />
               </SettingRow>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Package size={18} className="text-muted-foreground" />
+                <h3 className="text-base font-medium">{t('ai.userSkills.title')}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refreshUserSkillsStatus()}
+                  disabled={isLoadingUserSkills}
+                >
+                  <RefreshCcw size={14} className="mr-2" />
+                  {t('ai.userSkills.reload')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleOpenUserSkillsFolder()}
+                  disabled={isLoadingUserSkills}
+                >
+                  <FolderOpen size={14} className="mr-2" />
+                  {t('ai.userSkills.openFolder')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-muted/30 p-4 space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  {t('ai.userSkills.description')}
+                </p>
+                {userSkillsStatus?.directoryPath ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t('ai.userSkills.location')}:{" "}
+                    <span className="font-mono">{userSkillsStatus.directoryPath}</span>
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="text-sm text-muted-foreground">
+                {isLoadingUserSkills
+                  ? t('ai.userSkills.loading')
+                  : userSkillsStatus?.ok
+                    ? t('ai.userSkills.summary', {
+                        ready: String(userSkillsStatus.readyCount ?? 0),
+                        warnings: String(userSkillsStatus.warningCount ?? 0),
+                      })
+                    : userSkillsStatus?.error || t('ai.userSkills.unavailable')}
+              </div>
+
+              {userSkillsStatus?.ok && userSkillsStatus.skills && userSkillsStatus.skills.length > 0 ? (
+                <div className="space-y-3">
+                  {userSkillsStatus.skills.map((skill) => (
+                    <div
+                      key={skill.id}
+                      className="rounded-md border border-border/60 bg-background/70 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <div className="font-medium">{skill.name}</div>
+                          <div className="text-sm text-muted-foreground">{skill.description}</div>
+                          <div className="text-xs text-muted-foreground font-mono break-all">
+                            {skill.directoryName}
+                          </div>
+                        </div>
+                        <span
+                          className={
+                            skill.status === "ready"
+                              ? "rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-600"
+                              : "rounded-full bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-600"
+                          }
+                        >
+                          {skill.status === "ready"
+                            ? t('ai.userSkills.status.ready')
+                            : t('ai.userSkills.status.warning')}
+                        </span>
+                      </div>
+                      {skill.warnings.length > 0 ? (
+                        <div className="mt-3 space-y-1 text-sm text-amber-700">
+                          {skill.warnings.map((warning, index) => (
+                            <div key={`${skill.id}-${index}`} className="flex items-start gap-2">
+                              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                              <span>{warning}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : userSkillsStatus?.ok ? (
+                <div className="text-sm text-muted-foreground">
+                  {t('ai.userSkills.empty')}
+                </div>
+              ) : null}
             </div>
           </div>
 

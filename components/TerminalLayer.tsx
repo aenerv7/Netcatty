@@ -33,6 +33,7 @@ import { STORAGE_KEY_SIDE_PANEL_WIDTH } from '../infrastructure/config/storageKe
 import { buildCacheKey } from '../application/state/sftp/sharedRemoteHostCache';
 import type { DropEntry } from '../lib/sftpFileUtils';
 import { GroupConfig, Host, Identity, KnownHost, SSHKey, Snippet, TerminalSession, TerminalTheme, Workspace, WorkspaceNode } from '../types';
+import type { ExecutorContext } from '../infrastructure/ai/cattyAgent/executor';
 import { resolveGroupDefaults, applyGroupDefaults } from '../domain/groupConfig';
 import { DistroAvatar } from './DistroAvatar';
 import Terminal from './Terminal';
@@ -1614,8 +1615,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   // recomputing scope resolution from scratch on every tab switch.
   const aiContextsByTabId = useMemo(() => {
     const localOs = detectLocalOs(navigator.userAgent || navigator.platform);
-    const sessionById = new Map(sessions.map((session) => [session.id, session]));
-    const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
+    const sessionById = new Map<string, TerminalSession>(sessions.map((session) => [session.id, session]));
+    const workspaceById = new Map<string, Workspace>(workspaces.map((workspace) => [workspace.id, workspace]));
     const tabIds = new Set<string>(mountedAiTabIds);
     if (activeTabId) tabIds.add(activeTabId);
 

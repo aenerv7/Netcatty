@@ -8,7 +8,8 @@
 
 const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
-const { existsSync } = require("node:fs");
+const { existsSync, readFileSync } = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const { stripAnsi, extractFirstNonLocalhostUrl, toUnpackedAsarPath } = require("./shellUtils.cjs");
@@ -124,6 +125,212 @@ function getActiveCodexLoginSession() {
   return null;
 }
 
+// ── Codex config.toml probing ──
+//
+// Users who hand-configure `~/.codex/config.toml` with a custom
+// `model_provider` + matching `[model_providers.<name>]` entry are fully
+// functional from the Codex CLI, but `codex login status` doesn't see them
+// because it only reports on `~/.codex/auth.json` (populated by `codex login`).
+// We read and minimally parse the config file so we can surface this as a
+// valid "ready" state and skip the ChatGPT login prompt in the UI.
+
+/** Find `#` outside quoted regions. Tracks escape state via a flag rather
+ *  than peeking at the previous character, so even runs of backslashes like
+ *  `"C:\\path\\"` close the string correctly. Literal (single-quoted) TOML
+ *  strings don't recognize `\` as an escape, so only honor escapes inside
+ *  basic (double-quoted) strings. */
+function findUnquotedHash(value) {
+  let inStr = false;
+  let quote = "";
+  let escaped = false;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (inStr) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (quote === '"' && ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === quote) {
+        inStr = false;
+        quote = "";
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inStr = true;
+      quote = ch;
+      continue;
+    }
+    if (ch === "#") return i;
+  }
+  return -1;
+}
+
+/**
+ * Parse the narrow subset of TOML we need from Codex's config.toml:
+ *   - top-level string keys (e.g. `model_provider = "my_provider"`)
+ *   - `[model_providers.<name>]` tables with string-valued keys
+ * Unsupported TOML features (arrays, inline tables, multi-line strings, etc.)
+ * are ignored — Codex's config.toml doesn't use them for provider definitions.
+ */
+function parseCodexConfigToml(text) {
+  const result = { model_providers: {} };
+  let currentProvider = null;
+  let atTopLevel = true;
+
+  // Strip UTF-8 BOM so the first key still matches the regex on Windows-edited files.
+  const normalized = String(text || "").replace(/^\uFEFF/, "");
+  const lines = normalized.split(/\r?\n/);
+  for (const rawLine of lines) {
+    let line = rawLine;
+    const hashIdx = findUnquotedHash(line);
+    if (hashIdx >= 0) line = line.slice(0, hashIdx);
+    line = line.trim();
+    if (!line) continue;
+
+    const sectionMatch = line.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      const section = sectionMatch[1].trim();
+      if (section.startsWith("model_providers.")) {
+        currentProvider = section.slice("model_providers.".length);
+        if (!result.model_providers[currentProvider]) {
+          result.model_providers[currentProvider] = {};
+        }
+        atTopLevel = false;
+      } else {
+        currentProvider = null;
+        atTopLevel = false;
+      }
+      continue;
+    }
+
+    const kvMatch = line.match(/^([A-Za-z_][\w.-]*)\s*=\s*(.+)$/);
+    if (!kvMatch) continue;
+    const key = kvMatch[1];
+    let raw = kvMatch[2].trim();
+    let value;
+    if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+      value = raw.slice(1, -1);
+    } else {
+      value = raw;
+    }
+
+    if (atTopLevel) {
+      result[key] = value;
+    } else if (currentProvider) {
+      result.model_providers[currentProvider][key] = value;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Inspect `~/.codex/config.toml` to determine whether the user has
+ * configured a custom `model_provider` that isn't the built-in OpenAI/ChatGPT
+ * path.
+ *
+ * Returns null when:
+ *   - the config file doesn't exist or can't be read
+ *   - no `model_provider` is set, or it points to the default `openai` preset
+ *   - the referenced provider entry is missing (config is malformed)
+ *
+ * Returns a summary object otherwise — even if the env_key isn't currently
+ * exported in the shell environment. That case is surfaced via
+ * `envKeyPresent: false` so the UI can warn the user; we don't want the
+ * absence of an env var to silently fall back to the ChatGPT login flow,
+ * because the config.toml is a strong signal the user doesn't want that.
+ */
+function readCodexCustomProviderConfig(shellEnv) {
+  const home = shellEnv?.HOME || shellEnv?.USERPROFILE || os.homedir();
+  if (!home) return null;
+  const configPath = path.join(home, ".codex", "config.toml");
+  if (!existsSync(configPath)) return null;
+
+  let text;
+  try {
+    text = readFileSync(configPath, "utf8");
+  } catch {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = parseCodexConfigToml(text);
+  } catch {
+    return null;
+  }
+
+  const activeName = typeof parsed.model_provider === "string"
+    ? parsed.model_provider.trim()
+    : "";
+  if (!activeName) return null;
+  // The built-in "openai" provider still goes through ChatGPT/API-key auth
+  // managed by `codex login`, so treating it as "custom" would be wrong.
+  if (activeName === "openai") return null;
+
+  const providerEntry = parsed.model_providers?.[activeName];
+  if (!providerEntry) return null;
+
+  const envKeyName = typeof providerEntry.env_key === "string" ? providerEntry.env_key.trim() : "";
+  const envKeyValue = envKeyName && shellEnv ? String(shellEnv[envKeyName] || "").trim() : "";
+  const hardcodedApiKey = typeof providerEntry.api_key === "string" ? providerEntry.api_key.trim() : "";
+  const activeModel = typeof parsed.model === "string" ? parsed.model.trim() : "";
+
+  // Hash the actual auth material (either the hardcoded api_key or the
+  // resolved env_key value) so the ACP provider fingerprint changes when
+  // the user rotates their key — without ever returning the raw value
+  // across the IPC boundary.
+  const authMaterial = hardcodedApiKey || envKeyValue;
+  const authHash = authMaterial
+    ? createHash("sha256").update(authMaterial).digest("hex")
+    : null;
+
+  return {
+    providerName: activeName,
+    displayName: providerEntry.name || activeName,
+    baseUrl: providerEntry.base_url || null,
+    envKey: envKeyName || null,
+    envKeyPresent: Boolean(envKeyValue),
+    hasHardcodedApiKey: Boolean(hardcodedApiKey),
+    model: activeModel || null,
+    authHash,
+  };
+}
+
+/**
+ * Returns a user-facing error message when a Codex config.toml custom
+ * provider references an env_key that isn't exported in the shell env and
+ * doesn't have a hardcoded api_key either — otherwise returns null. Shared
+ * by every spawn path (stream handler, list-models handler) so users get
+ * the same actionable message regardless of which one hits first.
+ */
+function getCodexCustomConfigPreflightError(customConfig) {
+  if (!customConfig) return null;
+  if (!customConfig.envKey) return null;
+  if (customConfig.envKeyPresent || customConfig.hasHardcodedApiKey) return null;
+  return `Codex is configured to use the "${customConfig.displayName}" provider from ~/.codex/config.toml, but the environment variable ${customConfig.envKey} is not set. Export it in your shell (e.g. add to ~/.zshrc) and click "Refresh Status" in Settings.`;
+}
+
+/**
+ * Compute the ACP auth override object for Codex spawn sites.
+ *   - netcatty-managed API key present → "codex-api-key"
+ *   - user's own ~/.codex/config.toml custom provider detected → no override
+ *     (so codex-acp resolves auth from the shell env / config itself)
+ *   - otherwise → "chatgpt" (triggers the browser OAuth login flow)
+ *
+ * Returned as an object designed to be spread into createACPProvider options.
+ */
+function getCodexAuthOverride(apiKey, shellEnv) {
+  if (apiKey) return { authMethodId: "codex-api-key" };
+  if (readCodexCustomProviderConfig(shellEnv)) return {};
+  return { authMethodId: "chatgpt" };
+}
+
 // ── Integration state ──
 
 function normalizeCodexIntegrationState(rawOutput) {
@@ -199,6 +406,9 @@ module.exports = {
   toCodexLoginSessionResponse,
   getActiveCodexLoginSession,
   normalizeCodexIntegrationState,
+  readCodexCustomProviderConfig,
+  getCodexAuthOverride,
+  getCodexCustomConfigPreflightError,
   extractCodexError,
   isCodexAuthError,
   getCodexAuthFingerprint,

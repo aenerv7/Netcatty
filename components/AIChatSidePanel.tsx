@@ -32,6 +32,7 @@ import type {
   WebSearchConfig,
 } from '../infrastructure/ai/types';
 import { getAgentModelPresets } from '../infrastructure/ai/types';
+import { matchesManagedAgentConfig } from '../infrastructure/ai/managedAgents';
 import { useAgentDiscovery } from '../application/state/useAgentDiscovery';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
@@ -39,6 +40,11 @@ import AgentSelector from './ai/AgentSelector';
 import ChatInput from './ai/ChatInput';
 import ChatMessageList from './ai/ChatMessageList';
 import ConversationExport from './ai/ConversationExport';
+import {
+  getReadyUserSkillOptions,
+  getNextSelectedUserSkillSlugsMap,
+  type UserSkillOption,
+} from './ai/userSkillsState';
 import {
   useAIChatStreaming,
   getNetcattyBridge,
@@ -150,7 +156,7 @@ function buildAcpHistoryMessages(messages: ChatMessage[]): Array<{ role: 'user' 
     if (message.role === 'system') return [];
 
     if (message.role === 'user') {
-      return message.content ? [{ role: 'user' as const, content: message.content }] : [];
+      return message.content ? [{ role: 'user', content: message.content }] : [];
     }
 
     if (message.role === 'assistant') {
@@ -160,12 +166,12 @@ function buildAcpHistoryMessages(messages: ChatMessage[]): Array<{ role: 'user' 
         parts.push(...message.toolCalls.map((tc) => `Tool call: ${tc.name}(${JSON.stringify(tc.arguments ?? {})})`));
       }
       if (!parts.length) return [];
-      return [{ role: 'assistant' as const, content: parts.join('\n\n') }];
+      return [{ role: 'assistant', content: parts.join('\n\n') }];
     }
 
     if (message.role === 'tool' && message.toolResults?.length) {
       return message.toolResults.map((tr) => ({
-        role: 'assistant' as const,
+        role: 'assistant',
         content: `Tool result:\n${tr.content}`,
       }));
     }
@@ -248,6 +254,8 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   const [showHistory, setShowHistory] = useState(false);
   const [currentAgentId, setCurrentAgentId] = useState(defaultAgentId);
   const [runtimeAgentModelPresets, setRuntimeAgentModelPresets] = useState<Record<string, ReturnType<typeof getAgentModelPresets>>>({});
+  const [userSkillOptions, setUserSkillOptions] = useState<UserSkillOption[]>([]);
+  const [selectedUserSkillSlugsMap, setSelectedUserSkillSlugsMap] = useState<Record<string, string[]>>({});
 
   const { files, addFiles, removeFile, clearFiles } = useFileUpload();
   const { openSettingsWindow } = useWindowControls();
@@ -414,6 +422,43 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     }
   }, [terminalSessions, scopeKey, activeSessionId]);
 
+  useEffect(() => {
+    if (!isVisible) return;
+
+    let cancelled = false;
+    const applyUserSkillsStatus = (result: { ok: boolean; skills?: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      description: string;
+      status: 'ready' | 'warning';
+    }> } | null | undefined) => {
+      const nextOptions = getReadyUserSkillOptions(result);
+      setUserSkillOptions(nextOptions);
+      setSelectedUserSkillSlugsMap((prev) => getNextSelectedUserSkillSlugsMap(prev, result));
+    };
+
+    const bridge = getNetcattyBridge();
+    if (!bridge?.aiUserSkillsGetStatus) {
+      applyUserSkillsStatus(null);
+      return;
+    }
+
+    void bridge.aiUserSkillsGetStatus()
+      .then((result) => {
+        if (cancelled) return;
+        applyUserSkillsStatus(result);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        applyUserSkillsStatus(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionIdForScope, isVisible, toolIntegrationMode, scopeKey]);
+
   // Sync provider configs to main process so it can decrypt API keys server-side.
   // Keys stay encrypted in transit; main process decrypts only when making HTTP requests.
   useEffect(() => {
@@ -458,6 +503,18 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   );
 
   const messages = activeSession?.messages ?? [];
+  const selectedUserSkillSlugs = useMemo(
+    () => selectedUserSkillSlugsMap[scopeKey] ?? [],
+    [selectedUserSkillSlugsMap, scopeKey],
+  );
+  const selectedUserSkills = useMemo(
+    () =>
+      selectedUserSkillSlugs.map((slug) => {
+        const option = userSkillOptions.find((skill) => skill.slug === slug);
+        return option ?? { id: slug, slug, name: slug, description: '' };
+      }),
+    [selectedUserSkillSlugs, userSkillOptions],
+  );
 
   // ── Export hook ──
   const { handleExport } = useConversationExport(activeSession);
@@ -480,13 +537,58 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     () => isCopilotAgentConfig(currentAgentConfig),
     [currentAgentConfig],
   );
+  const isCodexManagedAgent = useMemo(
+    () => currentAgentConfig ? matchesManagedAgentConfig(currentAgentConfig, 'codex') : false,
+    [currentAgentConfig],
+  );
+  const isClaudeManagedAgent = useMemo(
+    () => currentAgentConfig ? matchesManagedAgentConfig(currentAgentConfig, 'claude') : false,
+    [currentAgentConfig],
+  );
+
+  // For Codex, pick up the model declared in ~/.codex/config.toml (if any)
+  // so the picker can show just that model instead of the hardcoded ChatGPT
+  // preset list. Probing codex-acp for its full catalog returns the stock
+  // OpenAI models regardless of the active provider, which is misleading.
+  const [codexConfigModel, setCodexConfigModel] = useState<string | null>(null);
+  const [codexCustomConfigResolved, setCodexCustomConfigResolved] = useState(false);
+  useEffect(() => {
+    setCodexCustomConfigResolved(false);
+    if (!isCodexManagedAgent) {
+      setCodexConfigModel(null);
+      return;
+    }
+    const bridge = getNetcattyBridge();
+    if (!bridge?.aiCodexGetIntegration) return;
+    let cancelled = false;
+    void bridge.aiCodexGetIntegration().then((info) => {
+      if (cancelled) return;
+      const hasCustom = info?.state === 'connected_custom_config';
+      setCodexConfigModel(info?.customConfig?.model ?? null);
+      // Only flip "resolved" to true when the probe confirms this is a
+      // custom-config session; otherwise keep it false so we fall back to
+      // the static CODEX_MODEL_PRESETS.
+      setCodexCustomConfigResolved(hasCustom);
+    }).catch(() => {
+      if (!cancelled) {
+        setCodexConfigModel(null);
+        setCodexCustomConfigResolved(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isCodexManagedAgent, currentAgentId]);
 
   const agentModelMapRef = useRef(agentModelMap);
   agentModelMapRef.current = agentModelMap;
 
   useEffect(() => {
     if (!currentAgentConfig?.acpCommand) return;
-    if (!isCopilotExternalAgent) return;
+    // Codex has its own path via aiCodexGetIntegration (reads config.toml).
+    // Everyone else that speaks ACP can be asked for their available models
+    // directly — in particular, Claude Code through claude-agent-acp
+    // advertises the real catalog (including Bedrock/Vertex model ids when
+    // the user configured those) instead of the hardcoded CLAUDE_MODEL_PRESETS.
+    if (!isCopilotExternalAgent && !isClaudeManagedAgent) return;
 
     const bridge = getNetcattyBridge();
     if (!bridge?.aiAcpListModels) return;
@@ -500,6 +602,19 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
       `models_${currentAgentId}`,
     ).then((result) => {
       if (cancelled || !result?.ok || !Array.isArray(result.models)) return;
+      // If the probe came back empty, drop any stale cached catalog for this
+      // agent so `agentModelPresets` falls back to the hardcoded presets via
+      // the `?? getAgentModelPresets(...)` branch. Without this, a previously
+      // successful probe would keep surfacing models the backend no longer
+      // advertises.
+      if (result.models.length === 0) {
+        setRuntimeAgentModelPresets((prev) => {
+          if (!(currentAgentId in prev)) return prev;
+          const { [currentAgentId]: _removed, ...rest } = prev;
+          return rest;
+        });
+        return;
+      }
       const knownModelIds = new Set(result.models.map((model) => model.id));
       setRuntimeAgentModelPresets((prev) => ({
         ...prev,
@@ -518,12 +633,28 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentAgentConfig, currentAgentId, isCopilotExternalAgent, setAgentModel]);
+  }, [currentAgentConfig, currentAgentId, isCopilotExternalAgent, isClaudeManagedAgent, setAgentModel]);
 
-  const agentModelPresets = useMemo(
-    () => runtimeAgentModelPresets[currentAgentId] ?? getAgentModelPresets(currentAgentConfig?.command),
-    [currentAgentConfig?.command, currentAgentId, runtimeAgentModelPresets],
-  );
+  // When Codex is backed by a ~/.codex/config.toml custom provider, the
+  // stock CODEX_MODEL_PRESETS catalog is invalid for that endpoint.
+  // codexCustomConfigResolved (declared above alongside codexConfigModel)
+  // stays false until the integration probe confirms this session is
+  // custom-config, so we don't flash an empty picker while loading.
+  const hasCodexCustomConfig = codexCustomConfigResolved && isCodexManagedAgent;
+
+  const agentModelPresets = useMemo(() => {
+    if (hasCodexCustomConfig) {
+      // Config.toml with a pinned model → show just that model.
+      if (codexConfigModel) {
+        return [{ id: codexConfigModel, name: codexConfigModel }];
+      }
+      // Config.toml custom provider without a pinned model → codex-acp
+      // uses its provider default. Don't surface the OpenAI presets; they
+      // wouldn't work. Empty list disables the picker.
+      return [];
+    }
+    return runtimeAgentModelPresets[currentAgentId] ?? getAgentModelPresets(currentAgentConfig?.command);
+  }, [currentAgentConfig?.command, currentAgentId, runtimeAgentModelPresets, hasCodexCustomConfig, codexConfigModel]);
 
   // Per-agent model: recall last selection or use first preset as default
   const selectedAgentModel = useMemo(() => {
@@ -560,6 +691,12 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     setActiveSessionId(session.id);
     setShowHistory(false);
     setInputValue('');
+    setSelectedUserSkillSlugsMap((prev) => {
+      if (!(scopeKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[scopeKey];
+      return next;
+    });
   }, [
     scopeType,
     scopeTargetId,
@@ -568,6 +705,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     createSession,
     setActiveSessionId,
     setInputValue,
+    scopeKey,
   ]);
 
   const handleOpenSettings = useCallback(() => {
@@ -610,6 +748,41 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     };
   }, []);
 
+  const addSelectedUserSkill = useCallback((slug: string) => {
+    const normalizedSlug = String(slug || '').trim().toLowerCase();
+    if (!normalizedSlug) return;
+    setSelectedUserSkillSlugsMap((prev) => {
+      const current = prev[scopeKey] ?? [];
+      if (current.includes(normalizedSlug)) return prev;
+      return { ...prev, [scopeKey]: [...current, normalizedSlug] };
+    });
+  }, [scopeKey]);
+
+  const removeSelectedUserSkill = useCallback((slug: string) => {
+    const normalizedSlug = String(slug || '').trim().toLowerCase();
+    if (!normalizedSlug) return;
+    setSelectedUserSkillSlugsMap((prev) => {
+      const current = prev[scopeKey] ?? [];
+      const nextSkills = current.filter((entry) => entry !== normalizedSlug);
+      if (nextSkills.length === current.length) return prev;
+      if (nextSkills.length === 0) {
+        const next = { ...prev };
+        delete next[scopeKey];
+        return next;
+      }
+      return { ...prev, [scopeKey]: nextSkills };
+    });
+  }, [scopeKey]);
+
+  const clearSelectedUserSkills = useCallback(() => {
+    setSelectedUserSkillSlugsMap((prev) => {
+      if (!(scopeKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[scopeKey];
+      return next;
+    });
+  }, [scopeKey]);
+
   /** Ensure a session exists for the current scope and return its ID. */
   const ensureSession = useCallback((): string => {
     if (activeSession && sessionsRef.current.some((session) => session.id === activeSession.id)) {
@@ -649,6 +822,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     const trimmed = inputValueRef.current.trim();
     const sendScopeKey = scopeKey;
     if (!trimmed || isStreaming) return;
+    const selectedSkillSlugs = selectedUserSkillSlugs;
 
     const isExternalAgent = currentAgentId !== 'catty';
 
@@ -675,6 +849,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     });
     setInputValue('');
     clearFiles();
+    clearSelectedUserSkills();
     setStreamingForScope(sessionId, true);
 
     // Create assistant message placeholder with a tracked ID
@@ -708,6 +883,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
           providers,
           selectedAgentModel,
           toolIntegrationMode,
+          selectedUserSkillSlugs: selectedSkillSlugs,
         });
       } catch (err) {
         reportStreamError(sessionId, abortController.signal, err);
@@ -735,6 +911,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
         webSearchConfig,
         getExecutorContext: () => buildExecutorContextForScope(toolScope),
         autoTitleSession,
+        selectedUserSkillSlugs: selectedSkillSlugs,
       }, attachments.length > 0 ? attachments : undefined);
     }
   }, [
@@ -746,6 +923,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     abortControllersRef, terminalSessions, defaultTargetSession, providers, selectedAgentModel, updateSessionExternalSessionId,
     scopeType, scopeTargetId, scopeLabel, globalPermissionMode, commandBlocklist, webSearchConfig, buildExecutorContextForScope,
     toolIntegrationMode,
+    selectedUserSkillSlugs, clearSelectedUserSkills,
   ]);
 
   const handleStop = useCallback(() => {
@@ -908,6 +1086,10 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
             onAddFiles={addFiles}
             onRemoveFile={removeFile}
             hosts={terminalSessions.map(s => ({ sessionId: s.sessionId, hostname: s.hostname, label: s.label, connected: s.connected }))}
+            selectedUserSkills={selectedUserSkills}
+            userSkills={userSkillOptions}
+            onAddUserSkill={addSelectedUserSkill}
+            onRemoveUserSkill={removeSelectedUserSkill}
             permissionMode={globalPermissionMode}
             onPermissionModeChange={setGlobalPermissionMode}
           />

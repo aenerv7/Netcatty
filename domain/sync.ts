@@ -205,6 +205,10 @@ export interface SyncPayload {
     immersiveMode?: boolean;
     // Vault: show recently connected hosts
     showRecentHosts?: boolean;
+    // Vault: root list shows only ungrouped hosts
+    showOnlyUngroupedHostsInRoot?: boolean;
+    // Top tabs: show standalone SFTP view tab
+    showSftpTab?: boolean;
   };
 
   // Sync metadata
