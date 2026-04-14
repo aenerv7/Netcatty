@@ -34,11 +34,79 @@ let trayMenuData = {
 let trayPanelWindow = null;
 
 let trayPanelRefreshTimer = null;
+const FULLSCREEN_HIDE_POLL_MS = 100;
+const FULLSCREEN_HIDE_TIMEOUT_MS = 5000;
+const pendingFullscreenHideByWindow = new WeakMap();
+
+function clearPendingFullscreenHide(win) {
+  if (!win || typeof win !== "object") return;
+  const pending = pendingFullscreenHideByWindow.get(win);
+  if (!pending) return;
+
+  if (pending.timer) {
+    clearTimeout(pending.timer);
+    pending.timer = null;
+  }
+
+  try {
+    win.removeListener?.("leave-full-screen", pending.onLeaveFullScreen);
+    win.removeListener?.("closed", pending.onClosed);
+    win.removeListener?.("show", pending.onShow);
+  } catch {
+    // ignore
+  }
+
+  pendingFullscreenHideByWindow.delete(win);
+}
+
+function finalizePendingFullscreenHide(win) {
+  const pending = pendingFullscreenHideByWindow.get(win);
+  if (!pending) return "cancelled";
+  if (!win || win.isDestroyed?.()) {
+    clearPendingFullscreenHide(win);
+    return "cancelled";
+  }
+  if (win.isFullScreen?.()) {
+    return "waiting";
+  }
+
+  clearPendingFullscreenHide(win);
+
+  try {
+    win.hide();
+    return "hidden";
+  } catch (err) {
+    console.warn("[GlobalShortcut] Error hiding window after leaving fullscreen:", err);
+    return "failed";
+  }
+}
+
+function schedulePendingFullscreenHideCheck(win) {
+  const pending = pendingFullscreenHideByWindow.get(win);
+  if (!pending) return;
+
+  pending.timer = setTimeout(() => {
+    pending.timer = null;
+
+    const result = finalizePendingFullscreenHide(win);
+    if (result === "hidden" || result === "cancelled" || result === "failed") {
+      return;
+    }
+
+    if (!pending.warned && Date.now() >= pending.deadline) {
+      pending.warned = true;
+      console.warn("[GlobalShortcut] Timed out waiting for fullscreen exit before hiding window");
+    }
+
+    schedulePendingFullscreenHideCheck(win);
+  }, FULLSCREEN_HIDE_POLL_MS);
+}
 
 function openMainWindow() {
   const { app } = electronModule;
   const win = getMainWindow();
   if (!win) return;
+  clearPendingFullscreenHide(win);
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
@@ -218,6 +286,50 @@ function getMainWindow() {
   return mainWins && mainWins.length ? mainWins[0] : null;
 }
 
+function hideWindowRespectingMacFullscreen(win) {
+  if (!win || win.isDestroyed?.()) return false;
+
+  clearPendingFullscreenHide(win);
+
+  if (process.platform === "darwin" && win.isFullScreen?.()) {
+    const pending = {
+      timer: null,
+      deadline: Date.now() + FULLSCREEN_HIDE_TIMEOUT_MS,
+      warned: false,
+      onLeaveFullScreen: () => {
+        finalizePendingFullscreenHide(win);
+      },
+      onClosed: () => {
+        clearPendingFullscreenHide(win);
+      },
+      onShow: () => {
+        clearPendingFullscreenHide(win);
+      },
+    };
+
+    try {
+      pendingFullscreenHideByWindow.set(win, pending);
+      win.once?.("leave-full-screen", pending.onLeaveFullScreen);
+      win.once?.("closed", pending.onClosed);
+      win.once?.("show", pending.onShow);
+      schedulePendingFullscreenHideCheck(win);
+      win.setFullScreen(false);
+      return true;
+    } catch (err) {
+      clearPendingFullscreenHide(win);
+      console.warn("[GlobalShortcut] Error leaving fullscreen before hiding window:", err);
+    }
+  }
+
+  try {
+    win.hide();
+    return true;
+  } catch (err) {
+    console.warn("[GlobalShortcut] Error hiding window:", err);
+    return false;
+  }
+}
+
 /**
  * Convert a hotkey string from frontend format to Electron accelerator format
  * e.g., "⌘ + Space" -> "CommandOrControl+Space"
@@ -283,6 +395,7 @@ function toggleWindowVisibility() {
   try {
     // Check if window is minimized first - minimized windows may still report isVisible() = true
     if (win.isMinimized()) {
+      clearPendingFullscreenHide(win);
       win.restore();
       win.show();
       win.focus();
@@ -295,9 +408,10 @@ function toggleWindowVisibility() {
     } else if (win.isVisible()) {
       if (win.isFocused()) {
         // Window is visible and focused - hide it
-        win.hide();
+        hideWindowRespectingMacFullscreen(win);
       } else {
         // Window is visible but not focused - focus it
+        clearPendingFullscreenHide(win);
         win.focus();
         const { app } = electronModule;
         try {
@@ -308,6 +422,7 @@ function toggleWindowVisibility() {
       }
     } else {
       // Window is hidden - show and focus it
+      clearPendingFullscreenHide(win);
       win.show();
       win.focus();
       const { app } = electronModule;
@@ -437,17 +552,7 @@ function buildTrayMenuTemplate() {
   menuTemplate.push({
     label: "Open Main Window",
     click: () => {
-      const win = getMainWindow();
-      if (win) {
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
-        try {
-          app.focus({ steal: true });
-        } catch {
-          // ignore
-        }
-      }
+      openMainWindow();
     },
   });
 
@@ -587,6 +692,7 @@ function setCloseToTray(enabled) {
       createTray();
     }
   } else {
+    clearPendingFullscreenHide(getMainWindow());
     // Destroy tray if it exists
     destroyTray();
   }
@@ -617,7 +723,7 @@ function getHotkeyStatus() {
 function handleWindowClose(event, win) {
   if (closeToTray && tray) {
     event.preventDefault();
-    win.hide();
+    hideWindowRespectingMacFullscreen(win);
     return true; // Prevented close
   }
   return false; // Allow close
