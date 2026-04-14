@@ -149,9 +149,20 @@ async function stopStream(sessionId) {
   // Flush remaining buffer
   flushBuffer(entry);
 
-  // Close the write stream and wait for it to finish
+  // Close the write stream and wait for it to finish.
+  // Guard against streams that never call the end callback (e.g. already
+  // errored/destroyed) with a short timeout.
   await new Promise((resolve) => {
-    entry.writeStream.end(resolve);
+    const safetyTimer = setTimeout(resolve, 1000);
+    try {
+      entry.writeStream.end(() => {
+        clearTimeout(safetyTimer);
+        resolve();
+      });
+    } catch {
+      clearTimeout(safetyTimer);
+      resolve();
+    }
   });
 
   let finalPath = entry.filePath;
@@ -195,7 +206,14 @@ function hasStream(sessionId) {
 async function cleanupAll() {
   console.log(`[SessionLogStream] Cleaning up ${activeStreams.size} active streams`);
   const ids = [...activeStreams.keys()];
-  await Promise.allSettled(ids.map(id => stopStream(id)));
+  // Per-stream timeout to prevent a single broken stream from blocking quit.
+  const PER_STREAM_TIMEOUT = 1500;
+  await Promise.allSettled(ids.map(id => {
+    return Promise.race([
+      stopStream(id),
+      new Promise(resolve => setTimeout(resolve, PER_STREAM_TIMEOUT)),
+    ]);
+  }));
 }
 
 module.exports = {

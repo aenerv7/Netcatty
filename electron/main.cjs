@@ -1115,7 +1115,12 @@ if (!gotLock) {
   });
 
   // Cleanup all PTY sessions and port forwarding tunnels before quitting
+  let willQuitHandled = false;
   app.on("will-quit", (event) => {
+    // Guard against re-entrant will-quit (e.g. SIGTERM during async cleanup).
+    if (willQuitHandled) return;
+    willQuitHandled = true;
+
     // Synchronous cleanup — these must complete before the process exits.
     try {
       terminalBridge.cleanupAllSessions();
