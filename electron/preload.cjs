@@ -1307,25 +1307,6 @@ const api = {
   },
 };
 
-// Fig autocomplete spec loading via main process
-const figSpecApi = {
-  listFigSpecs: () => ipcRenderer.invoke("netcatty:figspec:list"),
-  loadFigSpec: (commandName) => ipcRenderer.invoke("netcatty:figspec:load", commandName),
-  listAutocompleteRemoteDir: (sessionId, dirPath, foldersOnly, filterPrefix, limit) => ipcRenderer.invoke("netcatty:ssh:listdir", {
-    sessionId,
-    path: dirPath,
-    foldersOnly,
-    filterPrefix,
-    limit,
-  }),
-  listAutocompleteLocalDir: (dirPath, foldersOnly, filterPrefix, limit) => ipcRenderer.invoke("netcatty:local:listdir", {
-    path: dirPath,
-    foldersOnly,
-    filterPrefix,
-    limit,
-  }),
-};
-
 // Merge with existing netcatty (if any) to avoid stale objects on hot reload
 const existing = (typeof window !== "undefined" && window.netcatty) ? window.netcatty : {};
 
@@ -1366,7 +1347,7 @@ function isTrustedRendererLocation(allowedOrigins) {
 
 const allowedOrigins = getAllowedRendererOrigins();
 if (isTrustedRendererLocation(allowedOrigins)) {
-  contextBridge.exposeInMainWorld("netcatty", { ...existing, ...api, ...figSpecApi });
+  contextBridge.exposeInMainWorld("netcatty", { ...existing, ...api });
 } else {
   // If a window navigates to an untrusted origin, do NOT expose the bridge.
   try {

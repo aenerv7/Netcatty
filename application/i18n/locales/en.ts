@@ -367,14 +367,6 @@ const en: Messages = {
   'settings.terminal.workspaceFocus.dim': 'Dim unfocused panes',
   'settings.terminal.workspaceFocus.border': 'Border on focused pane',
 
-  // Settings > Terminal > Autocomplete
-  'settings.terminal.section.autocomplete': 'Autocomplete',
-  'settings.terminal.autocomplete.enabled': 'Enable autocomplete',
-  'settings.terminal.autocomplete.enabled.desc': 'Show command suggestions based on history and command specs as you type.',
-  'settings.terminal.autocomplete.ghostText': 'Ghost text',
-  'settings.terminal.autocomplete.ghostText.desc': 'Show inline gray suggestion text after the cursor (like fish shell).',
-  'settings.terminal.autocomplete.popupMenu': 'Popup menu',
-  'settings.terminal.autocomplete.popupMenu.desc': 'Show a floating list of multiple suggestions.',
 
   // Settings > Shortcuts
   'settings.shortcuts.section.scheme': 'Hotkey Scheme',

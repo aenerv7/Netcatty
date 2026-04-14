@@ -325,20 +325,6 @@ export default function SettingsTerminalTab(props: {
       || TERMINAL_THEMES[0];
   }, [terminalThemeId, customThemes]);
 
-  const handleAutocompleteGhostTextChange = useCallback((enabled: boolean) => {
-    updateTerminalSetting("autocompleteGhostText", enabled);
-    if (enabled) {
-      updateTerminalSetting("autocompletePopupMenu", false);
-    }
-  }, [updateTerminalSetting]);
-
-  const handleAutocompletePopupMenuChange = useCallback((enabled: boolean) => {
-    updateTerminalSetting("autocompletePopupMenu", enabled);
-    if (enabled) {
-      updateTerminalSetting("autocompleteGhostText", false);
-    }
-  }, [updateTerminalSetting]);
-
   // Import .itermcolors file
   const importFileRef = useRef<HTMLInputElement>(null);
   const handleImportItermcolors = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1077,7 +1063,6 @@ export default function SettingsTerminalTab(props: {
           />
         </SettingRow>
       </div>
-      {/* Autocomplete */}
       <SectionHeader title={t("settings.terminal.section.workspaceFocus")} />
       <div className="space-y-1">
         <SettingRow
@@ -1095,38 +1080,6 @@ export default function SettingsTerminalTab(props: {
         </SettingRow>
       </div>
 
-      <SectionHeader title={t("settings.terminal.section.autocomplete")} />
-      <div className="space-y-0 divide-y divide-border rounded-lg border bg-card px-4">
-        <SettingRow
-          label={t("settings.terminal.autocomplete.enabled")}
-          description={t("settings.terminal.autocomplete.enabled.desc")}
-        >
-          <Toggle
-            checked={terminalSettings.autocompleteEnabled}
-            onChange={(v) => updateTerminalSetting("autocompleteEnabled", v)}
-          />
-        </SettingRow>
-        <SettingRow
-          label={t("settings.terminal.autocomplete.ghostText")}
-          description={t("settings.terminal.autocomplete.ghostText.desc")}
-        >
-          <Toggle
-            checked={terminalSettings.autocompleteGhostText}
-            onChange={handleAutocompleteGhostTextChange}
-            disabled={!terminalSettings.autocompleteEnabled}
-          />
-        </SettingRow>
-        <SettingRow
-          label={t("settings.terminal.autocomplete.popupMenu")}
-          description={t("settings.terminal.autocomplete.popupMenu.desc")}
-        >
-          <Toggle
-            checked={terminalSettings.autocompletePopupMenu}
-            onChange={handleAutocompletePopupMenuChange}
-            disabled={!terminalSettings.autocompleteEnabled}
-          />
-        </SettingRow>
-      </div>
       {/* Custom Shell Modal */}
       <Dialog open={customShellModalOpen} onOpenChange={setCustomShellModalOpen}>
         <DialogContent className="sm:max-w-[480px]">

@@ -501,14 +501,6 @@ export interface TerminalSettings {
 
   // Rendering
   rendererType: 'auto' | 'webgl' | 'dom'; // Terminal renderer: auto (detect based on hardware), webgl, or dom
-
-  // Autocomplete
-  autocompleteEnabled: boolean; // Enable terminal command autocomplete
-  autocompleteGhostText: boolean; // Show inline ghost text suggestions (like fish shell)
-  autocompletePopupMenu: boolean; // Show popup menu with multiple suggestions
-  autocompleteDebounceMs: number; // Debounce delay for fetching suggestions (ms)
-  autocompleteMinChars: number; // Minimum characters before showing suggestions
-  autocompleteMaxSuggestions: number; // Maximum suggestions in popup menu
 }
 
 const STRICT_IPV4_OCTET_PATTERN = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)';
@@ -584,9 +576,6 @@ export const normalizeTerminalSettings = (
   return {
     ...mergedSettings,
     rendererType,
-    autocompleteGhostText: mergedSettings.autocompletePopupMenu
-      ? false
-      : mergedSettings.autocompleteGhostText,
     keywordHighlightRules: normalizeKeywordHighlightRules(
       mergedSettings.keywordHighlightRules,
     ),
@@ -626,12 +615,6 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   disableBracketedPaste: false, // Bracketed paste enabled by default
   osc52Clipboard: 'write-only', // OSC-52: allow remote programs to write clipboard by default
   rendererType: 'auto', // Auto-detect best renderer based on hardware
-  autocompleteEnabled: false, // Autocomplete disabled by default (remote shell Tab completion preferred)
-  autocompleteGhostText: false, // Mutually exclusive with popup menu
-  autocompletePopupMenu: true, // Popup menu enabled when autocomplete is on
-  autocompleteDebounceMs: 100, // 100ms debounce
-  autocompleteMinChars: 1, // Start suggesting after 1 character
-  autocompleteMaxSuggestions: 8, // Show up to 8 suggestions
 };
 
 export interface TerminalTheme {

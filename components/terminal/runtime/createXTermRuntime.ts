@@ -110,10 +110,6 @@ export type CreateXTermRuntimeContext = {
   // Callback when remote requests clipboard read in 'prompt' mode; resolves to user's decision
   onOsc52ReadRequest?: () => Promise<boolean>;
 
-  // Autocomplete key event handler — returns false if event was consumed
-  onAutocompleteKeyEvent?: (e: KeyboardEvent) => boolean;
-  // Autocomplete input handler — called on every character input
-  onAutocompleteInput?: (data: string) => void;
 };
 
 const detectPlatform = (): XTermPlatform => {
@@ -419,12 +415,6 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       return true;
     }
 
-    // Autocomplete key handler (must be checked before other handlers)
-    if (ctx.onAutocompleteKeyEvent) {
-      const consumed = ctx.onAutocompleteKeyEvent(e);
-      if (!consumed) return false; // Event was consumed by autocomplete
-    }
-
     const currentScheme = ctx.hotkeySchemeRef.current;
     // Use shared utility for platform detection when hotkey scheme is disabled
     const isMac = currentScheme === "mac" || (currentScheme === "disabled" && isMacPlatform());
@@ -619,7 +609,6 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       scrollToBottomAfterInput(data);
 
       // Notify autocomplete of input
-      ctx.onAutocompleteInput?.(data);
 
       if (ctx.statusRef.current === "connected" && ctx.onCommandExecuted) {
         if (data === "\r" || data === "\n") {
