@@ -626,9 +626,9 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   disableBracketedPaste: false, // Bracketed paste enabled by default
   osc52Clipboard: 'write-only', // OSC-52: allow remote programs to write clipboard by default
   rendererType: 'auto', // Auto-detect best renderer based on hardware
-  autocompleteEnabled: true, // Autocomplete enabled by default
+  autocompleteEnabled: false, // Autocomplete disabled by default (remote shell Tab completion preferred)
   autocompleteGhostText: false, // Mutually exclusive with popup menu
-  autocompletePopupMenu: true, // Popup menu enabled by default
+  autocompletePopupMenu: true, // Popup menu enabled when autocomplete is on
   autocompleteDebounceMs: 100, // 100ms debounce
   autocompleteMinChars: 1, // Start suggesting after 1 character
   autocompleteMaxSuggestions: 8, // Show up to 8 suggestions
