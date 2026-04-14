@@ -1286,7 +1286,6 @@ function App({ settings }: { settings: SettingsState }) {
     <div className={cn("flex flex-col h-screen text-foreground font-sans netcatty-shell", activeTerminalTheme && "immersive-transition")} onContextMenu={handleRootContextMenu}>
       <TopTabs
         theme={resolvedTheme}
-        followAppTerminalTheme={followAppTerminalTheme}
         hosts={hosts}
         sessions={sessions}
         orphanSessions={orphanSessions}

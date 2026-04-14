@@ -22,6 +22,7 @@ import {
   STORAGE_KEY_SFTP_AUTO_SYNC,
   STORAGE_KEY_SFTP_SHOW_HIDDEN_FILES,
   STORAGE_KEY_SFTP_USE_COMPRESSED_UPLOAD,
+  STORAGE_KEY_SFTP_AUTO_OPEN_SIDEBAR,
   STORAGE_KEY_SFTP_TRANSFER_CONCURRENCY,
   STORAGE_KEY_SFTP_DEFAULT_VIEW_MODE,
   STORAGE_KEY_EDITOR_WORD_WRAP,
@@ -69,6 +70,7 @@ const DEFAULT_SFTP_DOUBLE_CLICK_BEHAVIOR: 'open' | 'transfer' = 'open';
 const DEFAULT_SFTP_AUTO_SYNC = false;
 const DEFAULT_SFTP_SHOW_HIDDEN_FILES = false;
 const DEFAULT_SFTP_USE_COMPRESSED_UPLOAD = true;
+const DEFAULT_SFTP_AUTO_OPEN_SIDEBAR = false;
 const DEFAULT_SFTP_DEFAULT_VIEW_MODE: 'list' | 'tree' = 'list';
 const DEFAULT_SHOW_RECENT_HOSTS = true;
 const DEFAULT_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT = false;
@@ -253,6 +255,10 @@ export const useSettingsState = () => {
     if (stored === 'true' || stored === 'enabled' || stored === 'ask') return true;
     if (stored === 'false' || stored === 'disabled') return false;
     return DEFAULT_SFTP_USE_COMPRESSED_UPLOAD;
+  });
+  const [sftpAutoOpenSidebar, setSftpAutoOpenSidebar] = useState<boolean>(() => {
+    const stored = readStoredString(STORAGE_KEY_SFTP_AUTO_OPEN_SIDEBAR);
+    return stored === 'true' ? true : DEFAULT_SFTP_AUTO_OPEN_SIDEBAR;
   });
   const [sftpDefaultViewMode, setSftpDefaultViewMode] = useState<'list' | 'tree'>(() => {
     const stored = readStoredString(STORAGE_KEY_SFTP_DEFAULT_VIEW_MODE);
@@ -828,6 +834,13 @@ export const useSettingsState = () => {
           setSftpUseCompressedUpload(newValue);
         }
       }
+      // Sync SFTP auto-open sidebar setting from other windows
+      if (e.key === STORAGE_KEY_SFTP_AUTO_OPEN_SIDEBAR && e.newValue !== null) {
+        const newValue = e.newValue === 'true';
+        if (newValue !== s.sftpAutoOpenSidebar) {
+          setSftpAutoOpenSidebar(newValue);
+        }
+      }
       // Sync SFTP default view mode from other windows
       if (e.key === STORAGE_KEY_SFTP_DEFAULT_VIEW_MODE && e.newValue) {
         if ((e.newValue === 'list' || e.newValue === 'tree') && e.newValue !== s.sftpDefaultViewMode) {
@@ -1005,6 +1018,13 @@ export const useSettingsState = () => {
     if (!persistMountedRef.current) return;
     notifySettingsChanged(STORAGE_KEY_SFTP_USE_COMPRESSED_UPLOAD, sftpUseCompressedUpload);
   }, [sftpUseCompressedUpload, notifySettingsChanged]);
+
+  // Persist SFTP auto-open sidebar setting
+  useEffect(() => {
+    localStorageAdapter.writeString(STORAGE_KEY_SFTP_AUTO_OPEN_SIDEBAR, sftpAutoOpenSidebar ? 'true' : 'false');
+    if (!persistMountedRef.current) return;
+    notifySettingsChanged(STORAGE_KEY_SFTP_AUTO_OPEN_SIDEBAR, sftpAutoOpenSidebar);
+  }, [sftpAutoOpenSidebar, notifySettingsChanged]);
 
   // Persist SFTP default view mode
   useEffect(() => {
@@ -1242,6 +1262,8 @@ export const useSettingsState = () => {
     setSftpShowHiddenFiles,
     sftpUseCompressedUpload,
     setSftpUseCompressedUpload,
+    sftpAutoOpenSidebar,
+    setSftpAutoOpenSidebar,
     sftpDefaultViewMode,
     setSftpDefaultViewMode,
     showRecentHosts,
