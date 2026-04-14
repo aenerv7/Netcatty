@@ -559,7 +559,7 @@ function App({ settings }: { settings: SettingsState }) {
       if (binding.category === 'sftp') {
         continue;
       }
-      const terminalActions = ['copy', 'paste', 'selectAll', 'clearBuffer', 'searchTerminal'];
+      const terminalActions = ['copy', 'paste', 'pasteSelection', 'selectAll', 'clearBuffer', 'searchTerminal'];
       if (terminalActions.includes(binding.action)) {
         if (isTerminalElement) {
           return;

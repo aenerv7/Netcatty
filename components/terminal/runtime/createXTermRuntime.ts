@@ -497,6 +497,17 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
           });
           break;
         }
+        case "pasteSelection": {
+          const selection = term.getSelection();
+          const id = ctx.sessionRef.current;
+          if (selection && id) {
+            let data = normalizeLineEndings(selection);
+            if (term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste) data = wrapBracketedPaste(data);
+            ctx.terminalBackend.writeToSession(id, data);
+            scrollToBottomAfterPaste();
+          }
+          break;
+        }
         case "selectAll": {
           term.selectAll();
           break;

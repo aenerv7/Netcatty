@@ -825,6 +825,7 @@ const zhCN: Messages = {
   'terminal.search.nextMatch': '下一个匹配 (Enter)',
   'terminal.menu.copy': '复制',
   'terminal.menu.paste': '粘贴',
+  'terminal.menu.pasteSelection': '粘贴选中文本',
   'terminal.menu.selectAll': '全选',
   'terminal.menu.splitHorizontal': '水平分屏',
   'terminal.menu.splitVertical': '垂直分屏',

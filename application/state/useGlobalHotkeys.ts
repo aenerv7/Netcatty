@@ -77,6 +77,7 @@ export const getTerminalPassthroughActions = (): Set<string> => {
   return new Set([
     'copy',
     'paste',
+    'pasteSelection',
     'selectAll',
     'clearBuffer',
     'searchTerminal',
