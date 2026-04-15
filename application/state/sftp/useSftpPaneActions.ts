@@ -9,6 +9,17 @@ import { buildCacheKey, setSharedRemoteHostCache } from "./sharedRemoteHostCache
 /** Shared empty set for navigation resets — never mutate this. */
 const EMPTY_SET = new Set<string>();
 
+/**
+ * Notify other SftpView instances that local files in `dirPath` have changed.
+ * Each instance listens for this event and refreshes any local pane showing
+ * the affected directory, keeping SCP and SFTP views in sync.
+ */
+function notifyLocalFsChanged(dirPath: string) {
+  window.dispatchEvent(
+    new CustomEvent("netcatty:local-fs-changed", { detail: { dirPath } }),
+  );
+}
+
 interface UseSftpPaneActionsParams {
   hosts: Host[];
   getActivePane: (side: "left" | "right") => SftpPane | null;
@@ -554,6 +565,9 @@ export const useSftpPaneActions = ({
         if (pane.connection.currentPath === path) {
           await refresh(side);
         }
+        if (pane.connection.isLocal) {
+          notifyLocalFsChanged(path);
+        }
       } catch (err) {
         if (isSessionError(err)) {
           handleSessionError(side, err as Error);
@@ -609,6 +623,9 @@ export const useSftpPaneActions = ({
         if (pane.connection.currentPath === path) {
           await refresh(side);
         }
+        if (pane.connection.isLocal) {
+          notifyLocalFsChanged(path);
+        }
       } catch (err) {
         if (isSessionError(err)) {
           handleSessionError(side, err as Error);
@@ -650,6 +667,9 @@ export const useSftpPaneActions = ({
           }
         }
         await refresh(side);
+        if (pane.connection.isLocal) {
+          notifyLocalFsChanged(pane.connection.currentPath);
+        }
       } catch (err) {
         if (isSessionError(err)) {
           handleSessionError(side, err as Error);
@@ -723,6 +743,9 @@ export const useSftpPaneActions = ({
             };
           });
         }
+        if (pane.connection.isLocal) {
+          notifyLocalFsChanged(path);
+        }
       } catch (err) {
         if (isSessionError(err)) {
           handleSessionError(side, err as Error);
@@ -763,6 +786,9 @@ export const useSftpPaneActions = ({
           await netcattyBridge.get()?.renameSftp?.(sftpId, oldPath, newPath, pane.filenameEncoding);
         }
         await refresh(side);
+        if (pane.connection.isLocal) {
+          notifyLocalFsChanged(pane.connection.currentPath);
+        }
       } catch (err) {
         if (isSessionError(err)) {
           handleSessionError(side, err as Error);
@@ -797,6 +823,9 @@ export const useSftpPaneActions = ({
         }
         if (pane.connection.currentPath === parentPath) {
           await refresh(side);
+        }
+        if (pane.connection.isLocal) {
+          notifyLocalFsChanged(parentPath);
         }
       } catch (err) {
         if (isSessionError(err)) {
@@ -895,6 +924,13 @@ export const useSftpPaneActions = ({
               selectedFiles: nextSelection,
             };
           });
+        }
+        if (pane.connection.isLocal) {
+          // Notify for both source parent directories and the target directory
+          for (const parentPath of sourceParentNames.keys()) {
+            notifyLocalFsChanged(parentPath);
+          }
+          notifyLocalFsChanged(targetPath);
         }
       } catch (err) {
         if (isSessionError(err)) {

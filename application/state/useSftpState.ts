@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Host,
   Identity,
@@ -262,6 +262,29 @@ export const useSftpState = (
     },
     [clearCacheForConnection, getActivePane, navigateTo, updateActiveTab],
   );
+
+  // Listen for local filesystem changes from other SftpView instances (e.g. SCP ↔ SFTP sync).
+  // When one instance modifies local files, the other refreshes any local pane showing the same directory.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const dirPath = (e as CustomEvent<{ dirPath: string }>).detail?.dirPath;
+      if (!dirPath) return;
+      for (const side of ["left", "right"] as const) {
+        const tabs = side === "left" ? leftTabsRef.current : rightTabsRef.current;
+        for (const tab of tabs.tabs) {
+          if (tab.connection?.isLocal && tab.connection.currentPath === dirPath) {
+            // Clear cache so refresh fetches fresh data
+            clearCacheForConnection(tab.connection.id);
+            if (tabs.activeTabId === tab.id) {
+              void refresh(side);
+            }
+          }
+        }
+      }
+    };
+    window.addEventListener("netcatty:local-fs-changed", handler);
+    return () => window.removeEventListener("netcatty:local-fs-changed", handler);
+  }, [leftTabsRef, rightTabsRef, clearCacheForConnection, refresh]);
 
   const setShowHiddenFiles = useCallback(
     (side: "left" | "right", tabId: string, showHiddenFiles: boolean) => {
