@@ -515,6 +515,69 @@ declare global {
 
     // App info (name/version/platform) for About screens
     getAppInfo?(): Promise<{ name: string; version: string; platform: string }>;
+    getVaultBackupCapabilities?(): Promise<{ encryptionAvailable: boolean }>;
+    createVaultBackup?(payload: {
+      payload: import('./domain/sync').SyncPayload;
+      reason: 'app_version_change' | 'before_restore';
+      sourceAppVersion?: string;
+      targetAppVersion?: string;
+      maxCount?: number;
+    }): Promise<{
+      created: boolean;
+      backup: {
+        id: string;
+        createdAt: number;
+        reason: 'app_version_change' | 'before_restore';
+        sourceAppVersion?: string;
+        targetAppVersion?: string;
+        fingerprint: string;
+        preview: {
+          hostCount: number;
+          keyCount: number;
+          snippetCount: number;
+          identityCount: number;
+          portForwardingRuleCount: number;
+        };
+      } | null;
+    }>;
+    listVaultBackups?(): Promise<Array<{
+      id: string;
+      createdAt: number;
+      reason: 'app_version_change' | 'before_restore';
+      sourceAppVersion?: string;
+      targetAppVersion?: string;
+      fingerprint: string;
+      preview: {
+        hostCount: number;
+        keyCount: number;
+        snippetCount: number;
+        identityCount: number;
+        portForwardingRuleCount: number;
+      };
+    }>>;
+    readVaultBackup?(payload: { id: string }): Promise<{
+      backup: {
+        id: string;
+        createdAt: number;
+        reason: 'app_version_change' | 'before_restore';
+        sourceAppVersion?: string;
+        targetAppVersion?: string;
+        fingerprint: string;
+        preview: {
+          hostCount: number;
+          keyCount: number;
+          snippetCount: number;
+          identityCount: number;
+          portForwardingRuleCount: number;
+        };
+      };
+      payload: import('./domain/sync').SyncPayload;
+    }>;
+    trimVaultBackups?(payload: { maxCount: number }): Promise<{ deletedCount: number; keptCount: number }>;
+    openVaultBackupDir?(): Promise<{ success: boolean; path: string }>;
+    // Subscribe to main-process-driven "vault backups changed" events.
+    // Returns an unsubscribe callback. Undefined in non-Electron builds.
+    onVaultBackupsChanged?(handler: () => void): () => void;
 
     // Notify main process the renderer has mounted/painted (used to avoid initial blank screen).
     rendererReady?(): void;

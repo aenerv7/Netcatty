@@ -394,6 +394,7 @@ export const DEFAULT_KEY_BINDINGS: KeyBinding[] = [
   // Terminal Operations
   { id: 'copy', action: 'copy', label: 'Copy from Terminal', mac: '⌘ + C', pc: 'Ctrl + Shift + C', category: 'terminal' },
   { id: 'paste', action: 'paste', label: 'Paste to Terminal', mac: '⌘ + V', pc: 'Ctrl + Shift + V', category: 'terminal' },
+  { id: 'paste-selection', action: 'pasteSelection', label: 'Paste Selection to Terminal', mac: '⌘ + Shift + X', pc: 'Ctrl + Shift + X', category: 'terminal' },
   { id: 'select-all', action: 'selectAll', label: 'Select All in Terminal', mac: '⌘ + A', pc: 'Ctrl + Shift + A', category: 'terminal' },
   { id: 'clear-buffer', action: 'clearBuffer', label: 'Clear Terminal Buffer', mac: '⌘ + ⌃ + K', pc: 'Ctrl + Shift + K', category: 'terminal' },
   { id: 'search-terminal', action: 'searchTerminal', label: 'Open Terminal Search', mac: '⌘ + F', pc: 'Ctrl + F', category: 'terminal' },

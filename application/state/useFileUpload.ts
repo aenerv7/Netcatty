@@ -1,20 +1,13 @@
 /**
- * useFileUpload - Handle file paste/drop with base64 conversion
+ * File upload conversion helpers for AI draft attachments.
  *
  * Supports images, PDFs, and other document types.
  * Ported from 1code's use-agents-file-upload.ts
  */
-import { useCallback, useState } from 'react';
+import type { UploadedFile } from '../../infrastructure/ai/types';
 import { getPathForFile } from '../../lib/sftpFileUtils';
 
-export interface UploadedFile {
-  id: string;
-  filename: string;
-  dataUrl: string;      // data:...;base64,... for preview
-  base64Data: string;   // raw base64 for API
-  mediaType: string;    // MIME type e.g. "image/png", "application/pdf"
-  filePath?: string;    // original filesystem path (Electron only)
-}
+export type { UploadedFile } from '../../infrastructure/ai/types';
 
 /** Reject only known binary blobs that AI models can't process */
 const REJECTED_MIME_PREFIXES = ['video/', 'audio/'];
@@ -38,42 +31,32 @@ async function fileToDataUrl(file: File): Promise<{ dataUrl: string; base64: str
   });
 }
 
-export function useFileUpload() {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+export async function convertFilesToUploads(inputFiles: File[]): Promise<UploadedFile[]> {
+  const supported = inputFiles.filter(isSupportedFile);
+  if (supported.length === 0) return [];
 
-  const addFiles = useCallback(async (inputFiles: File[]) => {
-    const supported = inputFiles.filter(isSupportedFile);
-    if (supported.length === 0) return;
-
-    const newFiles: UploadedFile[] = await Promise.all(
-      supported.map(async (file) => {
-        const id = crypto.randomUUID();
-        const filename = file.name || `file-${Date.now()}`;
-        const mediaType = file.type || 'application/octet-stream';
-        let dataUrl = '';
-        let base64Data = '';
-        try {
-          const result = await fileToDataUrl(file);
-          dataUrl = result.dataUrl;
-          base64Data = result.base64;
-        } catch (err) {
-          console.error('[useFileUpload] Failed to convert:', err);
-        }
+  const uploads: Array<UploadedFile | null> = await Promise.all(
+    supported.map(async (file) => {
+      const id = crypto.randomUUID();
+      const filename = file.name || `file-${Date.now()}`;
+      const mediaType = file.type || 'application/octet-stream';
+      try {
+        const result = await fileToDataUrl(file);
         const filePath = getPathForFile(file);
-        return { id, filename, dataUrl, base64Data, mediaType, filePath };
-      }),
-    );
+        return {
+          id,
+          filename,
+          dataUrl: result.dataUrl,
+          base64Data: result.base64,
+          mediaType,
+          filePath,
+        };
+      } catch (err) {
+        console.error('[useFileUpload] Failed to convert:', err);
+        return null;
+      }
+    }),
+  );
 
-    setFiles((prev) => [...prev, ...newFiles]);
-  }, []);
-
-  const removeFile = useCallback((id: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-  }, []);
-
-  const clearFiles = useCallback(() => {
-    setFiles([]);
-  }, []);
-
-  return { files, addFiles, removeFile, clearFiles };
+  return uploads.filter((upload): upload is UploadedFile => upload !== null);
 }

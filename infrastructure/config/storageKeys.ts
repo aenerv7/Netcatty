@@ -40,6 +40,33 @@ export const STORAGE_KEY_UPDATE_LAST_CHECK = 'netcatty_update_last_check_v1';
 export const STORAGE_KEY_UPDATE_DISMISSED_VERSION = 'netcatty_update_dismissed_version_v1';
 export const STORAGE_KEY_UPDATE_LATEST_RELEASE = 'netcatty_update_latest_release_v1';
 export const STORAGE_KEY_AUTO_UPDATE_ENABLED = 'netcatty_auto_update_enabled_v1';
+export const STORAGE_KEY_LOCAL_VAULT_BACKUP_MAX_COUNT = 'netcatty_local_vault_backup_max_count_v1';
+export const STORAGE_KEY_LOCAL_VAULT_BACKUP_LAST_APP_VERSION = 'netcatty_local_vault_backup_last_app_version_v1';
+
+/**
+ * Cross-window barrier: set while a local vault restore is applying so
+ * auto-sync in another window doesn't upload a pre-restore snapshot
+ * concurrently. The value is an epoch-ms deadline — auto-sync treats any
+ * value in the future as "restore in progress" and any value in the past
+ * as a stale lock that can be ignored. See useAutoSync and
+ * CloudSyncSettings for readers/writers.
+ */
+export const STORAGE_KEY_VAULT_RESTORE_IN_PROGRESS_UNTIL = 'netcatty_vault_restore_in_progress_until_v1';
+
+/**
+ * Apply-in-progress sentinel. Set before a destructive applySyncPayload
+ * starts writing and cleared after it completes successfully. If this
+ * value is present on a later startup, the previous apply was
+ * interrupted mid-way (renderer crash, power loss, IPC failure) and the
+ * local vault is a partial mix of pre-apply and post-apply state.
+ * Auto-sync must refuse to push in that window — otherwise the partial
+ * state would silently overwrite an intact cloud copy — until the user
+ * manually restores from a protective backup or completes a full merge.
+ * The value is a JSON-encoded record (startedAt, protectiveBackupId,
+ * source) so the UI can surface a specific recovery hint rather than a
+ * generic "something broke" warning.
+ */
+export const STORAGE_KEY_VAULT_APPLY_IN_PROGRESS = 'netcatty_vault_apply_in_progress_v1';
 
 // SFTP File Opener Associations
 export const STORAGE_KEY_SFTP_FILE_ASSOCIATIONS = 'netcatty_sftp_file_associations_v1';

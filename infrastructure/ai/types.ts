@@ -39,6 +39,27 @@ export interface ChatMessageAttachment {
   filePath?: string;    // original filesystem path (for ACP agents to read directly)
 }
 
+export interface UploadedFile {
+  id: string;
+  filename: string;
+  dataUrl: string;
+  base64Data: string;
+  mediaType: string;
+  filePath?: string;
+}
+
+export interface AIDraft {
+  text: string;
+  agentId: string;
+  attachments: UploadedFile[];
+  selectedUserSkillSlugs: string[];
+  updatedAt: number;
+}
+
+export type AIPanelView =
+  | { mode: 'draft' }
+  | { mode: 'session'; sessionId: string };
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';

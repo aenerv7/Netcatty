@@ -7,11 +7,10 @@
  */
 
 import { AtSign, Check, ChevronDown, ChevronRight, Cpu, Expand, Eye, FileText, ImageIcon, Package, Plus, ShieldCheck, X, Zap } from 'lucide-react';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { createPortal } from 'react-dom';
 import type { FormEvent } from 'react';
-import type { UploadedFile } from '../../application/state/useFileUpload';
 import {
   PromptInput,
   PromptInputFooter,
@@ -21,7 +20,7 @@ import {
 } from '../ai-elements/prompt-input';
 import type { PromptInputStatus } from '../ai-elements/prompt-input';
 import { formatThinkingLabel } from '../../infrastructure/ai/types';
-import type { AgentModelPreset, AIPermissionMode } from '../../infrastructure/ai/types';
+import type { AgentModelPreset, AIPermissionMode, UploadedFile } from '../../infrastructure/ai/types';
 import { ScrollArea } from '../ui/scroll-area';
 
 // Keep in sync with the popover's Tailwind max-width below.
@@ -101,6 +100,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [hoveredModelId, setHoveredModelId] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState('');
   const [slashRange, setSlashRange] = useState<{ start: number; end: number } | null>(null);
+  // Active highlight index for @ mention / slash skill keyboard navigation
+  const [activeMenuIndex, setActiveMenuIndex] = useState(0);
 
   // Derived booleans for readability
   const showModelPicker = activeMenu === 'model';
@@ -204,11 +205,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setActiveMenu(menu);
   }, [getInputPanelMenuPos]);
 
-  const filteredUserSkills = userSkills.filter((skill) => {
+  const filteredUserSkills = useMemo(() => userSkills.filter((skill) => {
     if (!slashQuery) return true;
     const lowerQuery = slashQuery.toLowerCase();
     return skill.slug.toLowerCase().startsWith(lowerQuery) || skill.name.toLowerCase().includes(lowerQuery);
-  });
+  }), [userSkills, slashQuery]);
 
   const removeSlashQueryFromInput = useCallback(() => {
     if (!slashRange) return value;
@@ -227,6 +228,78 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
     closeAllMenus();
   }, [closeAllMenus, onAddUserSkill, onChange, removeSlashQueryFromInput, slashRange]);
+
+  // Reset active highlight when a menu opens or when the *identity* of the
+  // visible items changes. Watching only `.length` misses cases where the
+  // filter produces a different set with the same count (e.g. user types
+  // another character into the slash query) — Enter would then commit an
+  // unexpected item. Derive a stable key from the visible ids instead.
+  const atMentionKey = useMemo(
+    () => hosts.map((h) => h.sessionId).join('|'),
+    [hosts],
+  );
+  const slashSkillKey = useMemo(
+    () => filteredUserSkills.map((s) => s.id).join('|'),
+    [filteredUserSkills],
+  );
+  useEffect(() => {
+    if (showAtMention) setActiveMenuIndex(0);
+  }, [showAtMention, atMentionKey]);
+  useEffect(() => {
+    if (showSlashSkillPicker) setActiveMenuIndex(0);
+  }, [showSlashSkillPicker, slashSkillKey]);
+
+  const handleTextareaKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    // @ mention popover keyboard navigation
+    if (showAtMention && hosts.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveMenuIndex((i) => (i + 1) % hosts.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveMenuIndex((i) => (i - 1 + hosts.length) % hosts.length);
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const host = hosts[Math.min(activeMenuIndex, hosts.length - 1)];
+        if (host) handleSelectAtMention(host);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAllMenus();
+        return;
+      }
+    }
+    // / skill popover keyboard navigation
+    if (showSlashSkillPicker && filteredUserSkills.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveMenuIndex((i) => (i + 1) % filteredUserSkills.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveMenuIndex((i) => (i - 1 + filteredUserSkills.length) % filteredUserSkills.length);
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const skill = filteredUserSkills[Math.min(activeMenuIndex, filteredUserSkills.length - 1)];
+        if (skill) insertUserSkillToken(skill);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAllMenus();
+        return;
+      }
+    }
+  }, [showAtMention, hosts, showSlashSkillPicker, filteredUserSkills, activeMenuIndex, handleSelectAtMention, insertUserSkillToken, closeAllMenus]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const pastedFiles = Array.from(e.clipboardData.items)
@@ -368,6 +441,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             ref={textareaRef}
             value={value}
             onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleTextareaKeyDown}
             placeholder={placeholder || defaultPlaceholder}
             disabled={disabled}
             className={[
@@ -393,31 +467,40 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <div
               role="listbox"
               aria-label="Mention host"
-              className="fixed z-[1000] overflow-hidden rounded-[20px] border border-border/60 bg-popover shadow-2xl"
-              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: inputPanelPos.width }}
+              aria-activedescendant={hosts[activeMenuIndex] ? `at-mention-${hosts[activeMenuIndex].sessionId}` : undefined}
+              className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
+              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: Math.min(200, inputPanelPos.width), maxWidth: inputPanelPos.width }}
             >
-              <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium text-muted-foreground/62 tracking-wide">{t('ai.chat.menuHosts')}</div>
-              <ScrollArea className="max-h-[300px]">
-                <div className="px-2.5 pb-2.5">
-                  {hosts.map(host => (
-                    <button
-                      key={host.sessionId}
-                      type="button"
-                      role="option"
-                      onClick={() => handleSelectAtMention(host)}
-                      className="w-full rounded-[16px] px-3 py-1.5 text-left hover:bg-muted/30 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 text-[12px] text-foreground/90">
-                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${host.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
-                        <span className="truncate">{host.label || host.hostname}</span>
-                      </div>
-                      {host.label && host.hostname !== host.label ? (
-                        <div className="mt-0.5 pl-3.5 text-[10px] text-muted-foreground/60 truncate">
-                          {host.hostname}
+              <ScrollArea className="max-h-[280px]">
+                <div className="p-1">
+                  {hosts.map((host, idx) => {
+                    const isActive = idx === activeMenuIndex;
+                    const showHostnameLine = host.label
+                      && host.hostname !== host.label
+                      && !host.label.includes(host.hostname);
+                    return (
+                      <button
+                        id={`at-mention-${host.sessionId}`}
+                        key={host.sessionId}
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        onMouseEnter={() => setActiveMenuIndex(idx)}
+                        onClick={() => handleSelectAtMention(host)}
+                        className={`w-full rounded-md px-2 py-1 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                      >
+                        <div className="flex items-center gap-2 text-[12px] text-foreground/90">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${host.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
+                          <span className="truncate">{host.label || host.hostname}</span>
                         </div>
-                      ) : null}
-                    </button>
-                  ))}
+                        {showHostnameLine ? (
+                          <div className="pl-3.5 text-[10px] text-muted-foreground/60 truncate">
+                            {host.hostname}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </div>
@@ -432,31 +515,37 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <div
               role="listbox"
               aria-label="Insert user skill"
-              className="fixed z-[1000] overflow-hidden rounded-[20px] border border-border/60 bg-popover shadow-2xl"
-              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: inputPanelPos.width }}
+              aria-activedescendant={filteredUserSkills[activeMenuIndex] ? `slash-skill-${filteredUserSkills[activeMenuIndex].id}` : undefined}
+              className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
+              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: Math.min(200, inputPanelPos.width), maxWidth: inputPanelPos.width }}
             >
-              <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium text-muted-foreground/62 tracking-wide">{t('ai.chat.menuUserSkills')}</div>
-              <ScrollArea className="max-h-[300px]">
-                <div className="px-2.5 pb-2.5">
-                  {filteredUserSkills.map((skill) => (
-                    <button
-                      key={skill.id}
-                      type="button"
-                      role="option"
-                      onClick={() => insertUserSkillToken(skill)}
-                      className="w-full rounded-[16px] px-3 py-1.5 text-left hover:bg-muted/30 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 text-[12px]">
-                        <Package size={12} className="text-muted-foreground/55 shrink-0" />
-                        <span className="text-foreground/90">/{skill.slug}</span>
-                      </div>
-                      {skill.description ? (
-                        <div className="mt-0.5 pl-5 text-[10px] leading-4.5 text-muted-foreground/62 line-clamp-2">
-                          {skill.description}
+              <ScrollArea className="max-h-[280px]">
+                <div className="p-1">
+                  {filteredUserSkills.map((skill, idx) => {
+                    const isActive = idx === activeMenuIndex;
+                    return (
+                      <button
+                        id={`slash-skill-${skill.id}`}
+                        key={skill.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        onMouseEnter={() => setActiveMenuIndex(idx)}
+                        onClick={() => insertUserSkillToken(skill)}
+                        className={`w-full rounded-md px-2 py-1 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                      >
+                        <div className="flex items-center gap-2 text-[12px]">
+                          <Package size={12} className="text-muted-foreground/55 shrink-0" />
+                          <span className="text-foreground/90">/{skill.slug}</span>
                         </div>
-                      ) : null}
-                    </button>
-                  ))}
+                        {skill.description ? (
+                          <div className="pl-5 text-[10px] leading-4.5 text-muted-foreground/62 line-clamp-2">
+                            {skill.description}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </div>

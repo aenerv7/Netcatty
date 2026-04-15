@@ -31,6 +31,7 @@ export interface TerminalContextMenuProps {
   isAlternateScreen?: boolean;
   onCopy?: () => void;
   onPaste?: () => void;
+  onPasteSelection?: () => void;
   onSelectAll?: () => void;
   onClear?: () => void;
   onSplitHorizontal?: () => void;
@@ -48,6 +49,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   isAlternateScreen = false,
   onCopy,
   onPaste,
+  onPasteSelection,
   onSelectAll,
   onClear,
   onSplitHorizontal,
@@ -70,6 +72,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
 
   const copyShortcut = getShortcut('copy');
   const pasteShortcut = getShortcut('paste');
+  const pasteSelectionShortcut = getShortcut('paste-selection');
   const selectAllShortcut = getShortcut('select-all');
   const splitHShortcut = getShortcut('split-horizontal');
   const splitVShortcut = getShortcut('split-vertical');
@@ -123,6 +126,13 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
             {t('terminal.menu.paste')}
             <ContextMenuShortcut>{pasteShortcut}</ContextMenuShortcut>
           </ContextMenuItem>
+          {onPasteSelection && (
+            <ContextMenuItem onClick={onPasteSelection} disabled={!hasSelection}>
+              <ClipboardPaste size={14} className="mr-2" />
+              {t('terminal.menu.pasteSelection')}
+              <ContextMenuShortcut>{pasteSelectionShortcut}</ContextMenuShortcut>
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onClick={onSelectAll}>
             <TerminalIcon size={14} className="mr-2" />
             {t('terminal.menu.selectAll')}

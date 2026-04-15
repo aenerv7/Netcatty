@@ -165,6 +165,7 @@ const getAutoUpdateBridge = createLazyModule("./bridges/autoUpdateBridge.cjs");
 const getAiBridge = createLazyModule("./bridges/aiBridge.cjs");
 const getWindowManager = createLazyModule("./bridges/windowManager.cjs");
 const getScpBridge = createLazyModule("./bridges/scpBridge.cjs");
+const getVaultBackupBridge = createLazyModule("./bridges/vaultBackupBridge.cjs");
 
 // GPU settings
 // NOTE: Do not disable Chromium sandbox by default.
@@ -333,6 +334,12 @@ function focusMainWindow() {
       }
     } catch {}
 
+    // Cancel any in-flight close-to-tray hide so second-instance / dock-click
+    // re-entry beats a pending leave-full-screen → hide sequence.
+    try {
+      getGlobalShortcutBridge().clearPendingFullscreenHide?.(win);
+    } catch {}
+
     try {
       if (win.isMinimized && win.isMinimized()) win.restore();
     } catch {}
@@ -409,6 +416,7 @@ const registerBridges = (win) => {
   const credentialBridge = getCredentialBridge();
   const autoUpdateBridge = getAutoUpdateBridge();
   const aiBridge = getAiBridge();
+  const vaultBackupBridge = getVaultBackupBridge();
 
   const getCloudSyncPasswordPath = () => {
     try {
@@ -508,6 +516,7 @@ const registerBridges = (win) => {
   autoUpdateBridge.registerHandlers(ipcMain);
   aiBridge.registerHandlers(ipcMain);
   crashLogBridge.registerHandlers(ipcMain);
+  vaultBackupBridge.registerHandlers(ipcMain, electronModule);
 
   // SCP bridge
   const scpBridge = getScpBridge();
@@ -987,6 +996,12 @@ if (!gotLock) {
       try {
         const mainWin = getWindowManager().getMainWindow?.();
         if (mainWin && !mainWin.isDestroyed?.()) {
+          // If a close-to-tray hide is still pending (fullscreen exit animation
+          // not finished yet), cancel it — user intent to bring the window
+          // back overrides the pending hide.
+          try {
+            getGlobalShortcutBridge().clearPendingFullscreenHide?.(mainWin);
+          } catch {}
           if (mainWin.isMinimized?.()) mainWin.restore();
           mainWin.show?.();
           mainWin.focus?.();

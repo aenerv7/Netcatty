@@ -20,12 +20,21 @@ import { resolveHostTerminalThemeId } from './domain/terminalAppearance';
 import { collectSessionIds } from './domain/workspace';
 import { TERMINAL_THEMES } from './infrastructure/config/terminalThemes';
 import { useCustomThemes } from './application/state/customThemeStore';
-import { applySyncPayload } from './application/syncPayload';
+import type { SyncPayload } from './domain/sync';
+import { applySyncPayload, buildSyncPayload, hasMeaningfulSyncData } from './application/syncPayload';
+import {
+  applyProtectedSyncPayload,
+  ensureVersionChangeBackup,
+} from './application/localVaultBackups';
 import { getCredentialProtectionAvailability } from './infrastructure/services/credentialProtection';
 import { netcattyBridge } from './infrastructure/services/netcattyBridge';
 import { localStorageAdapter } from './infrastructure/persistence/localStorageAdapter';
 import { AlertTriangle, Download, Trash2 } from 'lucide-react';
-import { STORAGE_KEY_DEBUG_HOTKEYS } from './infrastructure/config/storageKeys';
+import {
+  STORAGE_KEY_DEBUG_HOTKEYS,
+  STORAGE_KEY_PORT_FORWARDING,
+} from './infrastructure/config/storageKeys';
+import { getEffectiveKnownHosts } from './infrastructure/syncHelpers';
 import { TopTabs } from './components/TopTabs';
 import { Button } from './components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui/dialog';
@@ -235,6 +244,7 @@ function App({ settings }: { settings: SettingsState }) {
   }, [workspaceFocusStyle]);
 
   const {
+    isInitialized: isVaultInitialized,
     hosts,
     keys,
     identities,
@@ -408,6 +418,129 @@ function App({ settings }: { settings: SettingsState }) {
     [portForwardingRules],
   );
 
+  const buildCurrentSyncPayload = useCallback(() => {
+    let effectivePortForwardingRules = portForwardingRulesForSync;
+    if (effectivePortForwardingRules.length === 0) {
+      const stored = localStorageAdapter.read<typeof portForwardingRulesForSync>(
+        STORAGE_KEY_PORT_FORWARDING,
+      );
+      if (stored && Array.isArray(stored) && stored.length > 0) {
+        effectivePortForwardingRules = stored.map((rule) => ({
+          ...rule,
+          status: 'inactive' as const,
+          error: undefined,
+          lastUsedAt: undefined,
+        }));
+      }
+    }
+
+    return buildSyncPayload(
+      {
+        hosts,
+        keys,
+        identities,
+        snippets,
+        customGroups,
+        snippetPackages,
+        knownHosts: getEffectiveKnownHosts(knownHosts),
+        groupConfigs,
+      },
+      effectivePortForwardingRules,
+    );
+  }, [
+    customGroups,
+    groupConfigs,
+    hosts,
+    identities,
+    keys,
+    knownHosts,
+    portForwardingRulesForSync,
+    snippetPackages,
+    snippets,
+  ]);
+
+  const [startupSyncSafetyReady, setStartupSyncSafetyReady] = useState(false);
+  // buildCurrentSyncPayload's identity changes each time the vault
+  // settles. The retry effect below watches the underlying data arrays
+  // for hydration progress, and uses the ref to always read the latest
+  // builder without pulling buildCurrentSyncPayload itself into deps
+  // (its identity churns on unrelated state updates too).
+  const buildCurrentSyncPayloadRef = useRef(buildCurrentSyncPayload);
+  useEffect(() => {
+    buildCurrentSyncPayloadRef.current = buildCurrentSyncPayload;
+  }, [buildCurrentSyncPayload]);
+
+  const versionBackupAttemptedRef = useRef(false);
+  // Two-stage gate: once the vault has initialized we open the auto-sync
+  // gate immediately — the hook's own hasMeaningfulSyncData guard and
+  // the cross-window restore barrier prevent an empty-but-not-yet-
+  // hydrated snapshot from overwriting cloud data. The version-change
+  // backup itself is best-effort and retries below as vault data arrives.
+  useEffect(() => {
+    if (isVaultInitialized && !startupSyncSafetyReady) {
+      setStartupSyncSafetyReady(true);
+    }
+  }, [isVaultInitialized, startupSyncSafetyReady]);
+
+  // Retry the version-change backup as hosts/keys/snippets become
+  // available. ensureVersionChangeBackup refuses to advance the stored
+  // version stamp when the observed payload is empty, so running this
+  // effect repeatedly is safe and eventually latches once the vault has
+  // hydrated enough to be backed up (or the user genuinely stays empty,
+  // in which case the effect continues to no-op).
+  useEffect(() => {
+    if (!isVaultInitialized || versionBackupAttemptedRef.current) return;
+    const payload = buildCurrentSyncPayloadRef.current();
+    if (!hasMeaningfulSyncData(payload)) return;
+    versionBackupAttemptedRef.current = true;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const info = await netcattyBridge.get()?.getAppInfo?.();
+        await ensureVersionChangeBackup(payload, info?.version ?? null);
+      } catch (error) {
+        if (!cancelled) {
+          // Reset the latch so a later data change (or the next mount)
+          // can retry. ensureVersionChangeBackup already leaves the
+          // version stamp untouched on failure, so retrying is safe.
+          versionBackupAttemptedRef.current = false;
+        }
+        console.error('[App] Failed to create version-change backup:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isVaultInitialized, hosts, keys, identities, snippets, customGroups, snippetPackages, knownHosts]);
+
+  // Memoized "apply a remote payload safely" callback. Stable identity
+  // across renders so useAutoSync's `syncNow` useCallback doesn't rebuild
+  // on unrelated App-level state changes (which would churn the debounced
+  // auto-sync useEffect dep chain).
+  const handleApplySyncPayload = useCallback(
+    (payload: SyncPayload) =>
+      applyProtectedSyncPayload({
+        buildPreApplyPayload: () => buildCurrentSyncPayload(),
+        applyPayload: () =>
+          applySyncPayload(payload, {
+            importVaultData: importDataFromString,
+            importPortForwardingRules,
+            onSettingsApplied: settings.rehydrateAllFromStorage,
+          }),
+        translateProtectiveBackupFailure: (message) =>
+          t('cloudSync.localBackups.protectiveBackupFailed', { message }),
+      }),
+    [
+      buildCurrentSyncPayload,
+      importDataFromString,
+      importPortForwardingRules,
+      settings.rehydrateAllFromStorage,
+      t,
+    ],
+  );
+
   // Auto-sync hook for cloud sync
   const { syncNow: handleSyncNow, emptyVaultConflict, resolveEmptyVaultConflict } = useAutoSync({
     hosts,
@@ -420,13 +553,8 @@ function App({ settings }: { settings: SettingsState }) {
     knownHosts,
     groupConfigs,
     settingsVersion: settings.settingsVersion,
-    onApplyPayload: (payload) => {
-      applySyncPayload(payload, {
-        importVaultData: importDataFromString,
-        importPortForwardingRules,
-        onSettingsApplied: settings.rehydrateAllFromStorage,
-      });
-    },
+    startupReady: startupSyncSafetyReady,
+    onApplyPayload: handleApplySyncPayload,
   });
 
   const { clearAndRemoveSource, clearAndRemoveSources, unmanageSource } = useManagedSourceSync({
@@ -500,7 +628,7 @@ function App({ settings }: { settings: SettingsState }) {
       if (binding.category === 'sftp') {
         continue;
       }
-      const terminalActions = ['copy', 'paste', 'selectAll', 'clearBuffer', 'searchTerminal'];
+      const terminalActions = ['copy', 'paste', 'pasteSelection', 'selectAll', 'clearBuffer', 'searchTerminal'];
       if (terminalActions.includes(binding.action)) {
         if (isTerminalElement) {
           return;

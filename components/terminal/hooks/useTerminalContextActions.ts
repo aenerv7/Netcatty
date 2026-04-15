@@ -56,6 +56,24 @@ export const useTerminalContextActions = ({
     }
   }, [sessionRef, termRef, terminalBackend, disableBracketedPasteRef, scrollOnPasteRef]);
 
+  const onPasteSelection = useCallback(() => {
+    const term = termRef.current;
+    if (!term) return;
+    const selection = term.getSelection();
+    if (!selection || !sessionRef.current) return;
+    let data = normalizeLineEndings(selection);
+    if (term.modes.bracketedPasteMode && !disableBracketedPasteRef?.current) data = wrapBracketedPaste(data);
+    terminalBackend.writeToSession(sessionRef.current, data);
+    if (scrollOnPasteRef?.current) {
+      term.scrollToBottom();
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => {
+          term.scrollToBottom();
+        });
+      }
+    }
+  }, [sessionRef, termRef, terminalBackend, disableBracketedPasteRef, scrollOnPasteRef]);
+
   const onSelectAll = useCallback(() => {
     const term = termRef.current;
     if (!term) return;
@@ -76,5 +94,5 @@ export const useTerminalContextActions = ({
     onHasSelectionChange?.(true);
   }, [onHasSelectionChange, termRef]);
 
-  return { onCopy, onPaste, onSelectAll, onClear, onSelectWord };
+  return { onCopy, onPaste, onPasteSelection, onSelectAll, onClear, onSelectWord };
 };

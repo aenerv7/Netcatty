@@ -2,7 +2,9 @@ import React, { useCallback } from "react";
 import type { PortForwardingRule } from "../../../domain/models";
 import type { SyncPayload } from "../../../domain/sync";
 import { buildSyncPayload, applySyncPayload } from "../../../application/syncPayload";
+import { applyProtectedSyncPayload } from "../../../application/localVaultBackups";
 import type { SyncableVaultData } from "../../../application/syncPayload";
+import { useI18n } from "../../../application/i18n/I18nProvider";
 import { STORAGE_KEY_PORT_FORWARDING } from "../../../infrastructure/config/storageKeys";
 import { localStorageAdapter } from "../../../infrastructure/persistence/localStorageAdapter";
 import { getEffectiveKnownHosts } from "../../../infrastructure/syncHelpers";
@@ -25,6 +27,7 @@ export default function SettingsSyncTab(props: {
     clearVaultData,
     onSettingsApplied,
   } = props;
+  const { t } = useI18n();
 
   const onBuildPayload = useCallback((): SyncPayload => {
     // If hook state is empty but localStorage has data, the async store
@@ -54,14 +57,19 @@ export default function SettingsSyncTab(props: {
   }, [vault, portForwardingRules]);
 
   const onApplyPayload = useCallback(
-    (payload: SyncPayload) => {
-      applySyncPayload(payload, {
-        importVaultData: importDataFromString,
-        importPortForwardingRules,
-        onSettingsApplied,
-      });
-    },
-    [importDataFromString, importPortForwardingRules, onSettingsApplied],
+    (payload: SyncPayload) =>
+      applyProtectedSyncPayload({
+        buildPreApplyPayload: onBuildPayload,
+        applyPayload: () =>
+          applySyncPayload(payload, {
+            importVaultData: importDataFromString,
+            importPortForwardingRules,
+            onSettingsApplied,
+          }),
+        translateProtectiveBackupFailure: (message) =>
+          t("cloudSync.localBackups.protectiveBackupFailed", { message }),
+      }),
+    [importDataFromString, importPortForwardingRules, onBuildPayload, onSettingsApplied, t],
   );
 
   const clearAllLocalData = useCallback(() => {

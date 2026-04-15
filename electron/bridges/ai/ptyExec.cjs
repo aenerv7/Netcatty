@@ -88,7 +88,7 @@ function buildWrappedCommand(command, shellKind, marker) {
         `set ${marker} 0; function __ncmcp_int --on-signal INT; printf '%s\\n' '${marker}_E:130'; functions -e __ncmcp_int; end; ` +
         `set -l ${marker}_cmd '${escapeFishSingleQuoted(command)}'; ` +
         `begin; set -gx PAGER cat; set -gx SYSTEMD_PAGER ''; set -gx GIT_PAGER cat; set -gx LESS ''; ` +
-        `printf '%s\\n' '${marker}_S'; eval -- \$${marker}_cmd; set __NCMCP_rc $status; ` +
+        `printf '%s\\n' '${marker}_S'; eval \$${marker}_cmd; set __NCMCP_rc $status; ` +
         `functions -e __ncmcp_int; printf '%s\\n' '${marker}_E:'\$__NCMCP_rc; end\n`
       );
 
