@@ -2066,6 +2066,41 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   </div>
                 )}
                 <div className="flex-1 min-h-0 relative">
+                  {/* SFTP sub-panel */}
+                  {mountedSftpTabIds.map((tabId) => {
+                    const isVisibleSftpPanel = activeTabId === tabId && activeSidePanelTab === 'sftp';
+                    return (
+                        <SftpSidePanel
+                          key={tabId}
+                          hosts={hosts}
+                          keys={keys}
+                          identities={identities}
+                          updateHosts={updateHosts}
+                          sftpDefaultViewMode={sftpDefaultViewMode}
+                          activeHost={isVisibleSftpPanel ? sftpActiveHost : null}
+                          initialLocation={
+                            isVisibleSftpPanel
+                              ? (sftpInitialLocationForTab.get(tabId) ?? null)
+                              : null
+                          }
+                          showWorkspaceHostHeader={isVisibleSftpPanel && !!activeWorkspace}
+                          isVisible={isVisibleSftpPanel}
+                          renderOverlays={isVisibleSftpPanel}
+                          pendingUpload={sftpPendingUploadsForTab.get(tabId) ?? null}
+                          onPendingUploadHandled={(requestId) => handlePendingUploadHandled(tabId, requestId)}
+                          sftpDoubleClickBehavior={sftpDoubleClickBehavior}
+                          sftpAutoSync={isVisibleSftpPanel ? sftpAutoSync : false}
+                          sftpShowHiddenFiles={sftpShowHiddenFiles}
+                          sftpUseCompressedUpload={sftpUseCompressedUpload}
+                          hotkeyScheme={hotkeyScheme}
+                          keyBindings={keyBindings}
+                          editorWordWrap={editorWordWrap}
+                          setEditorWordWrap={setEditorWordWrap}
+                          onGetTerminalCwd={getTerminalCwd}
+                        />
+                    );
+                  })}
+
                   {/* Scripts sub-panel */}
                   {activeSidePanelTab === 'scripts' && (
                     <div className="absolute inset-0 z-10">
