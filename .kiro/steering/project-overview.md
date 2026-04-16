@@ -50,6 +50,8 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 新增 SCP 文件管理（复用 SFTP UI，后端走 SSH exec）
 - 云同步仅保留 WebDAV 和 S3（UI 层隐藏了 GitHub Gist / Google Drive / OneDrive）
 - WebDAV 同步文件存放在 `/Netcatty/` 子目录（兼容坚果云等不允许根目录操作的服务）
+- 移除终端侧边栏的 SFTP 面板（`SftpSidePanel`）：本 fork 使用顶部独立 SFTP/SCP 标签页，不需要终端内嵌 SFTP 侧栏
+- SFTP 顶部标签页始终显示：移除了设置中"显示 SFTP 标签页"的开关（`showSftpTab` 设置项），该标签在本 fork 中永远可见
 - 彻底移除系统托盘（tray icon、tray panel、close-to-tray）及所有相关 IPC / UI / i18n / 存储键
 - 彻底移除客户端终端自动补全系统（fig autocomplete、ghost text、popup menu），Tab 键完全由远端 shell 处理
 - 修复 macOS 自动更新点击重启无反应：`will-quit` 的 `event.preventDefault()` + `app.exit(0)` 会绕过 electron-updater 的退出生命周期钩子，现在 `quitAndInstall` 时跳过异步清理延迟
@@ -71,7 +73,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 4. **不加入代码签名**：本项目没有签名证书。workflow 中必须保留 "Disable code signing and notarization" 步骤，并设置 `CSC_IDENTITY_AUTO_DISCOVERY: "false"`。如果上游引入了签名/公证相关配置，不要合入。
 5. **构建触发方式**：只通过打 `v*` tag 的方式触发构建，不使用 `workflow_dispatch`。
 6. **package-lock.json 合并**：不要直接 `git checkout upstream/main -- package-lock.json`。本 fork 的 `package.json` 比上游多了 `@types/react` 和 `@types/react-dom` 等 devDependencies，直接替换 lock 文件会导致 `npm ci` 因不匹配而失败。正确做法是让 git merge 自动处理，如有冲突则运行 `npm install --package-lock-only` 重新生成。
-7. **已移除功能的冲突处理**：上游对系统托盘（tray）和客户端自动补全（autocomplete）的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`Terminal.tsx` 中的相关冲突。
+7. **已移除功能的冲突处理**：上游对系统托盘（tray）、客户端自动补全（autocomplete）和终端 SFTP 侧边栏（`SftpSidePanel`）的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`TerminalLayer.tsx`、`Terminal.tsx` 中的相关冲突。
 8. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
 9. **合并后必须验证大文件的 JSX 完整性**：`TerminalLayer.tsx`、`App.tsx` 等大组件在冲突解决时容易丢失整块 JSX 渲染代码（如 `<SftpSidePanel>` 渲染块曾被整体丢弃导致侧边栏空白）。合并后应检查关键组件的渲染输出是否完整，特别是条件渲染块和 `.map()` 循环。
 
