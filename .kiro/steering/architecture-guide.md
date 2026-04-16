@@ -133,13 +133,12 @@ React Hooks，拥有状态和持久化边界。
 - `portForwardingBridge.cjs` — SSH 端口转发隧道
 - `transferBridge.cjs` — 文件传输进度管理
 - `windowManager.cjs` — Electron 窗口管理 (主窗口/设置窗口/预热)
-- `globalShortcutBridge.cjs` — 全局快捷键 + 系统托盘 + Tray Panel
+- `globalShortcutBridge.cjs` — 全局快捷键 (Quake 模式窗口切换)
 - `aiBridge.cjs` — AI 代理进程管理 (ACP/Claude/Codex)
 - `sessionLogStreamManager.cjs` — 实时会话日志流写入
 
 ### 应用生命周期 (`electron/main.cjs`)
-- `before-quit`: 设置 `isQuitting` 标志（不在此处 cleanup tray，由调用方负责）
-- `will-quit`: 同步清理 (terminal/port-forwarding/AI/SCP/globalShortcut) + 异步清理 (session log streams，带 3 秒超时兜底)
+- `before-quit`: 设置 `isQuitting` 标志
+- `will-quit`: 同步清理 (terminal/port-forwarding/AI/SCP/globalShortcut) + 异步清理 (session log streams，带多层超时兜底)；`quitAndInstall` 时跳过异步延迟让 electron-updater 正常退出
 - `window-all-closed`: 非 macOS 触发 `app.quit()`
-- 托盘退出: `setImmediate(() => { cleanup(); app.quit() })` — 先让 IPC response 发出，再销毁 tray panel + 调用 quit
 - `windowStateCloseRequested` 在无 pending write 时自动重置，防止失败的退出尝试导致后续关闭被忽略

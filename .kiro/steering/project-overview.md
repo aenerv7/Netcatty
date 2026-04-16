@@ -50,7 +50,12 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 新增 SCP 文件管理（复用 SFTP UI，后端走 SSH exec）
 - 云同步仅保留 WebDAV 和 S3（UI 层隐藏了 GitHub Gist / Google Drive / OneDrive）
 - WebDAV 同步文件存放在 `/Netcatty/` 子目录（兼容坚果云等不允许根目录操作的服务）
-- 修复了从托盘退出时 app 挂起的 bug
+- 彻底移除系统托盘（tray icon、tray panel、close-to-tray）及所有相关 IPC / UI / i18n / 存储键
+- 彻底移除客户端终端自动补全系统（fig autocomplete、ghost text、popup menu），Tab 键完全由远端 shell 处理
+- 修复 macOS 自动更新点击重启无反应：`will-quit` 的 `event.preventDefault()` + `app.exit(0)` 会绕过 electron-updater 的退出生命周期钩子，现在 `quitAndInstall` 时跳过异步清理延迟
+- 修复 macOS 退出偶尔卡死：session log stream 的 `writeStream.end()` 回调可能不触发，增加了多层超时防护和 `will-quit` 重入保护
+- 修复连接进度条抖动：模拟定时器与跳板链回调竞争导致进度回滚，改为单调递增 + 降低定时器增速
+- 修复 SCP 与 SFTP 面板本地文件不同步：通过 `netcatty:local-fs-changed` 自定义事件跨实例通知刷新
 - 右上角工具栏精简：移除了通知铃铛和亮暗色切换按钮，AI 按钮仅在有配置时显示
 - Vault 页面移除了"新建本地 Terminal"按钮（`onCreateLocalTerminal`），仅保留 Serial 按钮
 - 构建仅保留 Windows (NSIS) 和 macOS (DMG)，移除 Linux
@@ -65,6 +70,9 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 3. **只保留本项目的 Workflow**：`.github/workflows/` 下只使用本项目自己的 workflow 文件。如果上游同步引入了新的或修改过的 workflow 文件，必须丢弃上游的改动，保留本项目版本。
 4. **不加入代码签名**：本项目没有签名证书。workflow 中必须保留 "Disable code signing and notarization" 步骤，并设置 `CSC_IDENTITY_AUTO_DISCOVERY: "false"`。如果上游引入了签名/公证相关配置，不要合入。
 5. **构建触发方式**：只通过打 `v*` tag 的方式触发构建，不使用 `workflow_dispatch`。
+6. **package-lock.json 合并**：不要直接 `git checkout upstream/main -- package-lock.json`。本 fork 的 `package.json` 比上游多了 `@types/react` 和 `@types/react-dom` 等 devDependencies，直接替换 lock 文件会导致 `npm ci` 因不匹配而失败。正确做法是让 git merge 自动处理，如有冲突则运行 `npm install --package-lock-only` 重新生成。
+7. **已移除功能的冲突处理**：上游对系统托盘（tray）和客户端自动补全（autocomplete）的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`Terminal.tsx` 中的相关冲突。
+8. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
 
 ## Electron IPC
 - 渲染进程通过 `window.netcatty` 桥接主进程
