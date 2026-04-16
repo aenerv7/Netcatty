@@ -1,4 +1,4 @@
-import { Circle, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
+import { Circle, FolderTree, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
 import React, { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveTabId } from '../application/state/activeTabStore';
 import {
@@ -1292,6 +1292,11 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   // Open scripts side panel (called from Terminal toolbar)
   const handleOpenScripts = useCallback(() => {
     handleSwitchSidePanelTab('scripts');
+  }, [handleSwitchSidePanelTab]);
+
+  // Open SFTP side panel (called from sidebar button)
+  const handleToggleSftpFromBar = useCallback(() => {
+    handleSwitchSidePanelTab('sftp');
   }, [handleSwitchSidePanelTab]);
 
   // Open theme side panel (called from Terminal toolbar)
