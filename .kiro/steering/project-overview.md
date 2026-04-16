@@ -73,6 +73,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 6. **package-lock.json 合并**：不要直接 `git checkout upstream/main -- package-lock.json`。本 fork 的 `package.json` 比上游多了 `@types/react` 和 `@types/react-dom` 等 devDependencies，直接替换 lock 文件会导致 `npm ci` 因不匹配而失败。正确做法是让 git merge 自动处理，如有冲突则运行 `npm install --package-lock-only` 重新生成。
 7. **已移除功能的冲突处理**：上游对系统托盘（tray）和客户端自动补全（autocomplete）的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`Terminal.tsx` 中的相关冲突。
 8. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
+9. **合并后必须验证大文件的 JSX 完整性**：`TerminalLayer.tsx`、`App.tsx` 等大组件在冲突解决时容易丢失整块 JSX 渲染代码（如 `<SftpSidePanel>` 渲染块曾被整体丢弃导致侧边栏空白）。合并后应检查关键组件的渲染输出是否完整，特别是条件渲染块和 `.map()` 循环。
 
 ## Electron IPC
 - 渲染进程通过 `window.netcatty` 桥接主进程
