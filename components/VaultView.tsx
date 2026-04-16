@@ -35,7 +35,7 @@ import { useStoredViewMode } from "../application/state/useStoredViewMode";
 import { useStoredBoolean } from "../application/state/useStoredBoolean";
 import { useTreeExpandedState } from "../application/state/useTreeExpandedState";
 import { resolveGroupDefaults, applyGroupDefaults } from "../domain/groupConfig";
-import { getEffectiveHostDistro, sanitizeHost } from "../domain/host";
+import { getEffectiveHostDistro, sanitizeHost, upsertHostById } from "../domain/host";
 import { importVaultHostsFromText, exportHostsToCsvWithStats } from "../domain/vaultImport";
 import type { VaultImportFormat } from "../domain/vaultImport";
 import {
@@ -2929,13 +2929,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           groupDefaults={editingHostGroupDefaults}
           groupConfigs={groupConfigs}
           onSave={(host) => {
-            // Check if host already exists in the list (for updates vs. new/duplicate)
-            const hostExists = hosts.some((h) => h.id === host.id);
-            onUpdateHosts(
-              hostExists
-                ? hosts.map((h) => (h.id === host.id ? host : h))
-                : [...hosts, host],
-            );
+            onUpdateHosts(upsertHostById(hosts, host));
             setIsHostPanelOpen(false);
             setEditingHost(null);
             setNewHostGroupPath(null);
@@ -2961,15 +2955,15 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           allTags={allTags}
           groups={allGroupPaths}
           onSave={(host) => {
-            onUpdateHosts(
-              hosts.map((h) => (h.id === host.id ? host : h)),
-            );
+            onUpdateHosts(upsertHostById(hosts, host));
             setIsHostPanelOpen(false);
             setEditingHost(null);
+            setNewHostGroupPath(null);
           }}
           onCancel={() => {
             setIsHostPanelOpen(false);
             setEditingHost(null);
+            setNewHostGroupPath(null);
           }}
           layout="inline"
         />

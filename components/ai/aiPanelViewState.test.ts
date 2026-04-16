@@ -6,11 +6,11 @@ import type {
   AISession,
 } from "../../infrastructure/ai/types.ts";
 import {
+  applyDraftEntrySelection,
   applyHistorySessionSelection,
   normalizePanelView,
   resolveDisplayedPanelView,
   resolveDisplayedSession,
-  shouldRetargetSessionForScope,
 } from "./aiPanelViewState.ts";
 
 function createSession(id: string): AISession {
@@ -61,7 +61,7 @@ test("missing explicit panel view resumes the most recent matching history when 
   const sessions = [createSession("session-2"), createSession("session-1")];
 
   assert.deepEqual(
-    resolveDisplayedPanelView(undefined, false, sessions),
+    resolveDisplayedPanelView(undefined, false, sessions, undefined, "workspace"),
     { mode: "session", sessionId: "session-2" },
   );
 });
@@ -70,7 +70,7 @@ test("missing explicit panel view restores the persisted active session instead 
   const sessions = [createSession("session-2"), createSession("session-1")];
 
   assert.deepEqual(
-    resolveDisplayedPanelView(undefined, false, sessions, "session-1"),
+    resolveDisplayedPanelView(undefined, false, sessions, "session-1", "workspace"),
     { mode: "session", sessionId: "session-1" },
   );
 });
@@ -79,7 +79,7 @@ test("persisted session id that no longer exists in history falls back to newest
   const sessions = [createSession("session-2"), createSession("session-1")];
 
   assert.deepEqual(
-    resolveDisplayedPanelView(undefined, false, sessions, "deleted-session"),
+    resolveDisplayedPanelView(undefined, false, sessions, "deleted-session", "workspace"),
     { mode: "session", sessionId: "session-2" },
   );
 });
@@ -88,8 +88,17 @@ test("null persisted session id falls back to newest history entry", () => {
   const sessions = [createSession("session-2"), createSession("session-1")];
 
   assert.deepEqual(
-    resolveDisplayedPanelView(undefined, false, sessions, null),
+    resolveDisplayedPanelView(undefined, false, sessions, null, "workspace"),
     { mode: "session", sessionId: "session-2" },
+  );
+});
+
+test("terminal scope without explicit view always starts from draft even when history exists", () => {
+  const sessions = [createSession("session-2"), createSession("session-1")];
+
+  assert.deepEqual(
+    resolveDisplayedPanelView(undefined, false, sessions, "session-1", "terminal"),
+    { mode: "draft" },
   );
 });
 
@@ -106,50 +115,6 @@ test("draft state is used when there is no implicit history to resume", () => {
   assert.deepEqual(
     resolveDisplayedPanelView(undefined, true, []),
     { mode: "draft" },
-  );
-});
-
-test("restorable terminal history should retarget to the current scope", () => {
-  const session: AISession = {
-    ...createSession("session-2"),
-    scope: {
-      type: "terminal",
-      targetId: "old-terminal",
-      hostIds: ["host-1"],
-    },
-  };
-
-  assert.equal(
-    shouldRetargetSessionForScope(
-      session,
-      "terminal",
-      "new-terminal",
-      ["host-1"],
-      new Set<string>(),
-    ),
-    true,
-  );
-});
-
-test("session owned by another active terminal should not retarget", () => {
-  const session: AISession = {
-    ...createSession("session-2"),
-    scope: {
-      type: "terminal",
-      targetId: "other-active-terminal",
-      hostIds: ["host-1"],
-    },
-  };
-
-  assert.equal(
-    shouldRetargetSessionForScope(
-      session,
-      "terminal",
-      "new-terminal",
-      ["host-1"],
-      new Set<string>(["other-active-terminal"]),
-    ),
-    false,
   );
 });
 
@@ -172,5 +137,41 @@ test("history selection switches to the chosen session without touching draft st
     "view:session-2",
     "active:session-2",
     "close-history",
+  ]);
+});
+
+test("draft entry ensures a draft exists before switching the panel to draft mode", () => {
+  const calls: string[] = [];
+
+  applyDraftEntrySelection({
+    ensureDraft: () => {
+      calls.push("ensure-draft");
+    },
+    showDraftView: () => {
+      calls.push("show-draft");
+    },
+  });
+
+  assert.deepEqual(calls, [
+    "ensure-draft",
+    "show-draft",
+  ]);
+});
+
+test("draft entry can preserve the current session view while ensuring draft state", () => {
+  const calls: string[] = [];
+
+  applyDraftEntrySelection({
+    ensureDraft: () => {
+      calls.push("ensure-draft");
+    },
+    showDraftView: () => {
+      calls.push("show-draft");
+    },
+    preserveSessionView: true,
+  });
+
+  assert.deepEqual(calls, [
+    "ensure-draft",
   ]);
 });

@@ -341,7 +341,6 @@ const AIChatPanelsHostInner: React.FC<AIChatPanelsHostProps> = ({
               deleteSession={aiState.deleteSession}
               updateSessionTitle={aiState.updateSessionTitle}
               updateSessionExternalSessionId={aiState.updateSessionExternalSessionId}
-              retargetSessionScope={aiState.retargetSessionScope}
               addMessageToSession={aiState.addMessageToSession}
               updateLastMessage={aiState.updateLastMessage}
               updateMessageById={aiState.updateMessageById}
@@ -1211,9 +1210,25 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
   }, [activeWorkspace?.focusedSessionId, activeSession?.id, terminalBackend]);
 
+  const refocusTerminalSession = useCallback((sessionId?: string | null) => {
+    if (!sessionId) return;
+
+    const focusTarget = () => {
+      const pane = document.querySelector(`[data-session-id="${sessionId}"]`);
+      const textarea = pane?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
+      textarea?.focus();
+    };
+
+    requestAnimationFrame(() => {
+      focusTarget();
+      setTimeout(focusTarget, 50);
+    });
+  }, []);
+
   // Close the entire side panel for the current tab
   const handleCloseSidePanel = useCallback(() => {
     if (!activeTabId) return;
+    const sessionIdToRefocus = activeWorkspace?.focusedSessionId ?? activeSession?.id;
     setSidePanelOpenTabs(prev => {
       const next = new Map(prev);
       next.delete(activeTabId);
@@ -1236,7 +1251,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       next.delete(activeTabId);
       return next;
     });
-  }, [activeTabId]);
+    refocusTerminalSession(sessionIdToRefocus);
+  }, [activeTabId, activeWorkspace?.focusedSessionId, activeSession?.id, refocusTerminalSession]);
 
   // Switch side panel to a specific tab (or toggle if already on that tab)
   const handleSwitchSidePanelTab = useCallback((tab: SidePanelTab) => {
@@ -2370,14 +2386,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             onSend={handleComposeSend}
             onClose={() => {
               setIsComposeBarOpen(false);
-              // Refocus the terminal pane (matching solo-session behavior)
-              if (focusedSessionId) {
-                requestAnimationFrame(() => {
-                  const pane = document.querySelector(`[data-session-id="${focusedSessionId}"]`);
-                  const textarea = pane?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
-                  textarea?.focus();
-                });
-              }
+              refocusTerminalSession(focusedSessionId);
             }}
             isBroadcastEnabled={isBroadcastEnabled?.(activeWorkspace.id)}
             themeColors={composeBarThemeColors}

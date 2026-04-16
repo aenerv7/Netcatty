@@ -33,7 +33,7 @@ index 7291c2c..8943c9a 100644
  }
  
 diff --git a/node_modules/ssh2/lib/protocol/Protocol.js b/node_modules/ssh2/lib/protocol/Protocol.js
-index 7302488..95584c5 100644
+index 7302488..634acdd 100644
 --- a/node_modules/ssh2/lib/protocol/Protocol.js
 +++ b/node_modules/ssh2/lib/protocol/Protocol.js
 @@ -701,11 +701,19 @@ class Protocol {
@@ -107,6 +107,18 @@ index 7302488..95584c5 100644
        packet.set(signature, p += 4);
  
        this._authsQueue.push('hostbased');
+@@ -1916,7 +1932,10 @@ class Protocol {
+ }
+ 
+ // SSH-protoversion-softwareversion (SP comments) CR LF
+-const RE_IDENT = /^SSH-(2\.0|1\.99)-([^ ]+)(?: (.*))?$/;
++// RFC 4253 requires a non-empty softwareversion, but some embedded SSH
++// daemons send "SSH-2.0-" with an empty token. Accept that specific
++// compatibility case while still rejecting whitespace in the token itself.
++const RE_IDENT = /^SSH-(2\.0|1\.99)-([^ ]*)(?: (.*))?$/;
+ 
+ // TODO: optimize this by starting n bytes from the end of this._buffer instead
+ // of the beginning
 diff --git a/node_modules/ssh2/lib/protocol/SFTP.js b/node_modules/ssh2/lib/protocol/SFTP.js
 index 9f33c02..9751164 100644
 --- a/node_modules/ssh2/lib/protocol/SFTP.js

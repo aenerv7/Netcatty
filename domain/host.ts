@@ -153,6 +153,13 @@ export const formatHostPort = (hostname: string, port?: number | null): string =
   return `${display}:${port}`;
 };
 
+export const upsertHostById = (hosts: Host[], host: Host): Host[] => {
+  const hostExists = hosts.some((entry) => entry.id === host.id);
+  return hostExists
+    ? hosts.map((entry) => (entry.id === host.id ? host : entry))
+    : [...hosts, host];
+};
+
 export const sanitizeHost = (host: Host): Host => {
   const cleanHostname = (host.hostname || '').split(/\s+/)[0];
   const cleanDistro = normalizeDistroId(host.distro);

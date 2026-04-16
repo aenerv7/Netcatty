@@ -49,6 +49,7 @@ import { ZmodemProgressIndicator } from "./terminal/ZmodemProgressIndicator";
 import { useZmodemTransfer } from "./terminal/hooks/useZmodemTransfer";
 import { createTerminalSessionStarters, type PendingAuth } from "./terminal/runtime/createTerminalSessionStarters";
 import { createXTermRuntime, primaryFontFamily, type XTermRuntime } from "./terminal/runtime/createXTermRuntime";
+import { shouldPreserveTerminalFocusOnMouseDown } from "./terminal/toolbarFocus";
 import { preserveTerminalViewportInScrollback } from "./terminal/clearTerminalViewport";
 import { XTERM_PERFORMANCE_CONFIG } from "../infrastructure/config/xtermPerformance";
 import { useTerminalSearch } from "./terminal/hooks/useTerminalSearch";
@@ -515,6 +516,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     osc52ReadResolverRef.current = null;
     // Restore focus to terminal
     termRef.current?.focus();
+  }, []);
+
+  const handleTopOverlayMouseDownCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    if (!shouldPreserveTerminalFocusOnMouseDown(e.target)) return;
+    e.preventDefault();
   }, []);
 
   // Subscribe to custom theme changes so editing triggers re-render
@@ -1601,6 +1608,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         <div className="absolute left-0 right-0 top-0 z-20 pointer-events-none">
           <div
             className="flex items-center gap-1 px-2 py-0.5 backdrop-blur-md pointer-events-auto min-w-0"
+            onMouseDownCapture={handleTopOverlayMouseDownCapture}
             style={{
               backgroundColor: 'var(--terminal-ui-bg)',
               color: 'var(--terminal-ui-fg)',

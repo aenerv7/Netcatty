@@ -33,8 +33,11 @@ import type {
 import { DEFAULT_COMMAND_BLOCKLIST } from '../../infrastructure/ai/types';
 import {
   activateDraftView,
+  bumpDraftMutationVersionState,
+  bumpDraftUploadGenerationState,
   clearScopeDraftState,
   ensureDraftForScopeState,
+  getDraftUploadGenerationState,
   setSessionView,
   updateDraftForScope,
 } from './aiDraftState';
@@ -91,9 +94,26 @@ export function cleanupOrphanedAISessions(activeTargetIds: Set<string>) {
   const currentSessions = latestAISessionsSnapshot
     ?? localStorageAdapter.read<AISession[]>(STORAGE_KEY_AI_SESSIONS)
     ?? [];
+
+  // Sessions shown by a still-live scope must be protected from cleanup
+  // even when their own `scope.targetId` points at a closed terminal —
+  // history can be resumed into a different terminal and we must not
+  // clear its `externalSessionId` (or delete it outright) while it's
+  // actively being used.
+  const preCleanupActiveSessionMap = latestAIActiveSessionMapSnapshot
+    ?? localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP)
+    ?? {};
+  const activeSessionIds = new Set<string>();
+  for (const [scopeKey, sessionId] of Object.entries(preCleanupActiveSessionMap)) {
+    if (!sessionId) continue;
+    if (!isScopeKeyActive(scopeKey, activeTargetIds)) continue;
+    activeSessionIds.add(sessionId);
+  }
+
   const nextSessionCleanup = pruneInactiveScopedSessions(
     currentSessions,
     activeTargetIds,
+    activeSessionIds,
   );
 
   if (nextSessionCleanup.orphanedSessionIds.length > 0) {
@@ -109,9 +129,7 @@ export function cleanupOrphanedAISessions(activeTargetIds: Set<string>) {
     emitAIStateChanged(STORAGE_KEY_AI_SESSIONS);
   }
 
-  const activeSessionIdMap = latestAIActiveSessionMapSnapshot
-    ?? localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP)
-    ?? {};
+  const activeSessionIdMap = preCleanupActiveSessionMap;
   let activeSessionMapChanged = false;
   const nextActiveSessionIdMap = { ...activeSessionIdMap };
 
@@ -152,6 +170,7 @@ export function cleanupOrphanedAISessions(activeTargetIds: Set<string>) {
     for (const scopeKey of Object.keys(currentDraftsByScope)) {
       if (scopeKey in prunedScopedTransientState.draftsByScope) continue;
       bumpDraftMutationVersion(scopeKey);
+      bumpDraftUploadGeneration(scopeKey);
     }
     setLatestAIDraftsByScopeSnapshot(prunedScopedTransientState.draftsByScope);
     emitAIStateChanged(AI_STATE_CHANGED_DRAFTS_BY_SCOPE);
@@ -198,6 +217,7 @@ let latestAIActiveSessionMapSnapshot: Record<string, string | null> | null = nul
 let latestAIDraftsByScopeSnapshot: DraftsByScope | null = null;
 let latestAIPanelViewByScopeSnapshot: PanelViewByScope | null = null;
 let latestAIDraftMutationVersionByScopeSnapshot: Record<string, number> = {};
+let latestAIDraftUploadGenerationByScopeSnapshot: Record<string, number> = {};
 
 function setLatestAISessionsSnapshot(sessions: AISession[]) {
   latestAISessionsSnapshot = sessions;
@@ -205,19 +225,6 @@ function setLatestAISessionsSnapshot(sessions: AISession[]) {
 
 function setLatestAIActiveSessionMapSnapshot(activeSessionIdMap: Record<string, string | null>) {
   latestAIActiveSessionMapSnapshot = activeSessionIdMap;
-}
-
-function buildScopeKey(scope: AISessionScope) {
-  return `${scope.type}:${scope.targetId ?? ''}`;
-}
-
-function areHostIdsEqual(left?: string[], right?: string[]) {
-  const leftIds = left ?? [];
-  const rightIds = right ?? [];
-  if (leftIds.length !== rightIds.length) return false;
-
-  const rightSet = new Set(rightIds);
-  return leftIds.every((hostId) => rightSet.has(hostId));
 }
 
 function setLatestAIDraftsByScopeSnapshot(draftsByScope: DraftsByScope) {
@@ -228,15 +235,25 @@ function setLatestAIPanelViewByScopeSnapshot(panelViewByScope: PanelViewByScope)
   latestAIPanelViewByScopeSnapshot = panelViewByScope;
 }
 
-function getDraftMutationVersion(scopeKey: string) {
-  return latestAIDraftMutationVersionByScopeSnapshot[scopeKey] ?? 0;
+function bumpDraftMutationVersion(scopeKey: string) {
+  latestAIDraftMutationVersionByScopeSnapshot = bumpDraftMutationVersionState(
+    latestAIDraftMutationVersionByScopeSnapshot,
+    scopeKey,
+  );
 }
 
-function bumpDraftMutationVersion(scopeKey: string) {
-  latestAIDraftMutationVersionByScopeSnapshot = {
-    ...latestAIDraftMutationVersionByScopeSnapshot,
-    [scopeKey]: getDraftMutationVersion(scopeKey) + 1,
-  };
+function getDraftUploadGeneration(scopeKey: string) {
+  return getDraftUploadGenerationState(
+    latestAIDraftUploadGenerationByScopeSnapshot,
+    scopeKey,
+  );
+}
+
+function bumpDraftUploadGeneration(scopeKey: string) {
+  latestAIDraftUploadGenerationByScopeSnapshot = bumpDraftUploadGenerationState(
+    latestAIDraftUploadGenerationByScopeSnapshot,
+    scopeKey,
+  );
 }
 
 export function useAIState() {
@@ -788,60 +805,6 @@ export function useAIState() {
     });
   }, [debouncedPersistSessions]);
 
-  const retargetSessionScope = useCallback((sessionId: string, scope: AISessionScope) => {
-    const currentSession = sessionsRef.current.find((session) => session.id === sessionId);
-    if (!currentSession) return;
-
-    const currentScope = currentSession.scope;
-    const scopeChanged =
-      currentScope.type !== scope.type
-      || currentScope.targetId !== scope.targetId
-      || !areHostIdsEqual(currentScope.hostIds, scope.hostIds);
-
-    const nextScopeKey = buildScopeKey(scope);
-    const currentScopeKey = buildScopeKey(currentScope);
-
-    if (scopeChanged) {
-      setSessionsRaw((prev) => {
-        let changed = false;
-        const next = prev.map((session) => {
-          if (session.id !== sessionId) return session;
-          changed = true;
-          return { ...session, scope, externalSessionId: undefined };
-        });
-
-        if (!changed) return prev;
-
-        sessionsRef.current = next;
-        setLatestAISessionsSnapshot(next);
-        persistSessions(next);
-        return next;
-      });
-    }
-
-    setActiveSessionIdMapRaw((prev) => {
-      let changed = false;
-      const next = { ...prev };
-
-      if (currentScopeKey !== nextScopeKey && next[currentScopeKey] === sessionId) {
-        delete next[currentScopeKey];
-        changed = true;
-      }
-
-      if (next[nextScopeKey] !== sessionId) {
-        next[nextScopeKey] = sessionId;
-        changed = true;
-      }
-
-      if (!changed) return prev;
-
-      setLatestAIActiveSessionMapSnapshot(next);
-      localStorageAdapter.write(STORAGE_KEY_AI_ACTIVE_SESSION_MAP, next);
-      emitAIStateChanged(STORAGE_KEY_AI_ACTIVE_SESSION_MAP);
-      return next;
-    });
-  }, [persistSessions]);
-
   // Maximum messages per session to prevent unbounded memory growth
   const MAX_MESSAGES_PER_SESSION = 500;
 
@@ -947,12 +910,15 @@ export function useAIState() {
       emitAIStateChanged(AI_STATE_CHANGED_DRAFTS_BY_SCOPE);
       return next;
     });
+    bumpDraftMutationVersion(scopeKey);
   }, []);
 
   const updateDraftIfPresent = useCallback((
     scopeKey: string,
     updater: (draft: AIDraft) => AIDraft,
   ): void => {
+    let updated = false;
+
     setDraftsByScopeRaw((prev) => {
       const currentDraft = prev[scopeKey];
       if (!currentDraft) return prev;
@@ -965,10 +931,15 @@ export function useAIState() {
         ...prev,
         [scopeKey]: nextDraft,
       };
+      updated = true;
       setLatestAIDraftsByScopeSnapshot(next);
       emitAIStateChanged(AI_STATE_CHANGED_DRAFTS_BY_SCOPE);
       return next;
     });
+
+    if (updated) {
+      bumpDraftMutationVersion(scopeKey);
+    }
   }, []);
 
   const showDraftView = useCallback((scopeKey: string) => {
@@ -1031,6 +1002,7 @@ export function useAIState() {
     if (!draftsChanged && !panelViewChanged) return;
 
     bumpDraftMutationVersion(scopeKey);
+    bumpDraftUploadGeneration(scopeKey);
 
     if (draftsChanged && nextDraftsByScope) {
       setLatestAIDraftsByScopeSnapshot(nextDraftsByScope);
@@ -1050,11 +1022,11 @@ export function useAIState() {
     inputFiles: File[],
   ) => {
     ensureDraftForScope(scopeKey, fallbackAgentId);
-    const initialMutationVersion = getDraftMutationVersion(scopeKey);
+    const initialUploadGeneration = getDraftUploadGeneration(scopeKey);
     const uploads = await convertFilesToUploads(inputFiles);
     if (uploads.length === 0) return;
 
-    if (getDraftMutationVersion(scopeKey) !== initialMutationVersion) {
+    if (getDraftUploadGeneration(scopeKey) !== initialUploadGeneration) {
       return;
     }
 
@@ -1175,7 +1147,6 @@ export function useAIState() {
     deleteSessionsByTarget,
     updateSessionTitle,
     updateSessionExternalSessionId,
-    retargetSessionScope,
     addMessageToSession,
     updateLastMessage,
     updateMessageById,
