@@ -7,7 +7,7 @@
  * - Sync status and conflict resolution
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     AlertTriangle,
     Check,
@@ -42,7 +42,9 @@ import { useI18n } from '../application/i18n/I18nProvider';
 import {
     findSyncPayloadEncryptedCredentialPaths,
 } from '../domain/credentials';
-import { isProviderReadyForSync, type CloudProvider, type ConflictInfo, type SyncPayload, type WebDAVAuthType, type WebDAVConfig, type S3Config } from '../domain/sync';
+import { isProviderReadyForSync, type CloudProvider, type ConflictInfo, type SyncPayload, type SyncResult, type WebDAVAuthType, type WebDAVConfig, type S3Config } from '../domain/sync';
+import type { ShrinkFinding } from '../domain/syncGuards';
+import { SyncBlockedBanner } from './sync/SyncBlockedBanner';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
@@ -893,20 +895,29 @@ const LocalBackupsPanel: React.FC<LocalBackupsPanelProps> = ({
                                 className="flex items-center gap-3 rounded-lg border border-border/60 p-3"
                             >
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-sm font-medium">
-                                            {getReasonLabel(backup.reason)}
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                            {formatTimestamp(backup.createdAt)}
-                                        </span>
+                                    <div className="text-sm font-medium">
+                                        {backup.syncDataVersion
+                                            ? `v${backup.syncDataVersion}`
+                                            : formatTimestamp(backup.createdAt)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
+                                        <span>{getReasonLabel(backup.reason)}</span>
+                                        {backup.syncDataVersion && (
+                                            <>
+                                                <span aria-hidden="true">·</span>
+                                                <span>{formatTimestamp(backup.createdAt)}</span>
+                                            </>
+                                        )}
                                         {backup.sourceAppVersion && backup.targetAppVersion && (
-                                            <span className="text-xs text-muted-foreground">
-                                                {t('cloudSync.localBackups.versionChange', {
-                                                    from: backup.sourceAppVersion,
-                                                    to: backup.targetAppVersion,
-                                                })}
-                                            </span>
+                                            <>
+                                                <span aria-hidden="true">·</span>
+                                                <span>
+                                                    {t('cloudSync.localBackups.versionChange', {
+                                                        from: backup.sourceAppVersion,
+                                                        to: backup.targetAppVersion,
+                                                    })}
+                                                </span>
+                                            </>
                                         )}
                                     </div>
                                     <div className="text-xs text-muted-foreground mt-1">
@@ -970,13 +981,30 @@ const LocalBackupsPanel: React.FC<LocalBackupsPanelProps> = ({
                     </DialogHeader>
                     {pendingRestoreBackup && (
                         <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium">
-                                    {getReasonLabel(pendingRestoreBackup.reason)}
-                                </span>
-                                <span className="text-muted-foreground">
-                                    {formatTimestamp(pendingRestoreBackup.createdAt)}
-                                </span>
+                            <div className="font-medium">
+                                {pendingRestoreBackup.syncDataVersion
+                                    ? `v${pendingRestoreBackup.syncDataVersion}`
+                                    : formatTimestamp(pendingRestoreBackup.createdAt)}
+                            </div>
+                            <div className="text-muted-foreground flex items-center gap-1 flex-wrap">
+                                <span>{getReasonLabel(pendingRestoreBackup.reason)}</span>
+                                {pendingRestoreBackup.syncDataVersion && (
+                                    <>
+                                        <span aria-hidden="true">·</span>
+                                        <span>{formatTimestamp(pendingRestoreBackup.createdAt)}</span>
+                                    </>
+                                )}
+                                {pendingRestoreBackup.sourceAppVersion && pendingRestoreBackup.targetAppVersion && (
+                                    <>
+                                        <span aria-hidden="true">·</span>
+                                        <span>
+                                            {t('cloudSync.localBackups.versionChange', {
+                                                from: pendingRestoreBackup.sourceAppVersion,
+                                                to: pendingRestoreBackup.targetAppVersion,
+                                            })}
+                                        </span>
+                                    </>
+                                )}
                             </div>
                             <div className="text-muted-foreground">
                                 {t('cloudSync.localBackups.counts', {
@@ -1154,6 +1182,17 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
     // Clear local data dialog
     const [showClearLocalDialog, setShowClearLocalDialog] = useState(false);
 
+    // Sync-blocked banner (Task 7) + force-push confirmation modal (Task 8)
+    const [blockedFinding, setBlockedFinding] = useState<Extract<ShrinkFinding, { suspicious: true }> | null>(null);
+    const [showForcePushConfirm, setShowForcePushConfirm] = useState(false);
+
+    // Ref for scrolling to LocalBackupsPanel when the banner's Restore button is clicked
+    const localBackupsRef = useRef<HTMLDivElement>(null);
+
+    // Active tab state — lets the banner's "Restore" button switch to the
+    // local-backups tab without a separate DOM query.
+    const [activeTab, setActiveTab] = useState<'providers' | 'status'>('providers');
+
     const ensureSyncablePayload = useCallback(
         (payload: SyncPayload): boolean => {
             const encryptedCredentialPaths = findSyncPayloadEncryptedCredentialPaths(payload);
@@ -1171,6 +1210,35 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
             setShowConflictModal(true);
         }
     }, [sync.currentConflict]);
+
+    // Subscribe to sync events to show/clear the blocked-shrink banner.
+    // Destructure the stable useCallback reference so the effect runs once on
+    // mount rather than re-subscribing on every render when `sync` object ref changes.
+    const { subscribeToEvents, getShrinkBlockedFinding } = sync;
+
+    // Hydrate from current manager state in case a shrink-block happened
+    // before this component mounted (e.g., auto-sync ran while the user
+    // was on a different tab). Without this, the banner only shows
+    // blocks that occur after Settings is open.
+    useEffect(() => {
+        const existing = getShrinkBlockedFinding();
+        if (existing) {
+            setBlockedFinding(existing);
+        }
+    }, [getShrinkBlockedFinding]);
+
+    useEffect(() => {
+        const unsub = subscribeToEvents((event) => {
+            if (event.type === 'SYNC_BLOCKED_SHRINK') {
+                if (event.finding.suspicious) {
+                    setBlockedFinding(event.finding);
+                }
+            } else if (event.type === 'SYNC_BLOCKED_CLEARED') {
+                setBlockedFinding(null);
+            }
+        });
+        return unsub;
+    }, [subscribeToEvents]);
 
     // If we have a master key but we're still locked (e.g. older installs),
     // prompt once and persist the password via safeStorage.
@@ -1423,9 +1491,30 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
                 // window's push, not ours.
                 const localPayload = onBuildPayload();
                 if (!ensureSyncablePayload(localPayload)) return;
+
+                let results: Map<CloudProvider, SyncResult> | null = null;
                 await withRestoreBarrier(async () => {
-                    await sync.syncNow(localPayload);
+                    results = await sync.syncNow(localPayload, { overrideShrink: true });
                 });
+
+                if (results) {
+                    // Apply any merged payload BEFORE closing the modal so local state
+                    // reflects what's now on cloud (in case remote changed during the merge).
+                    for (const result of (results as Map<CloudProvider, SyncResult>).values()) {
+                        if (result.mergedPayload) {
+                            await Promise.resolve(onApplyPayload(result.mergedPayload));
+                            break;
+                        }
+                    }
+                    const allOk = Array.from((results as Map<CloudProvider, SyncResult>).values()).every((r) => r.success);
+                    if (!allOk) {
+                        const firstError = Array.from((results as Map<CloudProvider, SyncResult>).values())
+                            .find((r) => !r.success)?.error
+                            ?? t('common.unknownError');
+                        toast.error(firstError, t('cloudSync.resolve.failedTitle'));
+                        return; // KEEP the modal open so user can retry / pick USE_REMOTE
+                    }
+                }
                 toast.success(t('cloudSync.resolve.uploaded'));
             }
             setShowConflictModal(false);
@@ -1528,7 +1617,20 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
                 </div>
             </div>
 
-            <Tabs defaultValue="providers" className="space-y-4">
+            {blockedFinding && (
+                <SyncBlockedBanner
+                    finding={blockedFinding}
+                    onRestore={() => {
+                        setActiveTab('status');
+                        requestAnimationFrame(() => {
+                            localBackupsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        });
+                    }}
+                    onForcePush={() => setShowForcePushConfirm(true)}
+                />
+            )}
+
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'providers' | 'status')} className="space-y-4">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="providers">{t('cloudSync.providers.title')}</TabsTrigger>
                     <TabsTrigger value="status">{t('cloudSync.status.title')}</TabsTrigger>
@@ -1658,9 +1760,11 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
                         </div>
                     )}
 
-                    <LocalBackupsPanel
-                        onApplyPayload={onApplyPayload}
-                    />
+                    <div ref={localBackupsRef}>
+                        <LocalBackupsPanel
+                            onApplyPayload={onApplyPayload}
+                        />
+                    </div>
 
                     {/* Clear Local Data */}
                     <div className="p-4 rounded-lg border border-destructive/30 bg-destructive/5">
@@ -2173,6 +2277,69 @@ const SyncDashboard: React.FC<SyncDashboardProps> = ({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Force-push confirmation modal (Task 8) */}
+            {showForcePushConfirm && blockedFinding && (
+                <Dialog open onOpenChange={(open) => !open && setShowForcePushConfirm(false)}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>{t('sync.forcePush.title')}</DialogTitle>
+                        </DialogHeader>
+                        <p className="text-sm">
+                            {t('sync.forcePush.body', {
+                                lost: blockedFinding.lost,
+                                entityType: t(`sync.entityType.${blockedFinding.entityType}`),
+                            })}
+                        </p>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowForcePushConfirm(false)}>
+                                {t('sync.forcePush.cancel')}
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                onClick={async () => {
+                                    const localPayload = onBuildPayload();
+                                    if (!ensureSyncablePayload(localPayload)) {
+                                        setShowForcePushConfirm(false);
+                                        return;
+                                    }
+                                    setShowForcePushConfirm(false);
+                                    try {
+                                        const results = await sync.syncNow(localPayload, { overrideShrink: true });
+
+                                        // Apply any merged payload BEFORE clearing the banner. If a merge happened
+                                        // during force-push (remote changed), the merged result is what the cloud
+                                        // now has — applying it to local state prevents the next sync from
+                                        // re-deleting the remote additions we just merged in.
+                                        for (const result of results.values()) {
+                                            if (result.mergedPayload) {
+                                                await Promise.resolve(onApplyPayload(result.mergedPayload));
+                                                break; // All providers share the same merged payload
+                                            }
+                                        }
+
+                                        const allOk = Array.from(results.values()).every((r) => r.success);
+                                        if (allOk) {
+                                            setBlockedFinding(null);
+                                        } else {
+                                            // Surface the failure but KEEP the banner so the user can retry or
+                                            // restore. Find the first error string to display.
+                                            const firstError = Array.from(results.values())
+                                                .find((r) => !r.success)
+                                                ?.error ?? t('sync.toast.errorTitle');
+                                            toast.error(firstError, t('sync.toast.errorTitle'));
+                                        }
+                                    } catch (err) {
+                                        toast.error(String(err), t('sync.toast.errorTitle'));
+                                    }
+                                }}
+                            >
+                                {t('sync.forcePush.confirm')}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
         </div>
     );
 };

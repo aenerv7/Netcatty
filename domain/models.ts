@@ -497,6 +497,18 @@ export interface TerminalSettings {
   // Paste
   disableBracketedPaste: boolean; // Disable bracketed paste mode (avoid ^[[200~ artifacts)
 
+  // Shell `clear` command behavior — controls whether CSI 3 J (erase scrollback)
+  // from the shell is honored. Default true matches POSIX/ncurses since 2013:
+  // `clear` clears both visible screen and scrollback. Disable to keep history
+  // across `clear` (matches iTerm2 default and pre-2013 behavior).
+  clearWipesScrollback: boolean;
+
+  // When true, typing on the keyboard does NOT clear an existing mouse
+  // selection. Lets the user select text, type a command prefix (e.g. `sz `),
+  // and then paste the still-live selection. xterm.js's default is to clear
+  // on input; this opt-in toggle restores the selection right after.
+  preserveSelectionOnInput: boolean;
+
   // Clipboard
   osc52Clipboard: 'off' | 'write-only' | 'read-write' | 'prompt'; // OSC-52 clipboard access: off, write-only (default), read-write, or prompt on read
 
@@ -614,6 +626,8 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   showServerStats: true, // Show server stats by default
   serverStatsRefreshInterval: 5, // Refresh every 5 seconds
   disableBracketedPaste: false, // Bracketed paste enabled by default
+  clearWipesScrollback: true, // POSIX-standard: shell `clear` clears scrollback too
+  preserveSelectionOnInput: false, // Opt-in: keep selection alive when typing
   osc52Clipboard: 'write-only', // OSC-52: allow remote programs to write clipboard by default
   rendererType: 'auto', // Auto-detect best renderer based on hardware
 };

@@ -110,6 +110,9 @@ export type CreateXTermRuntimeContext = {
   // Callback when remote requests clipboard read in 'prompt' mode; resolves to user's decision
   onOsc52ReadRequest?: () => Promise<boolean>;
 
+  // Set to true while we're programmatically restoring a selection so that
+  // copy-on-select listeners can suppress redundant clipboard writes.
+  isRestoringSelectionRef?: RefObject<boolean>;
 };
 
 const detectPlatform = (): XTermPlatform => {
@@ -415,6 +418,38 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       return true;
     }
 
+    // Preserve mouse selection across keystrokes when enabled. xterm.js
+    // unconditionally clears the selection on user input
+    // (SelectionService.ts: coreService.onUserInput → clearSelection).
+    // Capture the selection here, then re-apply it after xterm has
+    // processed the key + cleared. The microtask runs after both
+    // synchronous listeners, so by then either the selection is gone (and
+    // we restore) or it's still there (we no-op).
+    if (
+      ctx.terminalSettingsRef.current?.preserveSelectionOnInput &&
+      term.hasSelection()
+    ) {
+      const sel = term.getSelectionPosition();
+      if (sel) {
+        const length =
+          (sel.end.y - sel.start.y) * term.cols + (sel.end.x - sel.start.x);
+        const savedStartX = sel.start.x;
+        const savedStartY = sel.start.y;
+        queueMicrotask(() => {
+          if (term.hasSelection()) return;
+          // Bail out if scrollback trim invalidated the row index.
+          if (savedStartY >= term.buffer.active.length) return;
+          const restoreFlag = ctx.isRestoringSelectionRef;
+          if (restoreFlag) restoreFlag.current = true;
+          try {
+            term.select(savedStartX, savedStartY, length);
+          } finally {
+            if (restoreFlag) restoreFlag.current = false;
+          }
+        });
+      }
+    }
+
     const currentScheme = ctx.hotkeySchemeRef.current;
     // Use shared utility for platform detection when hotkey scheme is disabled
     const isMac = currentScheme === "mac" || (currentScheme === "disabled" && isMacPlatform());
@@ -653,7 +688,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     if (!isEraseScrollbackSequence(params)) {
       return false;
     }
-    return true;
+    // CSI 3 J — POSIX/ncurses default `clear` emits this to wipe scrollback.
+    // Honor it unless the user opts into the legacy "preserve history" behavior.
+    const wipeAllowed = ctx.terminalSettingsRef.current?.clearWipesScrollback ?? true;
+    return !wipeAllowed;
   });
 
   // Register OSC 7 handler using xterm.js parser

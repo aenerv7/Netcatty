@@ -355,14 +355,13 @@ export function useAIChatStreaming({
     err: unknown,
   ) => {
     if (abortSignal.aborted) return;
-    let errorStr: string;
-    if (err instanceof Error) errorStr = err.message;
-    else if (typeof err === 'object' && err !== null && 'message' in err) errorStr = String((err as { message: unknown }).message);
-    else if (typeof err === 'string') errorStr = err;
-    else { try { errorStr = JSON.stringify(err) ?? 'Unknown error'; } catch { errorStr = 'Unknown error'; } }
     // Log the full unsanitized error for debugging
-    console.error('[AIChatSidePanel] Stream error (full):', errorStr);
-    const errorInfo = classifyError(errorStr);
+    console.error('[AIChatSidePanel] Stream error (full):', err);
+    // Pass the raw error to classifyError so it can inspect structured
+    // fields (statusCode, responseBody) from APICallError and friends;
+    // string-coercing here would strip the metadata we need to detect
+    // 413 / HTML-error-page / parse-failure scenarios.
+    const errorInfo = classifyError(err);
     updateLastMessage(sessionId, msg => ({
       ...msg,
       statusText: '',
@@ -560,11 +559,10 @@ export function useAIChatStreaming({
             id: generateId(),
             role: 'assistant',
             content: '',
-            errorInfo: classifyError(
-              typedChunk.error instanceof Error ? typedChunk.error.message
-                : typeof typedChunk.error === 'string' ? typedChunk.error
-                : (() => { try { return JSON.stringify(typedChunk.error) ?? 'Unknown error'; } catch { return 'Unknown error'; } })(),
-            ),
+            // Pass the raw error so classifyError can detect 413 / HTML /
+            // schema-parse scenarios via structured fields (statusCode,
+            // responseBody) instead of lossy string conversion.
+            errorInfo: classifyError(typedChunk.error),
             timestamp: Date.now(),
           });
           break;

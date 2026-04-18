@@ -166,6 +166,7 @@ const getAiBridge = createLazyModule("./bridges/aiBridge.cjs");
 const getWindowManager = createLazyModule("./bridges/windowManager.cjs");
 const getScpBridge = createLazyModule("./bridges/scpBridge.cjs");
 const getVaultBackupBridge = createLazyModule("./bridges/vaultBackupBridge.cjs");
+const ptyProcessTree = require("./bridges/ptyProcessTree.cjs");
 
 // GPU settings
 // NOTE: Do not disable Chromium sandbox by default.
@@ -599,6 +600,40 @@ const registerBridges = (win) => {
       platform: process.platform,
     };
   });
+
+  // PTY child process list for busy-check before close
+  ipcMain.handle("netcatty:pty:childProcesses", async (_event, sessionId) => {
+    if (typeof sessionId !== "string") return [];
+    return ptyProcessTree.getChildProcesses(sessionId);
+  });
+
+  // Native confirmation dialog when closing a session with a running process
+  // Returns true only if the user explicitly clicks "Close". ESC/dialog-dismiss
+  // resolves as cancelId (0) → false, which is the safe default (do not close).
+  ipcMain.handle(
+    "netcatty:dialog:confirmCloseBusy",
+    async (event, payload) => {
+      const command = typeof payload?.command === "string" ? payload.command : "unknown";
+      const title = typeof payload?.title === "string" ? payload.title : "Confirm close";
+      const message = typeof payload?.message === "string"
+        ? payload.message
+        : `Process "${command}" is still running and will be terminated.`;
+      const cancelLabel = typeof payload?.cancelLabel === "string" ? payload.cancelLabel : "Cancel";
+      const closeLabel = typeof payload?.closeLabel === "string" ? payload.closeLabel : "Close";
+      const { dialog } = electronModule;
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const { response } = await dialog.showMessageBox(win || undefined, {
+        type: "warning",
+        title,
+        message,
+        buttons: [cancelLabel, closeLabel],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      return response === 1; // true = user picked Close
+    },
+  );
 
   // Clipboard helpers for renderer fallback paths (e.g. Monaco paste in Electron)
   ipcMain.handle("netcatty:clipboard:readText", async () => {

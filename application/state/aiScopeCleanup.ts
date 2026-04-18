@@ -103,8 +103,8 @@ export function pruneInactiveScopedSessions(
    * Session ids currently displayed by any live scope. A session whose
    * `scope.targetId` is inactive but whose id is still in use somewhere
    * (e.g. resumed from history into a different terminal) must not be
-   * treated as orphaned — clearing its `externalSessionId` or deleting
-   * it outright would break the chat the user is actively continuing.
+   * treated as orphaned — deleting it outright would break the chat the
+   * user is actively continuing.
    */
   activeSessionIds: Set<string> = new Set(),
 ): {
@@ -135,15 +135,7 @@ export function pruneInactiveScopedSessions(
       sessionsChanged = true;
       return [];
     }
-
-    if (!session.externalSessionId) {
-      return [session];
-    }
-
-    sessionsChanged = true;
-    return [
-      { ...session, externalSessionId: undefined },
-    ];
+    return [session];
   });
 
   return {

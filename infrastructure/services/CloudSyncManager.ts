@@ -45,6 +45,7 @@ import {
   encryptProviderSecrets,
 } from '../persistence/secureFieldAdapter';
 import { mergeSyncPayloads } from '../../domain/syncMerge';
+import { detectSuspiciousShrink, type ShrinkFinding } from '../../domain/syncGuards';
 // Extracted into a plain ESM module so the signature logic is covered by
 // the node --test harness (see syncSignature.test.mjs). The previous
 // inline implementation only hashed a handful of meta fields and was
@@ -77,6 +78,12 @@ export interface SyncManagerState {
   autoSyncEnabled: boolean;
   autoSyncInterval: number;
   syncHistory: SyncHistoryEntry[];
+  /** Last shrink finding that put us into BLOCKED state, retained until
+   * a sync actually succeeds (SYNC_COMPLETED with result.success) or
+   * `clearShrinkBlockedState()` is called. Renderer hydrates the banner
+   * from this on mount so a block that happened off-screen is still
+   * visible to the user. */
+  lastShrinkFinding?: Extract<ShrinkFinding, { suspicious: true }>;
 }
 
 export type SyncEventCallback = (event: SyncEvent) => void;
@@ -752,6 +759,12 @@ export class CloudSyncManager {
     const ghAdapter = adapter as GitHubAdapter;
 
     try {
+      // Snapshot the prior account BEFORE we overwrite providers[provider].
+      // Used as a fallback for the same-account comparison when the persisted
+      // accountId key is absent (e.g., first re-auth after upgrading to this
+      // version, where the key didn't exist yet).
+      const previousAccount = this.state.providers.github?.account;
+
       const tokens = await ghAdapter.completeAuth(deviceCode, interval, expiresAt, onPending);
 
       ++this.providerDecryptSeq.github;
@@ -769,9 +782,20 @@ export class CloudSyncManager {
       }
 
       await this.saveProviderConnection('github', this.state.providers.github);
-      // Clear merge base when (re)authenticating to a potentially different account
-      this.removeFromStorage(this.syncBaseKey('github'));
-      this.clearSyncAnchor('github');
+
+      // Only clear the merge base if the authenticated account identity differs
+      // from the previously-stored one. See notes in completePKCEAuth.
+      const newId = ghAdapter.accountInfo?.id ?? null;
+      const previousId = this.loadProviderAccountId('github') ?? previousAccount?.id ?? null;
+      const sameAccount = newId !== null && previousId !== null && newId === previousId;
+      if (!sameAccount) {
+        this.removeFromStorage(this.syncBaseKey('github'));
+        this.clearSyncAnchor('github');
+      }
+      if (newId) {
+        this.saveProviderAccountId('github', newId);
+      }
+
       this.emit({
         type: 'AUTH_COMPLETED',
         provider: 'github',
@@ -797,6 +821,12 @@ export class CloudSyncManager {
     }
 
     try {
+      // Snapshot the prior account BEFORE we overwrite providers[provider].
+      // Used as a fallback for the same-account comparison when the persisted
+      // accountId key is absent (e.g., first re-auth after upgrading to this
+      // version, where the key didn't exist yet).
+      const previousAccount = this.state.providers[provider]?.account;
+
       let tokens: OAuthTokens;
       let account;
 
@@ -825,9 +855,22 @@ export class CloudSyncManager {
       }
 
       await this.saveProviderConnection(provider, this.state.providers[provider]);
-      // Clear merge base when (re)authenticating to a potentially different account
-      this.removeFromStorage(this.syncBaseKey(provider));
-      this.clearSyncAnchor(provider);
+
+      // Only clear the merge base if the authenticated account identity differs
+      // from the previously-stored one. Same-account re-auth preserves the base
+      // so the next sync computes correct local-deletions instead of treating
+      // it as "first sync" and resurrecting zombie entries via null-base union.
+      const newId = account?.id ?? null;
+      const previousId = this.loadProviderAccountId(provider) ?? previousAccount?.id ?? null;
+      const sameAccount = newId !== null && previousId !== null && newId === previousId;
+      if (!sameAccount) {
+        this.removeFromStorage(this.syncBaseKey(provider));
+        this.clearSyncAnchor(provider);
+      }
+      if (newId) {
+        this.saveProviderAccountId(provider, newId);
+      }
+
       this.emit({
         type: 'AUTH_COMPLETED',
         provider,
@@ -912,6 +955,13 @@ export class CloudSyncManager {
     // account/resource doesn't reuse an unrelated snapshot
     this.removeFromStorage(this.syncBaseKey(provider));
     this.clearSyncAnchor(provider);
+    this.removeFromStorage(this.providerAccountIdKey(provider));
+    // Reset BLOCKED state if it was present — disconnect implicitly resolves
+    // any pending shrink-block warning since there's no provider to push to.
+    this.exitBlockedState();
+    if (this.state.syncState === 'BLOCKED') {
+      this.state.syncState = 'IDLE';
+    }
     this.notifyStateChange(); // Ensure UI updates immediately after disconnect
   }
 
@@ -1227,7 +1277,8 @@ export class CloudSyncManager {
    */
   async syncToProvider(
     provider: CloudProvider,
-    payload: SyncPayload
+    payload: SyncPayload,
+    opts: { overrideShrink?: boolean } = {},
   ): Promise<SyncResult> {
     if (this.state.securityState !== 'UNLOCKED') {
       return {
@@ -1246,6 +1297,8 @@ export class CloudSyncManager {
         error: 'Master password not available',
       };
     }
+
+    const overrideShrinkRequested = opts.overrideShrink === true;
 
     let adapter: CloudAdapter;
     try {
@@ -1310,6 +1363,30 @@ export class CloudSyncManager {
             console.info('[CloudSyncManager] First sync with no local entities — adopting remote payload directly');
           }
 
+          // Shrink guard: refuse to push a merged payload that silently deletes
+          // entities we still have in base. The merge itself is correct if local
+          // state is trustworthy — but a degraded local (keychain failure,
+          // partial load) can make merge produce a smaller-than-expected result.
+          const mergedShrink = detectSuspiciousShrink(mergedPayload, base);
+          const shouldBlockMerged = mergedShrink.suspicious && !overrideShrinkRequested;
+          const shouldForceMerged = mergedShrink.suspicious && overrideShrinkRequested;
+          if (shouldBlockMerged) {
+            this.state.syncState = 'BLOCKED';
+            this.state.lastShrinkFinding = mergedShrink;
+            this.emit({ type: 'SYNC_BLOCKED_SHRINK', provider, finding: mergedShrink });
+            this.updateProviderStatus(provider, 'error', 'Sync blocked: would delete too much');
+            return {
+              success: false,
+              provider,
+              action: 'none',
+              shrinkBlocked: true,
+              finding: mergedShrink,
+            };
+          }
+          if (shouldForceMerged) {
+            this.emit({ type: 'SYNC_FORCED', provider, finding: mergedShrink });
+          }
+
           // Encrypt and upload merged payload
           const mergedSyncedFile = await EncryptionService.encryptPayload(
             mergedPayload,
@@ -1331,6 +1408,7 @@ export class CloudSyncManager {
             // Base was persisted inside uploadToProvider before the
             // anchor advanced, so a crash between them cannot leave a
             // stale base pointing at pre-merge state.
+            this.exitBlockedState();
             this.state.syncState = 'IDLE';
 
             this.addSyncHistoryEntry({
@@ -1383,6 +1461,29 @@ export class CloudSyncManager {
         }
       }
 
+      // Shrink guard (no-conflict path): same rationale as the merge branch —
+      // refuse a payload that drops entities versus the stored base.
+      const directBase = await this.loadSyncBase(provider);
+      const directShrink = detectSuspiciousShrink(payload, directBase);
+      const shouldBlockDirect = directShrink.suspicious && !overrideShrinkRequested;
+      const shouldForceDirect = directShrink.suspicious && overrideShrinkRequested;
+      if (shouldBlockDirect) {
+        this.state.syncState = 'BLOCKED';
+        this.state.lastShrinkFinding = directShrink;
+        this.emit({ type: 'SYNC_BLOCKED_SHRINK', provider, finding: directShrink });
+        this.updateProviderStatus(provider, 'error', 'Sync blocked: would delete too much');
+        return {
+          success: false,
+          provider,
+          action: 'none',
+          shrinkBlocked: true,
+          finding: directShrink,
+        };
+      }
+      if (shouldForceDirect) {
+        this.emit({ type: 'SYNC_FORCED', provider, finding: directShrink });
+      }
+
       // 2. Encrypt
       const syncedFile = await EncryptionService.encryptPayload(
         payload,
@@ -1399,7 +1500,9 @@ export class CloudSyncManager {
       const result = await this.uploadToProvider(provider, adapter, syncedFile, payload);
 
       if (result.success) {
+        this.exitBlockedState();
         this.state.syncState = 'IDLE';
+        this.state.lastShrinkFinding = undefined;
       } else {
         this.state.syncState = 'ERROR';
         if (result.error) {
@@ -1572,12 +1675,14 @@ export class CloudSyncManager {
       // Download and return remote data
       const payload = await this.downloadFromProvider(provider);
       this.state.currentConflict = null;
+      this.exitBlockedState();
       this.state.syncState = 'IDLE';
       this.notifyStateChange(); // Notify UI of conflict resolution
       return payload;
     } else {
       // USE_LOCAL - just clear conflict, caller will re-sync
       this.state.currentConflict = null;
+      this.exitBlockedState();
       this.state.syncState = 'IDLE';
       this.notifyStateChange(); // Notify UI of conflict resolution
       return null;
@@ -1585,12 +1690,57 @@ export class CloudSyncManager {
   }
 
   /**
+   * Side-effect helper: called BEFORE any syncState assignment that transitions
+   * away from BLOCKED. Clears lastShrinkFinding and emits SYNC_BLOCKED_CLEARED
+   * so the UI banner (and any other subscriber) gets a single, authoritative
+   * "block resolved" signal. The guard on syncState === 'BLOCKED' makes it safe
+   * to call unconditionally at every non-BLOCKED assignment site — it no-ops
+   * when the state was already non-BLOCKED.
+   */
+  private exitBlockedState(): void {
+    if (this.state.syncState === 'BLOCKED') {
+      this.state.lastShrinkFinding = undefined;
+      this.emit({ type: 'SYNC_BLOCKED_CLEARED' });
+    }
+  }
+
+  /**
+   * Reset BLOCKED back to IDLE without going through a successful sync.
+   * Used by post-merge round-trip to avoid wedging the manager in BLOCKED
+   * when the merge already produced safe local state and the round-trip
+   * push is just an optimization.
+   */
+  clearShrinkBlockedState(): void {
+    if (this.state.syncState === 'BLOCKED') {
+      this.exitBlockedState();
+      this.state.syncState = 'IDLE';
+      this.notifyStateChange();
+    }
+  }
+
+  /**
+   * Returns the last shrink finding that triggered BLOCKED state, or
+   * null if not currently blocked. Used by the renderer to hydrate the
+   * SyncBlockedBanner when opening Settings after a block happened
+   * off-screen.
+   */
+  getShrinkBlockedFinding(): Extract<ShrinkFinding, { suspicious: true }> | null {
+    if (this.state.syncState !== 'BLOCKED') return null;
+    return this.state.lastShrinkFinding ?? null;
+  }
+
+  /**
    * Sync to all connected providers
    */
-  async syncAllProviders(inputPayload?: SyncPayload): Promise<Map<CloudProvider, SyncResult>> {
+  async syncAllProviders(
+    inputPayload?: SyncPayload,
+    opts: { overrideShrink?: boolean } = {},
+  ): Promise<Map<CloudProvider, SyncResult>> {
     const results = new Map<CloudProvider, SyncResult>();
     let payload = inputPayload;
     let wasMerged = false;
+
+    const overrideShrinkRequested = opts.overrideShrink === true;
 
     if (!payload) {
       // Caller should provide payload from app state
@@ -1714,7 +1864,6 @@ export class CloudSyncManager {
             const result = mergeSyncPayloads(providerBase, merged, remotePayload);
             merged = result.payload;
           }
-          merged = result.payload;
         }
         const mergeResult = { payload: merged };
 
@@ -1778,6 +1927,80 @@ export class CloudSyncManager {
           }
         }
         return results;
+      }
+    }
+
+    // Shrink guard (multi-provider): check the final outgoing payload against
+    // each provider's stored base. If ANY provider would suffer a suspicious
+    // shrink, block ALL uploads — the same payload goes to every provider, so
+    // any one provider's "would lose too much" is a global block. Override flag
+    // is one-shot and clears regardless of outcome.
+    const shrinkSuspectByProvider: Array<{
+      provider: CloudProvider;
+      finding: Extract<ShrinkFinding, { suspicious: true }>;
+    }> = [];
+    const candidateProviders = checkResults
+      .filter((r) => !r.error && !r.check?.conflict && r.adapter)
+      .map((r) => r.provider as CloudProvider);
+    for (const provider of candidateProviders) {
+      const providerBase = await this.loadSyncBase(provider);
+      const finding = detectSuspiciousShrink(payload, providerBase);
+      if (finding.suspicious) {
+        shrinkSuspectByProvider.push({ provider, finding });
+      }
+    }
+    const shouldBlockAll = shrinkSuspectByProvider.length > 0 && !overrideShrinkRequested;
+    const shouldForceAll = shrinkSuspectByProvider.length > 0 && overrideShrinkRequested;
+
+    if (shouldBlockAll) {
+      this.state.syncState = 'BLOCKED';
+      this.state.lastShrinkFinding = shrinkSuspectByProvider[0].finding;
+      for (const { provider, finding } of shrinkSuspectByProvider) {
+        this.emit({ type: 'SYNC_BLOCKED_SHRINK', provider, finding });
+        this.updateProviderStatus(provider, 'error', 'Sync blocked: would delete too much');
+        results.set(provider, {
+          success: false,
+          provider,
+          action: 'none',
+          shrinkBlocked: true,
+          finding,
+        });
+      }
+      // Process check errors from the parallel check phase so a provider that
+      // failed during checkProviderConflict is not silently dropped from results.
+      checkResults.forEach((r) => {
+        if (r.error) {
+          results.set(r.provider as CloudProvider, {
+            success: false,
+            provider: r.provider as CloudProvider,
+            action: 'none',
+            error: r.error,
+          });
+          this.updateProviderStatus(r.provider as CloudProvider, 'error', r.error);
+          this.emit({ type: 'SYNC_ERROR', provider: r.provider as CloudProvider, error: r.error });
+        }
+      });
+      // Providers in candidateProviders that didn't trip the shrink check still
+      // share the same payload — mark them as not-uploaded so the caller doesn't
+      // think a "successful" no-op happened.
+      const blockedProviders = new Set(shrinkSuspectByProvider.map((e) => e.provider));
+      for (const provider of candidateProviders) {
+        if (!results.has(provider) && !blockedProviders.has(provider)) {
+          results.set(provider, {
+            success: false,
+            provider,
+            action: 'none',
+            error: 'Sync blocked: another provider would lose too much data',
+          });
+          this.updateProviderStatus(provider, 'error', 'Sync blocked due to peer provider');
+        }
+      }
+      return results;
+    }
+
+    if (shouldForceAll) {
+      for (const { provider, finding } of shrinkSuspectByProvider) {
+        this.emit({ type: 'SYNC_FORCED', provider, finding });
       }
     }
 
@@ -1857,7 +2080,9 @@ export class CloudSyncManager {
     // 5. Final State Update
     const hasSuccess = Array.from(results.values()).some((r) => r.success);
     if (hasSuccess) {
+      this.exitBlockedState();
       this.state.syncState = 'IDLE';
+      this.state.lastShrinkFinding = undefined;
 
       // If a merge happened, attach the merged payload to successful results
       // so callers can apply remote additions to local state
@@ -1958,6 +2183,18 @@ export class CloudSyncManager {
   private syncBaseKey(provider?: CloudProvider): string {
     const suffix = provider ? `_${provider}` : '';
     return `${SYNC_STORAGE_KEYS.SYNC_BASE_PAYLOAD}${suffix}`;
+  }
+
+  private providerAccountIdKey(provider: CloudProvider): string {
+    return `netcatty.sync.accountId.${provider}`;
+  }
+
+  private loadProviderAccountId(provider: CloudProvider): string | null {
+    return this.loadFromStorage<string>(this.providerAccountIdKey(provider)) ?? null;
+  }
+
+  private saveProviderAccountId(provider: CloudProvider, id: string): void {
+    this.saveToStorage(this.providerAccountIdKey(provider), id);
   }
 
   async saveSyncBase(payload: SyncPayload, provider?: CloudProvider): Promise<void> {

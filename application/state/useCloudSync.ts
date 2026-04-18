@@ -26,7 +26,9 @@ import {
 import {
   getCloudSyncManager,
   type SyncManagerState,
+  type SyncEventCallback,
 } from '../../infrastructure/services/CloudSyncManager';
+import type { ShrinkFinding } from '../../domain/syncGuards';
 import { netcattyBridge } from '../../infrastructure/services/netcattyBridge';
 import type { DeviceFlowState } from '../../infrastructure/services/adapters/GitHubAdapter';
 
@@ -55,7 +57,7 @@ export interface CloudSyncHook {
   // Computed
   hasAnyConnectedProvider: boolean;
   connectedProviderCount: number;
-  overallSyncStatus: 'none' | 'synced' | 'syncing' | 'error' | 'conflict';
+  overallSyncStatus: 'none' | 'synced' | 'syncing' | 'error' | 'conflict' | 'blocked';
   
   // Master Key Actions
   setupMasterKey: (password: string, confirmPassword: string) => Promise<void>;
@@ -86,8 +88,8 @@ export interface CloudSyncHook {
   resetProviderStatus: (provider: CloudProvider) => void;
 
   // Sync Actions
-  syncNow: (payload: SyncPayload) => Promise<Map<CloudProvider, SyncResult>>;
-  syncToProvider: (provider: CloudProvider, payload: SyncPayload) => Promise<SyncResult>;
+  syncNow: (payload: SyncPayload, opts?: { overrideShrink?: boolean }) => Promise<Map<CloudProvider, SyncResult>>;
+  syncToProvider: (provider: CloudProvider, payload: SyncPayload, opts?: { overrideShrink?: boolean }) => Promise<SyncResult>;
   downloadFromProvider: (provider: CloudProvider) => Promise<SyncPayload | null>;
   resolveConflict: (resolution: ConflictResolution) => Promise<SyncPayload | null>;
 
@@ -116,6 +118,12 @@ export interface CloudSyncHook {
   formatLastSync: (timestamp?: number) => string;
   getProviderDotColor: (provider: CloudProvider) => string;
   refresh: () => void;
+
+  // Event subscription (for non-state events like SYNC_BLOCKED_SHRINK)
+  subscribeToEvents: (callback: SyncEventCallback) => () => void;
+
+  // Shrink-block state query (for banner hydration on mount)
+  getShrinkBlockedFinding: () => Extract<ShrinkFinding, { suspicious: true }> | null;
 }
 
 // ============================================================================
@@ -190,7 +198,8 @@ export const useCloudSync = (): CloudSyncHook => {
     ).length;
   }, [state.providers]);
   
-  const overallSyncStatus = useMemo((): 'none' | 'synced' | 'syncing' | 'error' | 'conflict' => {
+  const overallSyncStatus = useMemo((): 'none' | 'synced' | 'syncing' | 'error' | 'conflict' | 'blocked' => {
+    if (state.syncState === 'BLOCKED') return 'blocked';
     if (state.syncState === 'CONFLICT') return 'conflict';
     if (state.syncState === 'ERROR') return 'error';
     if (state.syncState === 'SYNCING') return 'syncing';
@@ -422,20 +431,30 @@ export const useCloudSync = (): CloudSyncHook => {
     throw new Error('Vault is locked');
   }, []);
 
-  const syncNowWithUnlock = useCallback(async (payload: SyncPayload) => {
+  const syncNowWithUnlock = useCallback(async (payload: SyncPayload, opts?: { overrideShrink?: boolean }) => {
     await ensureUnlocked();
-    return await manager.syncAllProviders(payload);
+    return await manager.syncAllProviders(payload, opts);
   }, [ensureUnlocked]);
 
-  const syncToProviderWithUnlock = useCallback(async (provider: CloudProvider, payload: SyncPayload) => {
+  const syncToProviderWithUnlock = useCallback(async (provider: CloudProvider, payload: SyncPayload, opts?: { overrideShrink?: boolean }) => {
     await ensureUnlocked();
-    return await manager.syncToProvider(provider, payload);
+    return await manager.syncToProvider(provider, payload, opts);
   }, [ensureUnlocked]);
 
   const downloadFromProviderWithUnlock = useCallback(async (provider: CloudProvider) => {
     await ensureUnlocked();
     return await manager.downloadFromProvider(provider);
   }, [ensureUnlocked]);
+
+  const subscribeToEvents = useCallback(
+    (callback: SyncEventCallback) => manager.subscribe(callback),
+    [],
+  );
+
+  const getShrinkBlockedFinding = useCallback(
+    () => manager.getShrinkBlockedFinding(),
+    [],
+  );
 
   const resolveConflictWithUnlock = useCallback(async (resolution: ConflictResolution) => {
     await ensureUnlocked();
@@ -505,6 +524,12 @@ export const useCloudSync = (): CloudSyncHook => {
     formatLastSync,
     getProviderDotColor,
     refresh,
+
+    // Event subscription
+    subscribeToEvents,
+
+    // Shrink-block state query
+    getShrinkBlockedFinding,
   };
 };
 

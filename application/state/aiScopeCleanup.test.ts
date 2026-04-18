@@ -65,7 +65,7 @@ test("pruneInactiveScopedTransientState removes closed workspace and terminal sc
   });
 });
 
-test("pruneInactiveScopedSessions removes non-restorable terminal chats and closed workspaces", () => {
+test("pruneInactiveScopedSessions preserves restorable terminal ACP ids across reconnects", () => {
   const sessions = [
     createSession("terminal-restorable", {
       type: "terminal",
@@ -99,10 +99,7 @@ test("pruneInactiveScopedSessions removes non-restorable terminal chats and clos
     "workspace-closed",
   ]);
   assert.deepEqual(next.sessions, [
-    {
-      ...sessions[0],
-      externalSessionId: undefined,
-    },
+    sessions[0],
     sessions[3],
   ]);
 });

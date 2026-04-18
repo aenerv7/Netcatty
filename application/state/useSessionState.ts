@@ -141,19 +141,48 @@ export const useSessionState = () => {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status } : s));
   }, []);
 
+  const closeWorkspace = useCallback((workspaceId: string) => {
+    setWorkspaces(prevWorkspaces => {
+      const remainingWorkspaces = prevWorkspaces.filter(w => w.id !== workspaceId);
+
+      setSessions(prevSessions => prevSessions.filter(s => s.workspaceId !== workspaceId));
+
+      const currentActiveTabId = activeTabStore.getActiveTabId();
+      if (currentActiveTabId === workspaceId) {
+        if (remainingWorkspaces.length > 0) {
+          setActiveTabId(remainingWorkspaces[remainingWorkspaces.length - 1].id);
+        } else {
+          setActiveTabId('vault');
+        }
+      }
+
+      return remainingWorkspaces;
+    });
+  }, [setActiveTabId]);
+
   const closeSession = useCallback((sessionId: string, e?: MouseEvent) => {
     e?.stopPropagation();
-    
+
+    // Pre-compute outside the setSessions updater so we don't depend on React
+    // having run the updater by the time we queue the microtask. React 18+ does
+    // not guarantee updater execution timing under concurrent scheduling.
+    const sessionBeingClosed = sessions.find(s => s.id === sessionId);
+    const workspaceIdToMaybeClose =
+      sessionBeingClosed?.workspaceId &&
+      sessions.every(s => s.id === sessionId || s.workspaceId !== sessionBeingClosed.workspaceId)
+        ? sessionBeingClosed.workspaceId
+        : undefined;
+
     setSessions(prevSessions => {
       const targetSession = prevSessions.find(s => s.id === sessionId);
       const wsId = targetSession?.workspaceId;
-      
+
       setWorkspaces(prevWorkspaces => {
         let removedWorkspaceId: string | null = null;
         let nextWorkspaces = prevWorkspaces;
         let dissolvedWorkspaceId: string | null = null;
         let lastRemainingSessionId: string | null = null;
-        
+
         if (wsId) {
           nextWorkspaces = prevWorkspaces
             .map(ws => {
@@ -163,7 +192,7 @@ export const useSessionState = () => {
                 removedWorkspaceId = ws.id;
                 return null;
               }
-              
+
               // Check if only 1 session remains - dissolve workspace
               const remainingSessionIds = collectSessionIds(pruned);
               if (remainingSessionIds.length === 1) {
@@ -171,12 +200,12 @@ export const useSessionState = () => {
                 lastRemainingSessionId = remainingSessionIds[0];
                 return null;
               }
-              
+
               return { ...ws, root: pruned };
             })
             .filter((ws): ws is Workspace => Boolean(ws));
         }
-        
+
         const remainingSessions = prevSessions.filter(s => s.id !== sessionId);
         const fallbackWorkspace = nextWorkspaces[nextWorkspaces.length - 1];
         const fallbackSolo = remainingSessions.filter(s => !s.workspaceId).slice(-1)[0];
@@ -198,10 +227,10 @@ export const useSessionState = () => {
         } else if (wsId && currentActiveTabId === wsId && !nextWorkspaces.find(w => w.id === wsId)) {
           setActiveTabId(getFallback());
         }
-        
+
         return nextWorkspaces;
       });
-      
+
       // Check if we need to dissolve a workspace (convert remaining session to orphan)
       if (targetSession?.workspaceId) {
         const ws = workspaces.find(w => w.id === targetSession.workspaceId);
@@ -218,29 +247,14 @@ export const useSessionState = () => {
           }
         }
       }
-	      
-	      return prevSessions.filter(s => s.id !== sessionId);
-	    });
-	  }, [workspaces, setActiveTabId]);
 
-  const closeWorkspace = useCallback((workspaceId: string) => {
-    setWorkspaces(prevWorkspaces => {
-      const remainingWorkspaces = prevWorkspaces.filter(w => w.id !== workspaceId);
-      
-      setSessions(prevSessions => prevSessions.filter(s => s.workspaceId !== workspaceId));
-      
-      const currentActiveTabId = activeTabStore.getActiveTabId();
-      if (currentActiveTabId === workspaceId) {
-        if (remainingWorkspaces.length > 0) {
-          setActiveTabId(remainingWorkspaces[remainingWorkspaces.length - 1].id);
-        } else {
-          setActiveTabId('vault');
-        }
-      }
-      
-	      return remainingWorkspaces;
-	    });
-	  }, [setActiveTabId]);
+      return prevSessions.filter(s => s.id !== sessionId);
+    });
+
+    if (workspaceIdToMaybeClose) {
+      queueMicrotask(() => closeWorkspace(workspaceIdToMaybeClose!));
+    }
+  }, [sessions, workspaces, setActiveTabId, closeWorkspace]);
 
   const startSessionRename = useCallback((sessionId: string) => {
     setSessions(prevSessions => {
@@ -654,16 +668,22 @@ export const useSessionState = () => {
   const copySession = useCallback((sessionId: string, options?: {
     localShellType?: TerminalSession['shellType'];
   }) => {
+    // Pre-allocate the new id outside the updater so StrictMode's
+    // double-invocation of the functional updater doesn't mint two ids.
+    const newSessionId = crypto.randomUUID();
+
     setSessions(prevSessions => {
       const session = prevSessions.find(s => s.id === sessionId);
+      // Source may have been closed between the user's action and this
+      // update running; in that case skip entirely — do NOT switch the
+      // active tab or insert into tabOrder, which would leave dangling ids.
       if (!session) return prevSessions;
       const nextShellType = session.protocol === 'local'
         ? options?.localShellType
         : session.shellType;
 
-      // Create a new session with the same connection info
       const newSession: TerminalSession = {
-        id: crypto.randomUUID(),
+        id: newSessionId,
         hostId: session.hostId,
         hostLabel: session.hostLabel,
         hostname: session.hostname,
@@ -681,10 +701,40 @@ export const useSessionState = () => {
         localShellIcon: session.localShellIcon,
       };
 
-      setActiveTabId(newSession.id);
+      // Schedule the activeTab + tabOrder updates only when creation
+      // actually happens. These nested setStates are idempotent, so
+      // StrictMode's double-invocation is harmless.
+      setActiveTabId(newSessionId);
+      setTabOrder(prevTabOrder => {
+        // Fast path: source is already tracked in tabOrder — splice directly.
+        const directIdx = prevTabOrder.indexOf(sessionId);
+        if (directIdx !== -1) {
+          const next = [...prevTabOrder];
+          next.splice(directIdx + 1, 0, newSessionId);
+          return next;
+        }
+        // Fallback: source is only in the derived tab collections. Rebuild the
+        // effective order (same pattern as reorderTabs) to locate its position.
+        const allTabIds = [
+          ...orphanSessions.map(s => s.id),
+          ...workspaces.map(w => w.id),
+          ...logViews.map(lv => lv.id),
+        ];
+        const allTabIdSet = new Set(allTabIds);
+        const orderedIds = prevTabOrder.filter(id => allTabIdSet.has(id));
+        const orderedIdSet = new Set(orderedIds);
+        const newIds = allTabIds.filter(id => !orderedIdSet.has(id));
+        const currentOrder = [...orderedIds, ...newIds];
+        const sourceIdx = currentOrder.indexOf(sessionId);
+        if (sourceIdx === -1) return [...prevTabOrder, newSessionId];
+        const next = [...currentOrder];
+        next.splice(sourceIdx + 1, 0, newSessionId);
+        return next;
+      });
+
       return [...prevSessions, newSession];
     });
-  }, [setActiveTabId]);
+  }, [orphanSessions, workspaces, logViews, setActiveTabId]);
 
   // Toggle broadcast mode for a workspace
   const toggleBroadcast = useCallback((workspaceId: string) => {
