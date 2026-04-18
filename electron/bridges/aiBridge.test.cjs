@@ -129,6 +129,9 @@ function loadBridgeWithMocks(options = {}) {
       createACPProvider(args) {
         providerCreationCount += 1;
         providerCreationArgs.push(args);
+        if (typeof options.createACPProvider === "function") {
+          return options.createACPProvider({ args, providerCreationCount, fallbackProvider });
+        }
         if (providerCreationCount === 1) {
           return {
             tools: {},
@@ -402,6 +405,128 @@ test("clears replay fallback after a user-cancelled recovered turn so the fresh 
     streamCalls[1].length,
     1,
     "follow-up after cancel must not re-replay compact history",
+  );
+});
+
+test("replays compact history on the first turn after app restart even when session/load 'succeeds'", async () => {
+  // Regression for #753: after an app restart, the renderer still has
+  // the prior chat's externalSessionId and full message history in
+  // storage, and passes both to the bridge on the next send. The
+  // externalSessionId becomes existingSessionId → resumeSessionId in
+  // the bridge, and createACPProvider spawns a fresh agent process
+  // with that id.
+  //
+  // Problem: some ACP agents (Copilot CLI, some Codex builds) don't
+  // error on session/load when the id is stale — they silently start
+  // a new session. The catch-block fallback never fires, so
+  // historyReplayFallback stays false and the stream sends only the
+  // latest prompt. The agent says "no previous records" even though
+  // the UI shows the prior conversation.
+  //
+  // Fix: when we're spawning a new provider AND telling it to resume
+  // an existing session id AND we have compact history to replay,
+  // preload historyReplayFallback=true. The first turn includes the
+  // replay; after it streams real content the flag clears so steady-
+  // state cost stays at just the latest prompt.
+  const { bridge, streamCalls, providerCreationArgs, restore } = loadBridgeWithMocks({
+    createACPProvider({ fallbackProvider }) {
+      // Pretend session/load succeeded silently — no error thrown, but
+      // also no real context. This models Copilot CLI's behavior.
+      return fallbackProvider;
+    },
+    streamText({ streamCalls: callsRef }) {
+      // Return content so the post-stream hook clears the flag after.
+      if (callsRef.length === 1) {
+        const chunks = [{ type: "text-delta", text: "ok" }];
+        let i = 0;
+        return {
+          fullStream: {
+            getReader: () => ({
+              async read() {
+                if (i < chunks.length) return { done: false, value: chunks[i++] };
+                return { done: true, value: undefined };
+              },
+              releaseLock() {},
+            }),
+          },
+        };
+      }
+      return createEmptyStreamResult();
+    },
+  });
+
+  const ipcMain = createIpcMainStub();
+
+  bridge.init({
+    sessions: new Map(),
+    sftpClients: new Map(),
+    electronModule: { app: { getPath: () => process.cwd() } },
+  });
+  bridge.registerHandlers(ipcMain);
+
+  const streamHandler = ipcMain.handlers.get("netcatty:ai:acp:stream");
+  const historyMessages = [{ role: "user", content: "prior constraint: 不要提交" }];
+  const event = { sender: { id: 1 } };
+
+  try {
+    // First turn after app restart. existingSessionId is set (renderer
+    // persisted it), historyMessages is non-empty.
+    await streamHandler(event, {
+      requestId: "req-restart-1",
+      chatSessionId: "chat-restart",
+      acpCommand: "fake-acp",
+      acpArgs: [],
+      prompt: "what did we discuss?",
+      providerId: undefined,
+      model: undefined,
+      existingSessionId: "stored-session-from-storage",
+      historyMessages,
+      images: undefined,
+      toolIntegrationMode: "mcp",
+      defaultTargetSession: undefined,
+      userSkillsContext: undefined,
+    });
+
+    // Second turn — should send only the latest prompt now.
+    await streamHandler(event, {
+      requestId: "req-restart-2",
+      chatSessionId: "chat-restart",
+      acpCommand: "fake-acp",
+      acpArgs: [],
+      prompt: "and now continue",
+      providerId: undefined,
+      model: undefined,
+      existingSessionId: "stored-session-from-storage",
+      historyMessages,
+      images: undefined,
+      toolIntegrationMode: "mcp",
+      defaultTargetSession: undefined,
+      userSkillsContext: undefined,
+    });
+  } finally {
+    restore();
+  }
+
+  // Single provider creation — session/load "succeeded" so no fallback.
+  assert.equal(providerCreationArgs.length, 1);
+  assert.equal(providerCreationArgs[0].existingSessionId, "stored-session-from-storage");
+
+  // First turn MUST include the compact history + latest prompt.
+  // Regression target: pre-fix, streamCalls[0] had length 1 (latest only).
+  assert.equal(
+    streamCalls[0].length,
+    2,
+    "first turn after app restart must preload compact history as a hedge",
+  );
+  assert.deepEqual(streamCalls[0][0], historyMessages[0]);
+
+  // Second turn uses steady-state behavior (latest only). This confirms
+  // the flag clears after one successful streamed turn and the hedge
+  // doesn't keep replaying forever.
+  assert.equal(
+    streamCalls[1].length,
+    1,
+    "steady-state turns must not keep replaying history",
   );
 });
 

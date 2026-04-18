@@ -2509,10 +2509,28 @@ function registerHandlers(ipcMain) {
         // change (permission mode / MCP scope / auth fingerprint) between
         // a still-empty recovered turn and its retry would drop the flag
         // and lose the recovered conversation on the next turn.
+        //
+        // Also hedge whenever we're spawning a brand-new provider process
+        // that's being told to resume an existing session id (the common
+        // app-restart / reconnect flow — #753). Some ACP agents (Copilot
+        // CLI, some Codex builds) silently spin up a fresh session
+        // instead of erroring with "session not found", so the catch-
+        // block fallback below never fires and the agent ends up with
+        // zero prior context. Scheduling a compact replay on the first
+        // turn guarantees the agent sees durable constraints and the
+        // last few raw turns even when session/load is effectively a
+        // no-op. After the first successful streamed turn the flag
+        // clears (post-stream hook), so steady-state cost stays at
+        // just the latest prompt.
         const preserveHistoryReplayFallback =
           shouldResetProviderForHistoryReplay ||
           Boolean(
             providerEntry?.historyReplayFallback &&
+            Array.isArray(historyMessages) &&
+            historyMessages.length > 0,
+          ) ||
+          Boolean(
+            resumeSessionId &&
             Array.isArray(historyMessages) &&
             historyMessages.length > 0,
           );

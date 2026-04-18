@@ -58,6 +58,7 @@ import {
 } from './ai/draftSendGate';
 import { getSessionScopeMatchRank } from './ai/sessionScopeMatch';
 import { SESSION_HISTORY_ROW_CLASSNAMES } from './ai/sessionHistoryLayout';
+import { selectDraftForAgentSwitch } from '../application/state/aiDraftState';
 import type { CodexIntegrationStatus } from './settings/tabs/ai/types';
 import {
   useAIChatStreaming,
@@ -975,12 +976,15 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   );
 
   const handleAgentChange = useCallback((agentId: string) => {
+    showScopeDraftView();
     ensureScopeDraft(agentId);
     updateScopeDraft(agentId, (draft) => ({
-      ...draft,
-      agentId,
+      ...selectDraftForAgentSwitch(
+        draft,
+        agentId,
+        Boolean(activeSessionRef.current?.messages.length),
+      ),
     }));
-    showScopeDraftView();
     setShowHistory(false);
   }, [ensureScopeDraft, showScopeDraftView, updateScopeDraft]);
 

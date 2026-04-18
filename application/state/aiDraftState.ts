@@ -145,6 +145,31 @@ export function ensureDraftForScopeState(
   };
 }
 
+export function selectDraftForAgentSwitch(
+  currentDraft: AIDraft | null | undefined,
+  agentId: string,
+  startFresh: boolean,
+): AIDraft {
+  const hasPendingDraftContent = Boolean(
+    currentDraft
+    && (
+      currentDraft.text.length > 0
+      || currentDraft.attachments.length > 0
+      || currentDraft.selectedUserSkillSlugs.length > 0
+    ),
+  );
+
+  if (startFresh && !hasPendingDraftContent) {
+    return createEmptyDraft(agentId);
+  }
+
+  const baseDraft = currentDraft ?? createEmptyDraft(agentId);
+  return {
+    ...baseDraft,
+    agentId,
+  };
+}
+
 export function clearScopeDraftState(
   draftsByScope: DraftsByScope,
   panelViewByScope: PanelViewByScope,

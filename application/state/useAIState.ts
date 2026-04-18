@@ -98,8 +98,7 @@ export function cleanupOrphanedAISessions(activeTargetIds: Set<string>) {
   // Sessions shown by a still-live scope must be protected from cleanup
   // even when their own `scope.targetId` points at a closed terminal —
   // history can be resumed into a different terminal and we must not
-  // clear its `externalSessionId` (or delete it outright) while it's
-  // actively being used.
+  // delete it outright while it's actively being used.
   const preCleanupActiveSessionMap = latestAIActiveSessionMapSnapshot
     ?? localStorageAdapter.read<Record<string, string | null>>(STORAGE_KEY_AI_ACTIVE_SESSION_MAP)
     ?? {};
@@ -943,7 +942,7 @@ export function useAIState() {
   }, []);
 
   const showDraftView = useCallback((scopeKey: string) => {
-    const currentPanelViewByScope = latestAIPanelViewByScopeSnapshot ?? panelViewByScope;
+    const currentPanelViewByScope = panelViewByScope;
     let nextActiveSessionIdMap: Record<string, string | null> | null = null;
     let nextPanelViewByScope: PanelViewByScope | null = null;
     let activeSessionMapChanged = false;
@@ -980,7 +979,7 @@ export function useAIState() {
   }, [setPanelViewByScope]);
 
   const clearDraftForScope = useCallback((scopeKey: string) => {
-    const currentPanelViewByScope = latestAIPanelViewByScopeSnapshot ?? panelViewByScope;
+    const currentPanelViewByScope = panelViewByScope;
     let nextDraftsByScope: DraftsByScope | null = null;
     let nextPanelViewByScope: PanelViewByScope | null = null;
     let draftsChanged = false;
