@@ -1068,6 +1068,50 @@ function App({ settings }: { settings: SettingsState }) {
     [sessions, t],
   );
 
+  const closeTabsInFlightRef = useRef(false);
+
+  // Close many tabs at once with a single batched busy-shell confirmation.
+  // Used by the "Close all / Close others / Close to the right" context-menu
+  // actions on tabs (#748).
+  const closeTabsBatch = useCallback(
+    async (targetIds: string[]) => {
+      if (targetIds.length === 0) return;
+      if (closeTabsInFlightRef.current) return;
+
+      // Expand workspace ids into their constituent session ids so the busy
+      // probe sees every local shell that's about to be killed.
+      const sessionIdsToProbe: string[] = [];
+      for (const tabId of targetIds) {
+        const ws = workspaces.find((w) => w.id === tabId);
+        if (ws) {
+          for (const s of sessions) {
+            if (s.workspaceId === tabId) sessionIdsToProbe.push(s.id);
+          }
+        } else if (sessions.find((s) => s.id === tabId)) {
+          sessionIdsToProbe.push(tabId);
+        }
+      }
+
+      closeTabsInFlightRef.current = true;
+      try {
+        const ok = await confirmIfBusyLocalTerminal(sessionIdsToProbe);
+        if (!ok) return;
+        for (const tabId of targetIds) {
+          if (workspaces.find((w) => w.id === tabId)) {
+            closeWorkspace(tabId);
+          } else if (sessions.find((s) => s.id === tabId)) {
+            closeSession(tabId);
+          } else if (logViews.find((lv) => lv.id === tabId)) {
+            closeLogView(tabId);
+          }
+        }
+      } finally {
+        closeTabsInFlightRef.current = false;
+      }
+    },
+    [workspaces, sessions, logViews, confirmIfBusyLocalTerminal, closeWorkspace, closeSession, closeLogView],
+  );
+
   // Shared hotkey action handler - used by both global handler and terminal callback
   const executeHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
     // Build complete tab list: vault + (sftp when visible) + sessions/workspaces.
@@ -1630,6 +1674,7 @@ function App({ settings }: { settings: SettingsState }) {
         onRenameWorkspace={startWorkspaceRename}
         onCloseWorkspace={closeWorkspace}
         onCloseLogView={closeLogView}
+        onCloseTabsBatch={closeTabsBatch}
         onOpenQuickSwitcher={handleOpenQuickSwitcher}
         onToggleTheme={handleToggleTheme}
         onOpenSettings={handleOpenSettings}

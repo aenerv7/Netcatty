@@ -12,7 +12,7 @@ import { Host, TerminalSession, Workspace } from '../types';
 import { DISTRO_LOGOS, DISTRO_COLORS } from './DistroAvatar';
 import { getShellIconPath, isMonochromeShellIcon } from '../lib/useDiscoveredShells';
 import { Button } from './ui/button';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from './ui/context-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from './ui/context-menu';
 import { SyncStatusButton } from './SyncStatusButton';
 
 // Helper styles for Electron drag regions (use type assertion to include non-standard WebkitAppRegion)
@@ -36,6 +36,7 @@ interface TopTabsProps {
   onRenameWorkspace: (workspaceId: string) => void;
   onCloseWorkspace: (workspaceId: string) => void;
   onCloseLogView: (logViewId: string) => void;
+  onCloseTabsBatch: (targetIds: string[]) => void;
   onOpenQuickSwitcher: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
@@ -244,6 +245,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   onRenameWorkspace,
   onCloseWorkspace,
   onCloseLogView,
+  onCloseTabsBatch,
   onOpenQuickSwitcher,
   onToggleTheme,
   onOpenSettings,
@@ -494,6 +496,37 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
     }).filter(Boolean);
   }, [orderedTabs, orphanSessionMap, workspaceMap, logViewMap, workspacePaneCounts]);
 
+  // Bulk-close menu items shared by session and workspace context menus.
+  // Anchor is the tab the user right-clicked on (matches VSCode/JetBrains UX).
+  const renderBulkCloseItems = (anchorId: string) => {
+    const anchorIdx = orderedTabs.indexOf(anchorId);
+    const othersIds = orderedTabs.filter((id) => id !== anchorId);
+    const rightIds = anchorIdx >= 0 ? orderedTabs.slice(anchorIdx + 1) : [];
+    return (
+      <>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          disabled={othersIds.length === 0}
+          onClick={() => onCloseTabsBatch(othersIds)}
+        >
+          {t('tabs.closeOthers')}
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={rightIds.length === 0}
+          onClick={() => onCloseTabsBatch(rightIds)}
+        >
+          {t('tabs.closeToRight')}
+        </ContextMenuItem>
+        <ContextMenuItem
+          className="text-destructive"
+          onClick={() => onCloseTabsBatch(orderedTabs)}
+        >
+          {t('tabs.closeAll')}
+        </ContextMenuItem>
+      </>
+    );
+  };
+
   // Render the tabs
   const renderOrderedTabs = () => {
     return orderedTabItems.map((item) => {
@@ -593,6 +626,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               <ContextMenuItem className="text-destructive" onClick={() => onCloseSession(session.id)}>
                 {t('common.close')}
               </ContextMenuItem>
+              {renderBulkCloseItems(session.id)}
             </ContextMenuContent>
           </ContextMenu>
         );
@@ -699,6 +733,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               <ContextMenuItem className="text-destructive" onClick={() => onCloseWorkspace(workspace.id)}>
                 {t('common.close')}
               </ContextMenuItem>
+              {renderBulkCloseItems(workspace.id)}
             </ContextMenuContent>
           </ContextMenu>
         );
