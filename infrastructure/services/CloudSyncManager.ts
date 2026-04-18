@@ -1284,13 +1284,35 @@ export class CloudSyncManager {
             throw new Error(`Decryption failed (master password may differ between devices): ${decryptError instanceof Error ? decryptError.message : String(decryptError)}`);
           }
           const base = await this.loadSyncBase(provider);
-          const mergeResult = mergeSyncPayloads(base, payload, remotePayload);
 
-          console.info('[CloudSyncManager] Three-way merge completed', mergeResult.summary);
+          // First sync on a fresh device: no base means we've never
+          // synced before. Check whether the local payload carries any
+          // real user entities (hosts, keys, snippets, etc.). If it
+          // doesn't, the "local data" is just factory defaults — skip
+          // the three-way merge entirely and adopt the remote payload
+          // so the user's saved preferences are applied verbatim.
+          const localHasEntities =
+            (payload.hosts?.length ?? 0) > 0 ||
+            (payload.keys?.length ?? 0) > 0 ||
+            (payload.snippets?.length ?? 0) > 0 ||
+            (payload.identities?.length ?? 0) > 0 ||
+            (payload.portForwardingRules?.length ?? 0) > 0 ||
+            (payload.knownHosts?.length ?? 0) > 0;
+          const useRemoteDirectly = base === null && !localHasEntities;
+
+          const mergedPayload = useRemoteDirectly
+            ? remotePayload
+            : mergeSyncPayloads(base, payload, remotePayload).payload;
+
+          if (!useRemoteDirectly) {
+            console.info('[CloudSyncManager] Three-way merge completed');
+          } else {
+            console.info('[CloudSyncManager] First sync with no local entities — adopting remote payload directly');
+          }
 
           // Encrypt and upload merged payload
           const mergedSyncedFile = await EncryptionService.encryptPayload(
-            mergeResult.payload,
+            mergedPayload,
             this.masterPassword,
             this.state.deviceId,
             this.state.deviceName,
@@ -1302,7 +1324,7 @@ export class CloudSyncManager {
             provider,
             adapter,
             mergedSyncedFile,
-            mergeResult.payload,
+            mergedPayload,
           );
 
           if (uploadResult.success) {
@@ -1324,7 +1346,7 @@ export class CloudSyncManager {
             return {
               ...uploadResult,
               action: 'merge',
-              mergedPayload: mergeResult.payload,
+              mergedPayload,
             };
           }
 
@@ -1675,7 +1697,23 @@ export class CloudSyncManager {
             c.check!.remoteFile!,
             this.masterPassword,
           );
-          const result = mergeSyncPayloads(providerBase, merged, remotePayload);
+
+          // First sync on a fresh device: no base and no local entities
+          // means the local payload is just factory defaults. Adopt the
+          // remote payload directly instead of merging.
+          const localHasEntities =
+            (merged.hosts?.length ?? 0) > 0 ||
+            (merged.keys?.length ?? 0) > 0 ||
+            (merged.snippets?.length ?? 0) > 0 ||
+            (merged.identities?.length ?? 0) > 0 ||
+            (merged.portForwardingRules?.length ?? 0) > 0 ||
+            (merged.knownHosts?.length ?? 0) > 0;
+          if (providerBase === null && !localHasEntities) {
+            merged = remotePayload;
+          } else {
+            const result = mergeSyncPayloads(providerBase, merged, remotePayload);
+            merged = result.payload;
+          }
           merged = result.payload;
         }
         const mergeResult = { payload: merged };

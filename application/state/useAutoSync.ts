@@ -451,11 +451,28 @@ export const useAutoSync = (config: AutoSyncConfig) => {
       }
 
       const { mergeSyncPayloads } = await import('../../domain/syncMerge');
-      const mergeResult = mergeSyncPayloads(base, localPayload, remotePayload);
+
+      // First sync on a fresh device: no base means we've never synced
+      // before. If the local payload has no real user entities (hosts,
+      // keys, snippets, etc.), the "local data" is just factory defaults.
+      // Skip the three-way merge and adopt the remote payload directly
+      // so the user's saved preferences are applied verbatim.
+      const localHasEntities =
+        (localPayload.hosts?.length ?? 0) > 0 ||
+        (localPayload.keys?.length ?? 0) > 0 ||
+        (localPayload.snippets?.length ?? 0) > 0 ||
+        (localPayload.identities?.length ?? 0) > 0 ||
+        (localPayload.portForwardingRules?.length ?? 0) > 0 ||
+        (localPayload.knownHosts?.length ?? 0) > 0;
+      const useRemoteDirectly = base === null && !localHasEntities;
+
+      const effectivePayload = useRemoteDirectly
+        ? remotePayload
+        : mergeSyncPayloads(base, localPayload, remotePayload).payload;
 
       // Apply merged payload to local state BEFORE committing. If the apply
       // throws, the next startup will re-run the merge with fresh data.
-      await Promise.resolve(onApplyPayloadRef.current(mergeResult.payload));
+      await Promise.resolve(onApplyPayloadRef.current(effectivePayload));
       // Base is the last-agreed remote snapshot; `commitRemoteInspection`
       // stores remotePayload as the base so the next diff is computed
       // against what the cloud actually has, not against the merged
@@ -474,12 +491,16 @@ export const useAutoSync = (config: AutoSyncConfig) => {
       // than going through the React-state-driven `syncNow`. syncNow
       // rebuilds the payload from hooks state, which may not yet reflect
       // the onApplyPayload we awaited above (React commit phase is async
-      // relative to the awaited promise resolution). Passing mergeResult
-      // in explicitly removes the race entirely and avoids a setTimeout(0)
-      // that only approximated the correct ordering.
-      if (mergeResult.payload) {
+      // relative to the awaited promise resolution). Passing the effective
+      // payload explicitly removes the race entirely and avoids a
+      // setTimeout(0) that only approximated the correct ordering.
+      //
+      // When we adopted the remote directly (useRemoteDirectly), the
+      // round-trip push is still useful: it re-encrypts with this
+      // device's metadata so the anchor/base stay consistent.
+      if (effectivePayload) {
         try {
-          await manager.syncAllProviders(mergeResult.payload);
+          await manager.syncAllProviders(effectivePayload);
           // Suppress the debounced follow-up tick that otherwise fires
           // once React commits the applied state, since we've just
           // already pushed that exact payload upstream.
