@@ -280,14 +280,12 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
 
   const handleConnect = useCallback(async (config: WebDAVConfig, password: string) => {
     try {
-      const result = await sync.configure(config, password);
-      if (result === 'pulled') {
-        const payload = await sync.pull();
-        onApplyPayload(payload);
+      const localPayload = onBuildPayload();
+      const remotePayload = await sync.configure(config, password, localPayload);
+      if (remotePayload) {
+        onApplyPayload(remotePayload);
         toast.success('Connected and pulled remote data', 'Cloud Sync');
       } else {
-        const payload = onBuildPayload();
-        await sync.push(payload);
         toast.success('Connected and pushed local data', 'Cloud Sync');
       }
       setIsOpen(false);

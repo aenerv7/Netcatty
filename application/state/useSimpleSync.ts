@@ -19,8 +19,9 @@ export interface SimpleSyncState {
 }
 
 export interface SimpleSyncActions {
-  /** Configure WebDAV + encryption password, then do initial sync (pull if remote has data, push if not) */
-  configure: (config: WebDAVConfig, password: string) => Promise<'pulled' | 'pushed'>;
+  /** Configure WebDAV + encryption password, then do initial sync.
+   *  Returns the remote payload if pulled, or null if pushed local data. */
+  configure: (config: WebDAVConfig, password: string, localPayload: SyncPayload) => Promise<SyncPayload | null>;
   /** Disconnect and clear config */
   disconnect: () => void;
   /** Push local data to remote (overwrite remote) */
@@ -102,7 +103,7 @@ export function useSimpleSync(): SimpleSyncState & SimpleSyncActions {
     }
   }, [webdavConfig, password, getAdapter]);
 
-  const configure = useCallback(async (config: WebDAVConfig, pwd: string): Promise<'pulled' | 'pushed'> => {
+  const configure = useCallback(async (config: WebDAVConfig, pwd: string, localPayload: SyncPayload): Promise<SyncPayload | null> => {
     setIsSyncing(true);
     setLastError(null);
     try {
@@ -117,11 +118,18 @@ export function useSimpleSync(): SimpleSyncState & SimpleSyncActions {
       setPassword(pwd);
 
       if (remote) {
-        // Remote has data — verify password works
-        await decryptPayload(remote, pwd);
-        return 'pulled';
+        // Remote has data — decrypt and return it for the caller to apply
+        const payload = await decryptPayload(remote, pwd);
+        return payload;
       } else {
-        return 'pushed';
+        // No remote data — push local data
+        const deviceId = localStorageAdapter.readString('netcatty_device_id_v1') || crypto.randomUUID();
+        localStorageAdapter.writeString('netcatty_device_id_v1', deviceId);
+        const syncedFile: SyncedFile = await encryptPayload(
+          localPayload, pwd, deviceId, 'Netcatty', packageJson.version,
+        );
+        await adapter.upload(syncedFile);
+        return null;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
