@@ -93,17 +93,39 @@ SCP 复用 SFTP 的完整 UI，通过 `scpMode` prop 切换后端协议。适用
 
 ## 云同步
 
-本 fork 仅保留 WebDAV 和 S3，GitHub Gist / Google Drive / OneDrive 在 UI 层隐藏（代码保留）。
+本 fork 彻底重写了云同步系统，移除了上游的多云同步架构（CloudSyncManager 状态机、三方合并、冲突检测、自动同步、设置页面同步标签页），替换为仅 WebDAV 的简单推送/拉取模式。
+
+同步入口仅在右上角工具栏的云按钮（`SyncStatusButton`），不再有设置页面的同步配置。
 
 | 功能 | 实现位置 |
 |------|----------|
-| 同步编排 | `infrastructure/services/CloudSyncManager.ts` |
-| WebDAV | `infrastructure/services/adapters/WebDAVAdapter.ts` + `electron/bridges/cloudSyncBridge.cjs`（同步文件路径 `/Netcatty/netcatty-vault.json`） |
-| S3 | `infrastructure/services/adapters/S3Adapter.ts` + `electron/bridges/cloudSyncBridge.cjs` |
-| 加密 | `infrastructure/services/EncryptionService.ts` |
-| 负载合并 | `domain/syncMerge.ts` |
-| 自动同步顺序 | `useAutoSync.ts` (`AUTO_SYNC_PROVIDER_ORDER: ['webdav', 's3']`) |
-| UI 隐藏 | `CloudSyncSettings.tsx` (GitHub/Google/OneDrive 的 ProviderCard 已注释) |
+| 同步 Hook | `application/state/useSimpleSync.ts`（管理 WebDAV 配置、加密密码、push/pull 操作） |
+| 同步 UI | `components/SyncStatusButton.tsx`（工具栏按钮 + Popover，未配置时显示 WebDAV 配置表单，已配置时显示推送/拉取按钮） |
+| WebDAV 适配器 | `infrastructure/services/adapters/WebDAVAdapter.ts`（同步文件路径 `/Netcatty/netcatty-vault.json`） |
+| 加密 | `infrastructure/services/EncryptionService.ts`（AES-256-GCM + PBKDF2） |
+| 负载构建 | `application/syncPayload.ts`（`buildSyncPayload` 收集本地数据，`applySyncPayload` 应用远端数据） |
+| 类型定义 | `domain/sync.ts`（SyncPayload, WebDAVConfig, SyncedFile 等） |
+
+### 同步流程
+
+- **首次配置**：用户在工具栏云按钮的 Popover 中填写 WebDAV 地址、认证信息和加密密码。连接后自动判断远端是否有数据：有则拉取覆盖本地，无则推送本地数据到远端。
+- **推送（Push）**：用本地数据覆盖远端。调用 `buildSyncPayload` 收集所有 vault 数据和设置，通过 `EncryptionService.encryptPayload` 加密后上传到 WebDAV。
+- **拉取（Pull）**：用远端数据覆盖本地。从 WebDAV 下载加密文件，通过 `EncryptionService.decryptPayload` 解密，然后调用 `applySyncPayload` 应用到本地状态。
+- **无自动同步**：所有同步操作都由用户手动触发。
+- **无合并**：推送和拉取都是完全覆盖，不做三方合并。
+
+### 已删除的同步文件
+
+以下文件已从项目中删除，上游同步时对这些文件的修改必须丢弃：
+- `application/state/useAutoSync.ts` — 自动同步 hook
+- `application/state/useCloudSync.ts` — 多云同步 React hook
+- `domain/syncMerge.ts` — 三方合并逻辑
+- `domain/syncGuards.ts` — shrink guard 防护
+- `infrastructure/services/syncSignature.js` — 同步文件签名
+- `infrastructure/services/syncAnchorDecision.js` — 远端变更检测
+- `components/CloudSyncSettings.tsx` — 旧版同步设置 UI（2300+ 行）
+- `components/settings/tabs/SettingsSyncTab.tsx` — 设置页面同步标签页
+- `components/sync/SyncBlockedBanner.tsx` — 同步阻塞横幅
 
 ## 设置
 
@@ -125,6 +147,6 @@ aside-panel, badge, button, card, collapsible, combobox, context-menu, dialog, d
 | 按钮 | 可见条件 | 实现 |
 |------|----------|------|
 | AI Assistant (Sparkles) | 非 Vaults 页 且 `STORAGE_KEY_AI_PROVIDERS` 中有配置 | `window.dispatchEvent('netcatty:toggle-ai-panel')` |
-| Cloud Sync | 始终显示 | `SyncStatusButton` 组件 |
+| Cloud Sync | 始终显示 | `SyncStatusButton` 组件（`useSimpleSync` hook，WebDAV 推送/拉取） |
 | 通知铃铛 | 已移除 | — |
 | 亮暗色切换 | 已移除（仅在设置面板可用） | — |

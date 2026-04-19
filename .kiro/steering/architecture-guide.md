@@ -18,8 +18,7 @@ description: 四层架构文件清单、Electron 主进程 bridge、应用生命
 | `groupConfig.ts` | 组配置继承逻辑 |
 | `sshAuth.ts` | SSH 认证解析 (密码/密钥/证书) |
 | `sshConfigSerializer.ts` | `~/.ssh/config` 解析与序列化 |
-| `sync.ts` | 云同步类型、常量、OAuth 配置 |
-| `syncMerge.ts` | 同步负载合并逻辑 |
+| `sync.ts` | 云同步类型、常量（SyncPayload, WebDAVConfig, SyncedFile 等） |
 | `terminalAppearance.ts` | 终端主题解析 |
 | `quickConnect.ts` | 快速连接字符串解析 |
 | `vaultImport.ts` | Vault 数据导入工具 |
@@ -40,7 +39,7 @@ React Hooks，拥有状态和持久化边界。
 |------|------|
 | `usePortForwardingState` | 端口转发规则 CRUD + 隧道启停 |
 | `useAIState` | AI 提供商/模型/会话/权限管理 |
-| `useAutoSync` / `useCloudSync` | 云同步编排 |
+| `useSimpleSync` | WebDAV 云同步（简单推送/拉取，无自动同步） |
 | `useManagedSourceSync` | SSH config 文件同步 |
 | `usePortForwardingAutoStart` | 应用启动时自动启动端口转发 |
 | `useUpdateCheck` | 应用更新检查 |
@@ -82,17 +81,17 @@ React Hooks，拥有状态和持久化边界。
 
 ### 服务 (`services/`)
 - `netcattyBridge.ts` — Electron IPC 桥接
-- `CloudSyncManager.ts` — 多云同步编排
+- `CloudSyncManager.ts` — 旧版多云同步编排（已废弃，保留文件但不再使用，新系统使用 `useSimpleSync` + `WebDAVAdapter` 直接通信）
 - `portForwardingService.ts` — 端口转发隧道管理
-- `EncryptionService.ts` — 加密工具
+- `EncryptionService.ts` — AES-256-GCM 加密（云同步数据加解密）
 - `credentialProtection.ts` — OS 密钥链集成
 - `updateService.ts` — 应用更新
 - `compressUploadService.ts` — SFTP 压缩上传
 
 ### 云同步适配器 (`services/adapters/`)
-- `WebDAVAdapter.ts` — WebDAV（同步文件存放在 `/Netcatty/` 子目录，兼容坚果云）
-- `S3Adapter.ts` — AWS S3
-- `GitHubAdapter.ts` / `GoogleDriveAdapter.ts` / `OneDriveAdapter.ts` — 代码保留但 UI 层已隐藏，不可用
+- `WebDAVAdapter.ts` — WebDAV（同步文件存放在 `/Netcatty/` 子目录，兼容坚果云）— 当前唯一使用的同步适配器
+- `S3Adapter.ts` — AWS S3（代码保留但未使用）
+- `GitHubAdapter.ts` / `GoogleDriveAdapter.ts` / `OneDriveAdapter.ts` — 代码保留但未使用
 
 ### AI (`ai/`)
 - `types.ts` — AI 类型定义 (ProviderConfig, ChatMessage, ToolCall, AISession 等)
