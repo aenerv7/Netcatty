@@ -1338,30 +1338,17 @@ export class CloudSyncManager {
           }
           const base = await this.loadSyncBase(provider);
 
-          // First sync on a fresh device: no base means we've never
-          // synced before. Check whether the local payload carries any
-          // real user entities (hosts, keys, snippets, etc.). If it
-          // doesn't, the "local data" is just factory defaults — skip
-          // the three-way merge entirely and adopt the remote payload
-          // so the user's saved preferences are applied verbatim.
-          const localHasEntities =
-            (payload.hosts?.length ?? 0) > 0 ||
-            (payload.keys?.length ?? 0) > 0 ||
-            (payload.snippets?.length ?? 0) > 0 ||
-            (payload.identities?.length ?? 0) > 0 ||
-            (payload.portForwardingRules?.length ?? 0) > 0 ||
-            (payload.knownHosts?.length ?? 0) > 0;
-          const useRemoteDirectly = base === null && !localHasEntities;
-
-          const mergedPayload = useRemoteDirectly
-            ? remotePayload
-            : mergeSyncPayloads(base, payload, remotePayload).payload;
-
-          if (!useRemoteDirectly) {
-            console.info('[CloudSyncManager] Three-way merge completed');
-          } else {
-            console.info('[CloudSyncManager] First sync with no local entities — adopting remote payload directly');
-          }
+          const mergeResult = mergeSyncPayloads(base, payload, remotePayload);
+          // First sync (no base): the three-way merge with an empty base
+          // treats every local default setting as a "local addition" that
+          // conflicts with the remote value, and prefers local — silently
+          // discarding the user's saved preferences. Fix: on first sync,
+          // override the merged settings with the remote settings so the
+          // user's cloud preferences are applied verbatim. Entity data
+          // (hosts, keys, etc.) is unaffected — the union merge is correct.
+          const mergedPayload = base === null && remotePayload.settings
+            ? { ...mergeResult.payload, settings: remotePayload.settings }
+            : mergeResult.payload;
 
           // Shrink guard: refuse to push a merged payload that silently deletes
           // entities we still have in base. The merge itself is correct if local
@@ -1848,22 +1835,11 @@ export class CloudSyncManager {
             this.masterPassword,
           );
 
-          // First sync on a fresh device: no base and no local entities
-          // means the local payload is just factory defaults. Adopt the
-          // remote payload directly instead of merging.
-          const localHasEntities =
-            (merged.hosts?.length ?? 0) > 0 ||
-            (merged.keys?.length ?? 0) > 0 ||
-            (merged.snippets?.length ?? 0) > 0 ||
-            (merged.identities?.length ?? 0) > 0 ||
-            (merged.portForwardingRules?.length ?? 0) > 0 ||
-            (merged.knownHosts?.length ?? 0) > 0;
-          if (providerBase === null && !localHasEntities) {
-            merged = remotePayload;
-          } else {
-            const result = mergeSyncPayloads(providerBase, merged, remotePayload);
-            merged = result.payload;
-          }
+          // First sync (no base): override merged settings with remote.
+          const result = mergeSyncPayloads(providerBase, merged, remotePayload);
+          merged = providerBase === null && remotePayload.settings
+            ? { ...result.payload, settings: remotePayload.settings }
+            : result.payload;
         }
         const mergeResult = { payload: merged };
 

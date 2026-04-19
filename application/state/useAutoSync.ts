@@ -456,23 +456,12 @@ export const useAutoSync = (config: AutoSyncConfig) => {
 
       const { mergeSyncPayloads } = await import('../../domain/syncMerge');
 
-      // First sync on a fresh device: no base means we've never synced
-      // before. If the local payload has no real user entities (hosts,
-      // keys, snippets, etc.), the "local data" is just factory defaults.
-      // Skip the three-way merge and adopt the remote payload directly
-      // so the user's saved preferences are applied verbatim.
-      const localHasEntities =
-        (localPayload.hosts?.length ?? 0) > 0 ||
-        (localPayload.keys?.length ?? 0) > 0 ||
-        (localPayload.snippets?.length ?? 0) > 0 ||
-        (localPayload.identities?.length ?? 0) > 0 ||
-        (localPayload.portForwardingRules?.length ?? 0) > 0 ||
-        (localPayload.knownHosts?.length ?? 0) > 0;
-      const useRemoteDirectly = base === null && !localHasEntities;
-
-      const effectivePayload = useRemoteDirectly
-        ? remotePayload
-        : mergeSyncPayloads(base, localPayload, remotePayload).payload;
+      const mergeResult = mergeSyncPayloads(base, localPayload, remotePayload);
+      // First sync (no base): override merged settings with remote settings.
+      // See CloudSyncManager.syncToProvider for the full rationale.
+      const effectivePayload = base === null && remotePayload.settings
+        ? { ...mergeResult.payload, settings: remotePayload.settings }
+        : mergeResult.payload;
 
       // Apply merged payload to local state BEFORE committing. If the apply
       // throws, the next startup will re-run the merge with fresh data.

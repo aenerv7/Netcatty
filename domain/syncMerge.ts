@@ -223,7 +223,6 @@ function mergeSettingsDeep(
   base: Record<string, unknown>,
   local: Record<string, unknown>,
   remote: Record<string, unknown>,
-  preferRemoteOnConflict = false,
 ): Record<string, unknown> {
   const allKeys = new Set([
     ...Object.keys(base),
@@ -245,22 +244,19 @@ function mergeSettingsDeep(
     } else if (!lChanged && rChanged) {
       if (rVal !== undefined) merged[key] = rVal;
     } else {
-      const preferred = preferRemoteOnConflict ? rVal : lVal;
-      const other = preferRemoteOnConflict ? lVal : rVal;
-      // Both changed — recurse if both are plain objects, else prefer winner
+      // Both changed — recurse if both are plain objects, else prefer local
       if (
-        preferred && other &&
-        typeof preferred === 'object' && !Array.isArray(preferred) &&
-        typeof other === 'object' && !Array.isArray(other)
+        lVal && rVal &&
+        typeof lVal === 'object' && !Array.isArray(lVal) &&
+        typeof rVal === 'object' && !Array.isArray(rVal)
       ) {
         merged[key] = mergeSettingsDeep(
           (bVal && typeof bVal === 'object' && !Array.isArray(bVal) ? bVal : {}) as Record<string, unknown>,
-          (preferRemoteOnConflict ? other : preferred) as Record<string, unknown>,
-          (preferRemoteOnConflict ? preferred : other) as Record<string, unknown>,
-          preferRemoteOnConflict,
+          lVal as Record<string, unknown>,
+          rVal as Record<string, unknown>,
         );
-      } else if (preferred !== undefined) {
-        merged[key] = preferred;
+      } else if (lVal !== undefined) {
+        merged[key] = lVal;
       }
     }
   }
@@ -271,7 +267,6 @@ function mergeSettings(
   base: SettingsObj | undefined,
   local: SettingsObj | undefined,
   remote: SettingsObj | undefined,
-  preferRemoteOnConflict = false,
 ): SettingsObj | undefined {
   if (!local && !remote) return undefined;
   if (!local) return remote;
@@ -301,25 +296,16 @@ function mergeSettings(
     } else if (!lChanged && rChanged) {
       if (rVal !== undefined) merged[key] = rVal;
     } else {
-      // Both changed — when preferRemoteOnConflict is set (first sync),
-      // prefer remote because it represents the user's saved preferences
-      // while local is likely just factory defaults.
-      const preferred = preferRemoteOnConflict ? rVal : lVal;
-      const other = preferRemoteOnConflict ? lVal : rVal;
+      // Both changed — deep merge if both are plain objects, else prefer local
       if (
-        preferred && other &&
-        typeof preferred === 'object' && !Array.isArray(preferred) &&
-        typeof other === 'object' && !Array.isArray(other)
+        lVal && rVal &&
+        typeof lVal === 'object' && !Array.isArray(lVal) &&
+        typeof rVal === 'object' && !Array.isArray(rVal)
       ) {
         merged[key] = mergeSettingsDeep(
           (bVal && typeof bVal === 'object' && !Array.isArray(bVal) ? bVal : {}) as Record<string, unknown>,
-          preferRemoteOnConflict
-            ? other as Record<string, unknown>
-            : preferred as Record<string, unknown>,
-          preferRemoteOnConflict
-            ? preferred as Record<string, unknown>
-            : other as Record<string, unknown>,
-          preferRemoteOnConflict,
+          lVal as Record<string, unknown>,
+          rVal as Record<string, unknown>,
         );
       } else if (
         Array.isArray(lVal) && Array.isArray(rVal) &&
@@ -329,8 +315,8 @@ function mergeSettings(
         const bArr = Array.isArray(bVal) ? bVal as Array<{ id: string }> : [];
         const result = mergeEntityArrays(bArr, lVal as Array<{ id: string }>, rVal as Array<{ id: string }>);
         merged[key] = result.merged;
-      } else if (preferred !== undefined) {
-        merged[key] = preferred;
+      } else if (lVal !== undefined) {
+        merged[key] = lVal;
       }
     }
   }
@@ -354,7 +340,6 @@ export function mergeSyncPayloads(
   local: SyncPayload,
   remote: SyncPayload,
 ): MergeResult {
-  const isFirstSync = base === null;
   const emptyBase: SyncPayload = {
     hosts: [],
     keys: [],
@@ -433,11 +418,7 @@ export function mergeSyncPayloads(
   );
 
   // Merge settings
-  // On first sync (no base), prefer remote settings over local defaults.
-  // The remote represents the user's previously saved preferences from
-  // another device, while local is almost certainly just factory defaults
-  // on a fresh install.
-  const settings = mergeSettings(b.settings, local.settings, remote.settings, isFirstSync);
+  const settings = mergeSettings(b.settings, local.settings, remote.settings);
 
   // Deduplicate global SFTP bookmarks by path (IDs are random per device)
   if (settings?.sftpGlobalBookmarks && settings.sftpGlobalBookmarks.length > 0) {
