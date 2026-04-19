@@ -3,6 +3,27 @@ import { TERMINAL_FONTS, type TerminalFont } from '../../infrastructure/config/f
 import { getMonospaceFonts } from '../../lib/localFonts';
 
 /**
+ * Font IDs that are bundled via @fontsource and always available
+ * regardless of system font installation.
+ */
+const BUNDLED_FONT_IDS = new Set(['jetbrains-mono']);
+
+/**
+ * Check if a font family is available in the browser by testing
+ * whether it renders differently from the generic monospace fallback.
+ */
+function isFontAvailable(family: string): boolean {
+  // Extract the primary font name (before the first comma / "monospace" fallback)
+  const primary = family.split(',')[0].trim().replace(/^["']|["']$/g, '');
+  if (!primary) return false;
+  try {
+    return document.fonts.check(`16px "${primary}"`);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Global font store - singleton pattern using useSyncExternalStore
  * Ensures fonts are loaded only once and shared across all components
  */
@@ -62,20 +83,29 @@ class FontStore {
     try {
       const localFonts = await getMonospaceFonts();
       
-      // Combine default fonts with local fonts, deduplicate by id
+      // Build a set of locally detected font family names (case-insensitive)
+      const localFontNames = new Set(
+        localFonts.map(f => f.name.toLowerCase())
+      );
+
+      // Filter built-in fonts: keep only bundled (@fontsource) or locally installed
+      const availableBuiltins = TERMINAL_FONTS.filter(font =>
+        BUNDLED_FONT_IDS.has(font.id) || localFontNames.has(font.name.toLowerCase()) || isFontAvailable(font.family)
+      );
+
+      // Combine with local fonts, deduplicate by id
       const fontMap = new Map<string, TerminalFont>();
 
-      // Add default fonts first
-      TERMINAL_FONTS.forEach(font => fontMap.set(font.id, font));
+      availableBuiltins.forEach(font => fontMap.set(font.id, font));
 
-      // Build a set of built-in font family names for dedup (case-insensitive)
-      const builtinFamilyNames = new Set(
-        TERMINAL_FONTS.map(f => f.name.toLowerCase())
+      // Build a set of included font family names for dedup (case-insensitive)
+      const includedFamilyNames = new Set(
+        availableBuiltins.map(f => f.name.toLowerCase())
       );
 
       // Add local fonts, skipping those already covered by built-in fonts
       localFonts.forEach(font => {
-        if (builtinFamilyNames.has(font.name.toLowerCase())) return;
+        if (includedFamilyNames.has(font.name.toLowerCase())) return;
         const localId = font.id.startsWith('local-') ? font.id : `local-${font.id}`;
         fontMap.set(localId, { ...font, id: localId });
       });
@@ -88,8 +118,12 @@ class FontStore {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load local fonts';
       console.warn('Failed to fetch local fonts, using defaults:', error);
+      // On error, still filter built-in fonts by availability
+      const availableBuiltins = TERMINAL_FONTS.filter(font =>
+        BUNDLED_FONT_IDS.has(font.id) || isFontAvailable(font.family)
+      );
       this.setState({
-        availableFonts: TERMINAL_FONTS,
+        availableFonts: availableBuiltins.length > 0 ? availableBuiltins : TERMINAL_FONTS,
         isLoading: false,
         isLoaded: true,
         error: errorMessage,
