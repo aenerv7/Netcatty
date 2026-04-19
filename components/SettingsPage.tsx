@@ -2,12 +2,10 @@
  * Settings Page - Standalone settings window content
  * This component is rendered in a separate Electron window
  */
-import { AppWindow, Cloud, FileType, HardDrive, Keyboard, Palette, Sparkles, TerminalSquare, X } from "lucide-react";
+import { AppWindow, FileType, HardDrive, Keyboard, Palette, Sparkles, TerminalSquare, X } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettingsState } from "../application/state/useSettingsState";
 import { useAvailableFonts } from "../application/state/fontStore";
-import { usePortForwardingState } from "../application/state/usePortForwardingState";
-import { useVaultState } from "../application/state/useVaultState";
 import { useWindowControls } from "../application/state/useWindowControls";
 import { useUpdateCheck } from "../application/state/useUpdateCheck";
 import { useAIState } from "../application/state/useAIState";
@@ -46,8 +44,6 @@ class AITabErrorBoundary extends React.Component<
 }
 
 type SettingsState = ReturnType<typeof useSettingsState>;
-
-const SettingsSyncTab = React.lazy(() => import("./settings/tabs/SettingsSyncTab"));
 
 const SettingsTerminalTabContainer: React.FC<{ settings: SettingsState }> = ({ settings }) => {
     const availableFonts = useAvailableFonts();
@@ -105,51 +101,6 @@ const SettingsAITabContainer: React.FC = () => {
                 />
             </React.Suspense>
         </AITabErrorBoundary>
-    );
-};
-
-const SettingsSyncTabWithVault: React.FC<{ onSettingsApplied?: () => void }> = ({ onSettingsApplied }) => {
-    const {
-        hosts,
-        keys,
-        identities,
-        snippets,
-        customGroups,
-        snippetPackages,
-        knownHosts,
-        groupConfigs,
-        importDataFromString,
-        clearVaultData,
-    } = useVaultState();
-
-    const { rules: portForwardingRules, importRules: importPortForwardingRules } = usePortForwardingState();
-
-    // Strip transient runtime fields before passing to sync
-    const portForwardingRulesForSync = useMemo(
-        () =>
-            portForwardingRules.map((rule) => ({
-                ...rule,
-                status: "inactive" as const,
-                error: undefined,
-                lastUsedAt: undefined,
-            })),
-        [portForwardingRules],
-    );
-
-    const vault = useMemo(
-        () => ({ hosts, keys, identities, snippets, customGroups, snippetPackages, knownHosts, groupConfigs }),
-        [hosts, keys, identities, snippets, customGroups, snippetPackages, knownHosts, groupConfigs],
-    );
-
-    return (
-        <SettingsSyncTab
-            vault={vault}
-            portForwardingRules={portForwardingRulesForSync}
-            importDataFromString={importDataFromString}
-            importPortForwardingRules={importPortForwardingRules}
-            clearVaultData={clearVaultData}
-            onSettingsApplied={onSettingsApplied}
-        />
     );
 };
 
@@ -264,12 +215,6 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
                             <Sparkles size={14} /> AI
                         </TabsTrigger>
                         <TabsTrigger
-                            value="sync"
-                            className="w-full justify-start gap-2 px-3 py-2 text-sm data-[state=active]:bg-background hover:bg-background/60 rounded-md transition-colors"
-                        >
-                            <Cloud size={14} /> {t("settings.tab.syncCloud")}
-                        </TabsTrigger>
-                        <TabsTrigger
                             value="system"
                             className="w-full justify-start gap-2 px-3 py-2 text-sm data-[state=active]:bg-background hover:bg-background/60 rounded-md transition-colors"
                         >
@@ -337,12 +282,6 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
 
                     {mountedTabs.has("ai") && (
                         <SettingsAITabContainer />
-                    )}
-
-                    {mountedTabs.has("sync") && (
-                        <React.Suspense fallback={null}>
-                            <SettingsSyncTabWithVault onSettingsApplied={settings.rehydrateAllFromStorage} />
-                        </React.Suspense>
                     )}
 
                     {mountedTabs.has("system") && (

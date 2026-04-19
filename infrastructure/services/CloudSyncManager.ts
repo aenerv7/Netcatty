@@ -44,15 +44,16 @@ import {
   decryptProviderSecrets,
   encryptProviderSecrets,
 } from '../persistence/secureFieldAdapter';
-import { mergeSyncPayloads } from '../../domain/syncMerge';
-import { detectSuspiciousShrink, type ShrinkFinding } from '../../domain/syncGuards';
-// Extracted into a plain ESM module so the signature logic is covered by
-// the node --test harness (see syncSignature.test.mjs). The previous
-// inline implementation only hashed a handful of meta fields and was
-// trivially forgeable by a misbehaving adapter; v2 hashes the full meta
-// plus a prefix of the ciphertext.
-import { createSyncedFileSignature as createSyncedFileSignatureImpl } from './syncSignature.js';
-import { decideRemoteChanged } from './syncAnchorDecision.js';
+// --- Stubs for deleted modules (CloudSyncManager will be rewritten separately) ---
+import type { ShrinkFinding } from '../../domain/sync';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mergeSyncPayloads = (..._args: any[]): any => { throw new Error('syncMerge removed — CloudSyncManager pending rewrite'); };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const detectSuspiciousShrink = (..._args: any[]): ShrinkFinding => ({ suspicious: false });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const createSyncedFileSignatureImpl = async (..._args: any[]): Promise<string | null> => null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const decideRemoteChanged = (..._args: any[]): boolean => true;
 
 const SYNC_HISTORY_STORAGE_KEY = 'netcatty_sync_history_v1';
 const SYNC_REMOTE_ANCHOR_STORAGE_KEY = 'netcatty_sync_remote_anchor_v1';

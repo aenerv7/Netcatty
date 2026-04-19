@@ -5,7 +5,29 @@
  * Supports: GitHub Gist, Google Drive, Microsoft OneDrive, WebDAV, S3 Compatible
  */
 
-import type { ShrinkFinding } from './syncGuards';
+// ============================================================================
+// Shrink Finding (previously in syncGuards.ts, inlined for CloudSyncManager)
+// ============================================================================
+
+export type ShrinkFinding =
+  | { suspicious: false }
+  | {
+      suspicious: true;
+      reason: 'bulk-shrink' | 'large-shrink';
+      entityType:
+        | 'hosts'
+        | 'keys'
+        | 'identities'
+        | 'snippets'
+        | 'customGroups'
+        | 'snippetPackages'
+        | 'knownHosts'
+        | 'portForwardingRules'
+        | 'groupConfigs';
+      baseCount: number;
+      outgoingCount: number;
+      lost: number;
+    };
 
 // ============================================================================
 // Security State Machine

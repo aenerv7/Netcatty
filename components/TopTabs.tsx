@@ -39,7 +39,8 @@ interface TopTabsProps {
   onOpenQuickSwitcher: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
-  onSyncNow?: () => Promise<void>;
+  onBuildPayload: () => import('../domain/sync').SyncPayload;
+  onApplyPayload: (payload: import('../domain/sync').SyncPayload) => void;
   isImmersiveActive?: boolean;
   onStartSessionDrag: (sessionId: string) => void;
   onEndSessionDrag: () => void;
@@ -247,7 +248,8 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   onOpenQuickSwitcher,
   onToggleTheme,
   onOpenSettings,
-  onSyncNow,
+  onBuildPayload,
+  onApplyPayload,
   isImmersiveActive,
   onStartSessionDrag,
   onEndSessionDrag,
@@ -1028,7 +1030,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               <PanelLeft size={16} />
             </Button>
           )}
-          <SyncStatusButton onSyncNow={onSyncNow} />
+          <SyncStatusButton onBuildPayload={onBuildPayload} onApplyPayload={onApplyPayload} />
         </div>
         {/* Custom window controls for Windows/Linux */}
         {!isMacClient && <div className="self-stretch flex items-stretch"><WindowControls /></div>}
@@ -1052,7 +1054,8 @@ const topTabsAreEqual = (prev: TopTabsProps, next: TopTabsProps): boolean => {
     prev.draggingSessionId === next.draggingSessionId &&
     prev.isMacClient === next.isMacClient &&
     prev.onOpenSettings === next.onOpenSettings &&
-    prev.onSyncNow === next.onSyncNow &&
+    prev.onBuildPayload === next.onBuildPayload &&
+    prev.onApplyPayload === next.onApplyPayload &&
     prev.isImmersiveActive === next.isImmersiveActive &&
     prev.showSftpTab === next.showSftpTab
   );

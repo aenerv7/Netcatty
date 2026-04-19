@@ -1,6 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { activeTabStore, useActiveTabId, useIsScpActive, useIsSftpActive, useIsTerminalLayerVisible, useIsVaultActive } from './application/state/activeTabStore';
-import { useAutoSync } from './application/state/useAutoSync';
 import { useImmersiveMode } from './application/state/useImmersiveMode';
 import { useManagedSourceSync } from './application/state/useManagedSourceSync';
 import { usePortForwardingAutoStart } from './application/state/usePortForwardingAutoStart';
@@ -22,15 +21,10 @@ import { resolveCloseIntent } from './application/state/resolveCloseIntent';
 import { TERMINAL_THEMES } from './infrastructure/config/terminalThemes';
 import { useCustomThemes } from './application/state/customThemeStore';
 import type { SyncPayload } from './domain/sync';
-import { applySyncPayload, buildSyncPayload, hasMeaningfulSyncData } from './application/syncPayload';
-import {
-  applyProtectedSyncPayload,
-  ensureVersionChangeBackup,
-} from './application/localVaultBackups';
+import { applySyncPayload, buildSyncPayload } from './application/syncPayload';
 import { getCredentialProtectionAvailability } from './infrastructure/services/credentialProtection';
 import { netcattyBridge } from './infrastructure/services/netcattyBridge';
 import { localStorageAdapter } from './infrastructure/persistence/localStorageAdapter';
-import { AlertTriangle, Download, Trash2 } from 'lucide-react';
 import {
   STORAGE_KEY_DEBUG_HOTKEYS,
   STORAGE_KEY_PORT_FORWARDING,
@@ -38,7 +32,7 @@ import {
 import { getEffectiveKnownHosts } from './infrastructure/syncHelpers';
 import { TopTabs } from './components/TopTabs';
 import { Button } from './components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './components/ui/dialog';
 import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { ToastProvider, toast } from './components/ui/toast';
@@ -460,113 +454,25 @@ function App({ settings }: { settings: SettingsState }) {
     snippets,
   ]);
 
-  const [startupSyncSafetyReady, setStartupSyncSafetyReady] = useState(false);
-  // buildCurrentSyncPayload's identity changes each time the vault
-  // settles. The retry effect below watches the underlying data arrays
-  // for hydration progress, and uses the ref to always read the latest
-  // builder without pulling buildCurrentSyncPayload itself into deps
-  // (its identity churns on unrelated state updates too).
-  const buildCurrentSyncPayloadRef = useRef(buildCurrentSyncPayload);
-  useEffect(() => {
-    buildCurrentSyncPayloadRef.current = buildCurrentSyncPayload;
-  }, [buildCurrentSyncPayload]);
-
-  const versionBackupAttemptedRef = useRef(false);
-  // Two-stage gate: once the vault has initialized we open the auto-sync
-  // gate immediately — the hook's own hasMeaningfulSyncData guard and
-  // the cross-window restore barrier prevent an empty-but-not-yet-
-  // hydrated snapshot from overwriting cloud data. The version-change
-  // backup itself is best-effort and retries below as vault data arrives.
-  useEffect(() => {
-    if (isVaultInitialized && !startupSyncSafetyReady) {
-      setStartupSyncSafetyReady(true);
-    }
-  }, [isVaultInitialized, startupSyncSafetyReady]);
-
-  // Retry the version-change backup as hosts/keys/snippets become
-  // available. ensureVersionChangeBackup refuses to advance the stored
-  // version stamp when the observed payload is empty, so running this
-  // effect repeatedly is safe and eventually latches once the vault has
-  // hydrated enough to be backed up (or the user genuinely stays empty,
-  // in which case the effect continues to no-op).
-  useEffect(() => {
-    if (!isVaultInitialized || versionBackupAttemptedRef.current) return;
-    const payload = buildCurrentSyncPayloadRef.current();
-    if (!hasMeaningfulSyncData(payload)) return;
-    versionBackupAttemptedRef.current = true;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const info = await netcattyBridge.get()?.getAppInfo?.();
-        await ensureVersionChangeBackup(payload, info?.version ?? null);
-      } catch (error) {
-        if (!cancelled) {
-          // Reset the latch so a later data change (or the next mount)
-          // can retry. ensureVersionChangeBackup already leaves the
-          // version stamp untouched on failure, so retrying is safe.
-          versionBackupAttemptedRef.current = false;
-        }
-        console.error('[App] Failed to create version-change backup:', error);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isVaultInitialized, hosts, keys, identities, snippets, customGroups, snippetPackages, knownHosts]);
-
-  // Memoized "apply a remote payload safely" callback. Stable identity
-  // across renders so useAutoSync's `syncNow` useCallback doesn't rebuild
-  // on unrelated App-level state changes (which would churn the debounced
-  // auto-sync useEffect dep chain).
   const handleApplySyncPayload = useCallback(
     (payload: SyncPayload) =>
-      applyProtectedSyncPayload({
-        buildPreApplyPayload: () => buildCurrentSyncPayload(),
-        applyPayload: () =>
-          applySyncPayload(payload, {
-            importVaultData: importDataFromString,
-            importPortForwardingRules,
-            onSettingsApplied: settings.rehydrateAllFromStorage,
-          }),
-        translateProtectiveBackupFailure: (message) =>
-          t('cloudSync.localBackups.protectiveBackupFailed', { message }),
+      applySyncPayload(payload, {
+        importVaultData: importDataFromString,
+        importPortForwardingRules,
+        onSettingsApplied: settings.rehydrateAllFromStorage,
       }),
     [
-      buildCurrentSyncPayload,
       importDataFromString,
       importPortForwardingRules,
       settings.rehydrateAllFromStorage,
-      t,
     ],
   );
-
-  // Auto-sync hook for cloud sync
-  const { syncNow: handleSyncNow, emptyVaultConflict, resolveEmptyVaultConflict } = useAutoSync({
-    hosts,
-    keys,
-    identities,
-    snippets,
-    customGroups,
-    snippetPackages,
-    portForwardingRules: portForwardingRulesForSync,
-    knownHosts,
-    groupConfigs,
-    settingsVersion: settings.settingsVersion,
-    startupReady: startupSyncSafetyReady,
-    onApplyPayload: handleApplySyncPayload,
-  });
 
   const { clearAndRemoveSource, clearAndRemoveSources, unmanageSource } = useManagedSourceSync({
     hosts,
     managedSources,
     onUpdateManagedSources: updateManagedSources,
   });
-
-  const handleSyncNowManual = useCallback(() => {
-    return handleSyncNow({ trigger: 'manual' });
-  }, [handleSyncNow]);
 
   // Update check hook - checks for new versions on startup
   const { updateState, dismissUpdate, installUpdate } = useUpdateCheck();
@@ -1553,7 +1459,8 @@ function App({ settings }: { settings: SettingsState }) {
         onOpenQuickSwitcher={handleOpenQuickSwitcher}
         onToggleTheme={handleToggleTheme}
         onOpenSettings={handleOpenSettings}
-        onSyncNow={handleSyncNowManual}
+        onBuildPayload={buildCurrentSyncPayload}
+        onApplyPayload={handleApplySyncPayload}
         isImmersiveActive={activeTerminalTheme !== null}
         onStartSessionDrag={setDraggingSessionId}
         onEndSessionDrag={handleEndSessionDrag}
@@ -1854,59 +1761,6 @@ function App({ settings }: { settings: SettingsState }) {
         onCancel={handlePassphraseCancel}
         onSkip={handlePassphraseSkip}
       />
-
-      {/* Empty vault vs cloud data confirmation dialog (#679).
-          This dialog intentionally cannot be dismissed — the user MUST
-          choose "Restore" or "Keep Empty" before the sync flow can
-          proceed. hideCloseButton removes the X button, onOpenChange
-          is a no-op so ESC also does nothing, and onInteractOutside
-          prevents click-away. */}
-      <Dialog open={!!emptyVaultConflict} onOpenChange={() => { /* intentionally non-dismissable */ }}>
-        <DialogContent className="max-w-md" hideCloseButton onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              {t('sync.autoSync.emptyVaultConflict.title')}
-            </DialogTitle>
-            <DialogDescription>
-              {t('sync.autoSync.emptyVaultConflict.description')}
-            </DialogDescription>
-          </DialogHeader>
-          {emptyVaultConflict && (
-            <div className="bg-muted/30 rounded-lg p-3 text-sm">
-              <div className="font-medium text-muted-foreground mb-1">{t('sync.autoSync.emptyVaultConflict.cloudLabel')}</div>
-              <div>{t('sync.autoSync.emptyVaultConflict.cloudSummary', {
-                hosts: emptyVaultConflict.hostCount,
-                keys: emptyVaultConflict.keyCount,
-                snippets: emptyVaultConflict.snippetCount,
-              })}</div>
-            </div>
-          )}
-          <DialogFooter className="flex-col gap-2 sm:flex-col">
-            <Button
-              onClick={() => resolveEmptyVaultConflict('restore')}
-              className="w-full justify-start gap-2"
-            >
-              <Download className="w-4 h-4" />
-              <span>
-                {t('sync.autoSync.emptyVaultConflict.restore')}
-                <span className="text-xs opacity-70 ml-1">— {t('sync.autoSync.emptyVaultConflict.restoreDesc')}</span>
-              </span>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => resolveEmptyVaultConflict('keep-empty')}
-              className="w-full justify-start gap-2"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>
-                {t('sync.autoSync.emptyVaultConflict.keepEmpty')}
-                <span className="text-xs opacity-70 ml-1">— {t('sync.autoSync.emptyVaultConflict.keepEmptyDesc')}</span>
-              </span>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
