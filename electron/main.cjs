@@ -20,79 +20,31 @@ if (process.env.ELECTRON_RUN_AS_NODE) {
 
 // Load crash log bridge early so process-level error handlers can use it
 const crashLogBridge = require("./bridges/crashLogBridge.cjs");
-
-// SSH / network errors that must never crash the process.
-// ssh2 can emit multiple 'error' events per connection (e.g. ECONNRESET followed
-// by "Connection lost before handshake"). If a listener is consumed after the first
-// event, the second becomes an uncaught exception. These are non-fatal for the app.
-function isNonFatalNetworkError(err) {
-  if (!err) return false;
-  // Any error with an ssh2 `level` property is a connection/auth-level error,
-  // never a reason to kill the entire multi-session app.
-  if (err.level) return true;
-  const code = err.code;
-  // Common TCP/DNS/routing errors that can surface from Node.js sockets
-  // without an ssh2 `level` (e.g. proxy sockets, raw net.connect calls).
-  switch (code) {
-    case 'ECONNRESET':
-    case 'ECONNREFUSED':
-    case 'ECONNABORTED':
-    case 'ETIMEDOUT':
-    case 'ENOTFOUND':
-    case 'EHOSTUNREACH':
-    case 'EHOSTDOWN':
-    case 'ENETUNREACH':
-    case 'ENETDOWN':
-    case 'EADDRNOTAVAIL':
-    case 'EPROTO':
-    case 'EPERM':
-      return true;
-    default:
-      return false;
-  }
-}
-
-// Handle uncaught exceptions — log all, only re-throw truly fatal ones
-process.on('uncaughtException', (err) => {
-  // Skip benign stream teardown errors — don't pollute crash logs with false positives
-  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') {
-    console.warn('Ignored stream error:', err.code);
-    return;
-  }
-  // Non-fatal SSH/network errors: log but do NOT crash the process
-  if (isNonFatalNetworkError(err)) {
-    if (!err.__fromUnhandledRejection) {
-      try { crashLogBridge.captureError('uncaughtException', err); } catch {}
+const {
+  createProcessErrorController,
+  installProcessErrorHandlers,
+} = require("./bridges/processErrorGuards.cjs");
+const processErrorController = createProcessErrorController({
+  captureError(source, err) {
+    try { crashLogBridge.captureError(source, err); } catch {}
+  },
+  onFatalError(err, context) {
+    uninstallProcessErrorHandlers();
+    if (context?.origin === 'unhandledRejection') {
+      console.error('Unhandled rejection:', context.reason);
+    } else {
+      console.error('Uncaught exception:', err);
     }
-    console.warn('Non-fatal uncaught exception (suppressed):', err.message);
-    return;
-  }
-  // Skip logging if already captured by unhandledRejection handler
-  if (!err.__fromUnhandledRejection) {
-    try { crashLogBridge.captureError('uncaughtException', err); } catch {}
-  }
-  console.error('Uncaught exception:', err);
-  throw err;
+    throw err;
+  },
+  logError(...args) {
+    console.error(...args);
+  },
+  logWarn(...args) {
+    console.warn(...args);
+  },
 });
-
-process.on('unhandledRejection', (reason) => {
-  // Skip benign stream teardown errors
-  const code = reason?.code;
-  if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') return;
-  // Non-fatal SSH/network errors: log but do NOT re-throw
-  if (isNonFatalNetworkError(reason)) {
-    try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
-    console.warn('Non-fatal unhandled rejection (suppressed):', reason?.message || reason);
-    return;
-  }
-  try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
-  console.error('Unhandled rejection:', reason);
-  // Re-throw to preserve fatal semantics. Mark so uncaughtException handler
-  // can skip duplicate logging.
-  const err = reason instanceof Error ? reason : new Error(String(reason));
-  err.__fromUnhandledRejection = true;
-  throw err;
-});
+let uninstallProcessErrorHandlers = installProcessErrorHandlers(process, processErrorController);
 
 // Load Electron
 let electronModule;
@@ -930,6 +882,80 @@ async function createWindow() {
   return win;
 }
 
+function waitForWindowToShow(win) {
+  return new Promise((resolve, reject) => {
+    if (!win || win.isDestroyed?.()) {
+      reject(new Error("Main window was destroyed before first show."));
+      return;
+    }
+    if (win.isVisible?.()) {
+      resolve();
+      return;
+    }
+
+    const cleanup = () => {
+      try { win.removeListener("show", handleShow); } catch {}
+      try { win.removeListener("closed", handleClosed); } catch {}
+      try { win.webContents?.removeListener?.("render-process-gone", handleGone); } catch {}
+    };
+
+    const handleShow = () => {
+      cleanup();
+      resolve();
+    };
+    const handleClosed = () => {
+      cleanup();
+      reject(new Error("Main window closed before first show."));
+    };
+    const handleGone = (_event, details) => {
+      cleanup();
+      reject(new Error(`Renderer process exited before first show: ${details?.reason || "unknown"}`));
+    };
+
+    win.once("show", handleShow);
+    win.once("closed", handleClosed);
+    win.webContents?.once?.("render-process-gone", handleGone);
+  });
+}
+
+let mainWindowStartupPromise = null;
+
+async function createAndShowMainWindow() {
+  if (mainWindowStartupPromise) return mainWindowStartupPromise;
+
+  mainWindowStartupPromise = (async () => {
+    processErrorController.beginMainWindowStartup();
+    try {
+      const win = await createWindow();
+      await waitForWindowToShow(win);
+      void getWindowManager().waitForRendererReady(win, {
+        timeoutMs: isDev ? 30000 : 15000,
+      }).catch((err) => {
+        console.warn("[Main] Renderer ready signal was late or missing after first show:", err?.message || err);
+      });
+      processErrorController.completeMainWindowStartup({ windowShown: true });
+      return win;
+    } catch (err) {
+      processErrorController.completeMainWindowStartup({ windowShown: false });
+      throw err;
+    } finally {
+      mainWindowStartupPromise = null;
+    }
+  })();
+
+  return mainWindowStartupPromise;
+}
+
+function hasUsableWindow() {
+  try {
+    const windowManager = getWindowManager();
+    return [windowManager.getMainWindow?.(), windowManager.getSettingsWindow?.()]
+      .some((win) => windowManager.isWindowUsable?.(win, { requireVisible: true }));
+  } catch {
+    return false;
+  }
+}
+
 function showStartupError(err) {
   const title = "Netcatty";
   const code = err && typeof err === "object" ? err.code : null;
@@ -955,9 +981,12 @@ if (!gotLock) {
   app.on("second-instance", () => {
     if (!focusMainWindow()) {
       // Window is missing or crashed — try to recreate it
-      void createWindow().catch((err) => {
+      void createAndShowMainWindow().catch((err) => {
         console.error("[Main] Failed to recreate window on second-instance:", err);
         showStartupError(err);
+        if (!hasUsableWindow()) {
+          try { app.quit(); } catch {}
+        }
       });
     }
   });
@@ -979,9 +1008,17 @@ if (!gotLock) {
       }
     }
 
-    // Build and set application menu
-    const menu = getWindowManager().buildAppMenu(Menu, app, isMac);
-    Menu.setApplicationMenu(menu);
+    // Build and set application menu. A broken menu should not take down
+    // the entire app — fall back to no custom menu and continue startup.
+    try {
+      const menu = getWindowManager().buildAppMenu(Menu, app, isMac);
+      Menu.setApplicationMenu(menu);
+    } catch (err) {
+      console.error("[Main] Failed to build application menu:", err);
+      try {
+        Menu.setApplicationMenu(null);
+      } catch {}
+    }
 
     app.on("browser-window-created", (_event, win) => {
       try {
@@ -1001,7 +1038,7 @@ if (!gotLock) {
     });
 
     // Create the main window
-    void createWindow().then(() => {
+    void createAndShowMainWindow().then(() => {
       // Trigger auto-update check 5 s after window creation.
       // startAutoCheck() is a no-op on unsupported platforms (Linux deb/rpm/snap).
       getAutoUpdateBridge().startAutoCheck(5000);
@@ -1049,9 +1086,12 @@ if (!gotLock) {
 
       if (focusMainWindow()) return;
       // Main window doesn't exist — create it even if other windows (e.g. settings) are open
-      void createWindow().catch((err) => {
+      void createAndShowMainWindow().catch((err) => {
         console.error("[Main] Failed to create window on activate:", err);
         showStartupError(err);
+        if (!hasUsableWindow()) {
+          try { app.quit(); } catch {}
+        }
       });
     });
   });

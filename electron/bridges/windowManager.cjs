@@ -33,6 +33,9 @@ let menuDeps = null;
 let electronApp = null; // Reference to Electron app for userData path
 let isQuitting = false;
 const rendererReadyCallbacksByWebContentsId = new Map();
+const rendererReadySeenByWebContentsId = new Set();
+const rendererReadyWaitersByWebContentsId = new Map();
+const unhealthyWebContentsIds = new Set();
 const DEBUG_WINDOWS = process.env.NETCATTY_DEBUG_WINDOWS === "1";
 const OAUTH_DEFAULT_WIDTH = 600;
 const OAUTH_DEFAULT_HEIGHT = 700;
@@ -802,6 +805,128 @@ function setupDeferredShow(win, { timeoutMs = 3000, waitForRendererReady = true 
   return { showOnce, markRendererReady };
 }
 
+function resolveRendererReady(wcId) {
+  if (!wcId) return;
+  unhealthyWebContentsIds.delete(wcId);
+  rendererReadySeenByWebContentsId.add(wcId);
+  const cb = rendererReadyCallbacksByWebContentsId.get(wcId);
+  if (cb) cb();
+  const waiters = rendererReadyWaitersByWebContentsId.get(wcId);
+  if (!waiters || waiters.size === 0) return;
+  rendererReadyWaitersByWebContentsId.delete(wcId);
+  for (const resolve of waiters) {
+    try {
+      resolve();
+    } catch {
+      // ignore waiter errors
+    }
+  }
+}
+
+function isWindowUsable(win, options = {}) {
+  const requireVisible = options.requireVisible === true;
+  if (!win || typeof win.isDestroyed !== "function" || win.isDestroyed()) {
+    return false;
+  }
+  if (requireVisible) {
+    if (typeof win.isVisible !== "function") return false;
+    try {
+      if (!win.isVisible()) return false;
+    } catch {
+      return false;
+    }
+  }
+  const contents = win.webContents;
+  if (!contents || typeof contents.isDestroyed !== "function" || contents.isDestroyed()) {
+    return false;
+  }
+  const wcId = (() => {
+    try {
+      return contents.id;
+    } catch {
+      return null;
+    }
+  })();
+  if (wcId && unhealthyWebContentsIds.has(wcId)) {
+    return false;
+  }
+  if (typeof contents.isCrashed === "function") {
+    try {
+      if (contents.isCrashed()) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function waitForRendererReady(win, { timeoutMs = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const wcId = (() => {
+      try {
+        return win?.webContents?.id;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!win || win.isDestroyed?.() || !wcId) {
+      reject(new Error("Main window is unavailable before renderer ready."));
+      return;
+    }
+
+    if (rendererReadySeenByWebContentsId.has(wcId)) {
+      resolve();
+      return;
+    }
+
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      try { win.removeListener("closed", handleClosed); } catch {}
+      try { win.webContents?.removeListener?.("render-process-gone", handleGone); } catch {}
+      const waiters = rendererReadyWaitersByWebContentsId.get(wcId);
+      if (waiters) {
+        waiters.delete(handleReady);
+        if (waiters.size === 0) {
+          rendererReadyWaitersByWebContentsId.delete(wcId);
+        }
+      }
+    };
+
+    const handleReady = () => {
+      cleanup();
+      resolve();
+    };
+    const handleClosed = () => {
+      cleanup();
+      reject(new Error("Main window closed before renderer became ready."));
+    };
+    const handleGone = (_event, details) => {
+      cleanup();
+      reject(new Error(`Renderer process exited before ready: ${details?.reason || "unknown"}`));
+    };
+
+    let waiters = rendererReadyWaitersByWebContentsId.get(wcId);
+    if (!waiters) {
+      waiters = new Set();
+      rendererReadyWaitersByWebContentsId.set(wcId, waiters);
+    }
+    waiters.add(handleReady);
+
+    win.once("closed", handleClosed);
+    win.webContents?.once?.("render-process-gone", handleGone);
+
+    if (Number(timeoutMs) > 0) {
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("Renderer did not report ready before timeout."));
+      }, timeoutMs);
+    }
+  });
+}
+
 /**
  * Create the main application window
  */
@@ -880,12 +1005,27 @@ async function createWindow(electronModule, options) {
 
   // Clear reference when the main window is destroyed
   win.on('closed', () => {
+    try {
+      if (win?.webContents?.id) {
+        unhealthyWebContentsIds.delete(win.webContents.id);
+        rendererReadySeenByWebContentsId.delete(win.webContents.id);
+      }
+    } catch {
+      // ignore
+    }
     if (mainWindow === win) mainWindow = null;
   });
 
   // Log renderer crashes for diagnostics (skip normal clean exits)
   win.webContents.on("render-process-gone", (_event, details) => {
     if (details?.reason === "clean-exit") return;
+    try {
+      if (win.webContents?.id) {
+        unhealthyWebContentsIds.add(win.webContents.id);
+      }
+    } catch {
+      // ignore
+    }
     try {
       const crashLogBridge = require("./crashLogBridge.cjs");
       crashLogBridge.captureError("render-process-gone", new Error(
@@ -1534,8 +1674,7 @@ function registerWindowHandlers(ipcMain, nativeTheme) {
   ipcMain.on("netcatty:renderer:ready", (event) => {
     const wcId = event?.sender?.id;
     if (!wcId) return;
-    const cb = rendererReadyCallbacksByWebContentsId.get(wcId);
-    if (cb) cb();
+    resolveRendererReady(wcId);
   });
 }
 
@@ -1626,6 +1765,8 @@ module.exports = {
   buildAppMenu,
   getMainWindow,
   getSettingsWindow,
+  isWindowUsable,
+  waitForRendererReady,
   setIsQuitting,
   openFallbackBrowser,
   tryOpenExternalWithFallback,
