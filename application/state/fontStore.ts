@@ -9,31 +9,6 @@ import { getMonospaceFonts } from '../../lib/localFonts';
 const BUNDLED_FONT_IDS = new Set(['jetbrains-mono']);
 
 /**
- * Check if a font family is actually installed by comparing its rendered
- * width against a generic monospace fallback. `document.fonts.check()` is
- * unreliable for system fonts — it returns true even for missing fonts
- * because the browser falls back silently.
- */
-function isFontAvailable(family: string): boolean {
-  const primary = family.split(',')[0].trim().replace(/^["']|["']$/g, '');
-  if (!primary) return false;
-  try {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return false;
-    // Use a string with varied glyph widths to reduce false positives
-    const testStr = 'mmmmmmmmmmlli1|WMwij';
-    ctx.font = `72px monospace`;
-    const fallbackWidth = ctx.measureText(testStr).width;
-    ctx.font = `72px "${primary}", monospace`;
-    const testWidth = ctx.measureText(testStr).width;
-    return testWidth !== fallbackWidth;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Global font store - singleton pattern using useSyncExternalStore
  * Ensures fonts are loaded only once and shared across all components
  */
@@ -92,33 +67,38 @@ class FontStore {
 
     try {
       const localFonts = await getMonospaceFonts();
-      
-      // Build a set of locally detected font family names (case-insensitive)
-      const localFontNames = new Set(
-        localFonts.map(f => f.name.toLowerCase())
+
+      // Index of built-in font metadata by lowercase name for enrichment
+      const builtinByName = new Map(
+        TERMINAL_FONTS.map(f => [f.name.toLowerCase(), f]),
       );
 
-      // Filter built-in fonts: keep only bundled (@fontsource) or locally installed
-      const availableBuiltins = TERMINAL_FONTS.filter(font =>
-        BUNDLED_FONT_IDS.has(font.id) || localFontNames.has(font.name.toLowerCase()) || isFontAvailable(font.family)
-      );
-
-      // Combine with local fonts, deduplicate by id
       const fontMap = new Map<string, TerminalFont>();
 
-      availableBuiltins.forEach(font => fontMap.set(font.id, font));
+      // 1. Always include bundled @fontsource fonts
+      for (const font of TERMINAL_FONTS) {
+        if (BUNDLED_FONT_IDS.has(font.id)) {
+          fontMap.set(font.id, font);
+        }
+      }
 
-      // Build a set of included font family names for dedup (case-insensitive)
-      const includedFamilyNames = new Set(
-        availableBuiltins.map(f => f.name.toLowerCase())
-      );
-
-      // Add local fonts, skipping those already covered by built-in fonts
-      localFonts.forEach(font => {
-        if (includedFamilyNames.has(font.name.toLowerCase())) return;
-        const localId = font.id.startsWith('local-') ? font.id : `local-${font.id}`;
-        fontMap.set(localId, { ...font, id: localId });
-      });
+      // 2. Add locally detected fonts. If a local font matches a built-in
+      //    entry, use the built-in metadata (nicer description, CJK fallback
+      //    stack). Otherwise add it as a local-prefixed entry.
+      for (const local of localFonts) {
+        const builtin = builtinByName.get(local.name.toLowerCase());
+        if (builtin) {
+          // Use built-in metadata (has CJK fallback, description, etc.)
+          if (!fontMap.has(builtin.id)) {
+            fontMap.set(builtin.id, builtin);
+          }
+        } else {
+          const localId = local.id.startsWith('local-') ? local.id : `local-${local.id}`;
+          if (!fontMap.has(localId)) {
+            fontMap.set(localId, { ...local, id: localId });
+          }
+        }
+      }
 
       this.setState({
         availableFonts: Array.from(fontMap.values()),
@@ -127,13 +107,11 @@ class FontStore {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load local fonts';
-      console.warn('Failed to fetch local fonts, using defaults:', error);
-      // On error, still filter built-in fonts by availability
-      const availableBuiltins = TERMINAL_FONTS.filter(font =>
-        BUNDLED_FONT_IDS.has(font.id) || isFontAvailable(font.family)
-      );
+      console.warn('Failed to fetch local fonts, using bundled only:', error);
+      // On error, show only bundled fonts
+      const bundled = TERMINAL_FONTS.filter(f => BUNDLED_FONT_IDS.has(f.id));
       this.setState({
-        availableFonts: availableBuiltins.length > 0 ? availableBuiltins : TERMINAL_FONTS,
+        availableFonts: bundled.length > 0 ? bundled : TERMINAL_FONTS,
         isLoading: false,
         isLoaded: true,
         error: errorMessage,
