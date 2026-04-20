@@ -9,15 +9,25 @@ import { getMonospaceFonts } from '../../lib/localFonts';
 const BUNDLED_FONT_IDS = new Set(['jetbrains-mono']);
 
 /**
- * Check if a font family is available in the browser by testing
- * whether it renders differently from the generic monospace fallback.
+ * Check if a font family is actually installed by comparing its rendered
+ * width against a generic monospace fallback. `document.fonts.check()` is
+ * unreliable for system fonts — it returns true even for missing fonts
+ * because the browser falls back silently.
  */
 function isFontAvailable(family: string): boolean {
-  // Extract the primary font name (before the first comma / "monospace" fallback)
   const primary = family.split(',')[0].trim().replace(/^["']|["']$/g, '');
   if (!primary) return false;
   try {
-    return document.fonts.check(`16px "${primary}"`);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    // Use a string with varied glyph widths to reduce false positives
+    const testStr = 'mmmmmmmmmmlli1|WMwij';
+    ctx.font = `72px monospace`;
+    const fallbackWidth = ctx.measureText(testStr).width;
+    ctx.font = `72px "${primary}", monospace`;
+    const testWidth = ctx.measureText(testStr).width;
+    return testWidth !== fallbackWidth;
   } catch {
     return false;
   }
