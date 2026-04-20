@@ -21,6 +21,7 @@ import {
   Unplug,
 } from 'lucide-react';
 import { useSimpleSync } from '../application/state/useSimpleSync';
+import { useI18n } from '../application/i18n/I18nProvider';
 import type { SyncPayload, WebDAVAuthType, WebDAVConfig } from '../domain/sync';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
@@ -66,6 +67,7 @@ interface ConfigFormProps {
 }
 
 const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
+  const { t } = useI18n();
   const [endpoint, setEndpoint] = useState('');
   const [authType, setAuthType] = useState<WebDAVAuthType>('basic');
   const [username, setUsername] = useState('');
@@ -91,27 +93,27 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="space-y-1.5">
-        <Label htmlFor="sync-endpoint" className="text-xs">Endpoint URL</Label>
+        <Label htmlFor="sync-endpoint" className="text-xs">{t('sync.config.endpointUrl')}</Label>
         <Input
           id="sync-endpoint"
           value={endpoint}
           onChange={(e) => setEndpoint(e.target.value)}
-          placeholder="https://dav.example.com/remote.php/dav/files/user"
+          placeholder={t('sync.config.endpointPlaceholder')}
           className="h-8 text-xs"
           autoFocus
         />
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="sync-auth-type" className="text-xs">Auth Type</Label>
+        <Label htmlFor="sync-auth-type" className="text-xs">{t('sync.config.authType')}</Label>
         <Select value={authType} onValueChange={(v) => setAuthType(v as WebDAVAuthType)}>
           <SelectTrigger id="sync-auth-type" className="h-8 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="basic">Basic</SelectItem>
-            <SelectItem value="digest">Digest</SelectItem>
-            <SelectItem value="token">Token (Bearer)</SelectItem>
+            <SelectItem value="basic">{t('sync.config.authBasic')}</SelectItem>
+            <SelectItem value="digest">{t('sync.config.authDigest')}</SelectItem>
+            <SelectItem value="token">{t('sync.config.authToken')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -119,7 +121,7 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
       {authType !== 'token' ? (
         <>
           <div className="space-y-1.5">
-            <Label htmlFor="sync-username" className="text-xs">Username</Label>
+            <Label htmlFor="sync-username" className="text-xs">{t('sync.config.username')}</Label>
             <Input
               id="sync-username"
               value={username}
@@ -128,7 +130,7 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="sync-password" className="text-xs">Password</Label>
+            <Label htmlFor="sync-password" className="text-xs">{t('sync.config.password')}</Label>
             <div className="relative">
               <Input
                 id="sync-password"
@@ -149,7 +151,7 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
         </>
       ) : (
         <div className="space-y-1.5">
-          <Label htmlFor="sync-token" className="text-xs">Token</Label>
+          <Label htmlFor="sync-token" className="text-xs">{t('sync.config.token')}</Label>
           <div className="relative">
             <Input
               id="sync-token"
@@ -170,14 +172,14 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
       )}
 
       <div className="space-y-1.5">
-        <Label htmlFor="sync-enc-password" className="text-xs">Encryption Password</Label>
+        <Label htmlFor="sync-enc-password" className="text-xs">{t('sync.config.encryptionPassword')}</Label>
         <div className="relative">
           <Input
             id="sync-enc-password"
             type={showEncPassword ? 'text' : 'password'}
             value={encryptionPassword}
             onChange={(e) => setEncryptionPassword(e.target.value)}
-            placeholder="Used to encrypt your data"
+            placeholder={t('sync.config.encryptionPlaceholder')}
             className="h-8 text-xs pr-8"
           />
           <button
@@ -192,7 +194,7 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
 
       <Button type="submit" size="sm" className="w-full gap-1.5" disabled={!canSubmit}>
         {isConnecting ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
-        Connect
+        {t('sync.config.connect')}
       </Button>
     </form>
   );
@@ -214,6 +216,7 @@ interface ConnectedViewProps {
 const ConnectedView: React.FC<ConnectedViewProps> = ({
   onPush, onPull, onDisconnect, isSyncing, lastError, endpoint,
 }) => {
+  const { t } = useI18n();
   let displayEndpoint = endpoint;
   try {
     const url = new URL(endpoint);
@@ -247,7 +250,7 @@ const ConnectedView: React.FC<ConnectedViewProps> = ({
           onClick={onPush}
         >
           {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={14} />}
-          Push
+          {t('sync.action.push')}
         </Button>
         <Button
           size="sm"
@@ -257,7 +260,7 @@ const ConnectedView: React.FC<ConnectedViewProps> = ({
           onClick={onPull}
         >
           {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <ArrowDown size={14} />}
-          Pull
+          {t('sync.action.pull')}
         </Button>
       </div>
 
@@ -266,7 +269,7 @@ const ConnectedView: React.FC<ConnectedViewProps> = ({
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors w-full justify-center pt-1"
       >
         <Unplug size={12} />
-        Disconnect
+        {t('sync.action.disconnect')}
       </button>
     </div>
   );
@@ -287,6 +290,7 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
   onApplyPayload,
   className,
 }) => {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const sync = useSimpleSync();
 
@@ -304,49 +308,49 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
       const remotePayload = await sync.configure(config, password, localPayload);
       if (remotePayload) {
         onApplyPayload(remotePayload);
-        toast.success('Connected and pulled remote data', 'Cloud Sync');
+        toast.success(t('sync.toast.connectedPulled'), t('sync.cloudSync'));
       } else {
-        toast.success('Connected and pushed local data', 'Cloud Sync');
+        toast.success(t('sync.toast.connectedPushed'), t('sync.cloudSync'));
       }
       setIsOpen(false);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Connection failed',
-        'Cloud Sync',
+        err instanceof Error ? err.message : t('sync.toast.connectionFailed'),
+        t('sync.cloudSync'),
       );
     }
-  }, [sync, onBuildPayload, onApplyPayload]);
+  }, [sync, onBuildPayload, onApplyPayload, t]);
 
   const handlePush = useCallback(async () => {
     try {
       const payload = onBuildPayload();
       await sync.push(payload);
-      toast.success('Pushed to remote', 'Cloud Sync');
+      toast.success(t('sync.toast.pushed'), t('sync.cloudSync'));
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Push failed',
-        'Cloud Sync',
+        err instanceof Error ? err.message : t('sync.toast.pushFailed'),
+        t('sync.cloudSync'),
       );
     }
-  }, [sync, onBuildPayload]);
+  }, [sync, onBuildPayload, t]);
 
   const handlePull = useCallback(async () => {
     try {
       const payload = await sync.pull();
       onApplyPayload(payload);
-      toast.success('Pulled from remote', 'Cloud Sync');
+      toast.success(t('sync.toast.pulled'), t('sync.cloudSync'));
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Pull failed',
-        'Cloud Sync',
+        err instanceof Error ? err.message : t('sync.toast.pullFailed'),
+        t('sync.cloudSync'),
       );
     }
-  }, [sync, onApplyPayload]);
+  }, [sync, onApplyPayload, t]);
 
   const handleDisconnect = useCallback(() => {
     sync.disconnect();
-    toast.info('Disconnected from cloud sync', 'Cloud Sync');
-  }, [sync]);
+    toast.info(t('sync.toast.disconnected'), t('sync.cloudSync'));
+  }, [sync, t]);
 
   const getButtonIcon = () => {
     if (sync.isSyncing) return <Loader2 size={16} className="animate-spin" />;
@@ -364,7 +368,7 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
             'h-8 w-8 relative text-muted-foreground hover:text-foreground app-no-drag',
             className,
           )}
-          title="Cloud Sync"
+          title={t('sync.cloudSync')}
         >
           {getButtonIcon()}
           <StatusDot
@@ -389,12 +393,12 @@ export const SyncStatusButton: React.FC<SyncStatusButtonProps> = ({
             )}
             <span className="text-sm font-medium">
               {sync.isSyncing
-                ? 'Syncing...'
+                ? t('sync.syncing')
                 : sync.lastError
-                  ? 'Sync Error'
+                  ? t('sync.error')
                   : sync.status === 'configured'
-                    ? 'Cloud Sync'
-                    : 'Not Configured'}
+                    ? t('sync.cloudSync')
+                    : t('sync.notConfigured')}
             </span>
           </div>
         </div>
