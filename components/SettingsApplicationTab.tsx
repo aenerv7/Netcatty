@@ -220,7 +220,7 @@ export default function SettingsApplicationTab({ updateState, checkNow, openRele
             />
             <ActionRow
               icon={<Github size={18} />}
-              title="GitHub"
+              title={t("settings.application.github")}
               subtitle={t("settings.application.github.subtitle")}
               onClick={() => void handleOpenExternal(REPO_URL)}
             />

@@ -832,6 +832,9 @@ const en: Messages = {
 
   // Settings > SFTP File Associations
   'settings.tab.sftpFileAssociations': 'SFTP',
+  'settings.tab.ai': 'AI',
+  'settings.ai.loading': 'Loading AI settings...',
+  'settings.ai.error': 'AI Settings Error',
   'settings.sftp.transferConcurrency': 'Transfer Concurrency',
   'settings.sftp.transferConcurrency.desc': 'Number of files to transfer in parallel when uploading or downloading folders. Higher values may improve speed but can overwhelm some servers.',
   'settings.sftp.defaultOpener': 'Default File Opener',

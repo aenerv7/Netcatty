@@ -1210,6 +1210,9 @@ const zhCN: Messages = {
 
   // Settings > SFTP File Associations
   'settings.tab.sftpFileAssociations': 'SFTP',
+  'settings.tab.ai': 'AI',
+  'settings.ai.loading': '正在加载 AI 设置…',
+  'settings.ai.error': 'AI 设置错误',
   'settings.sftp.transferConcurrency': '传输并发数',
   'settings.sftp.transferConcurrency.desc': '上传或下载文件夹时并行传输的文件数量。较高的值可能提高速度，但可能导致某些服务器过载。',
   'settings.sftp.defaultOpener': '默认文件打开方式',

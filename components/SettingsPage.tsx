@@ -68,11 +68,12 @@ const SettingsTerminalTabContainer: React.FC<{ settings: SettingsState }> = ({ s
 };
 
 const SettingsAITabContainer: React.FC = () => {
+    const { t } = useI18n();
     const aiState = useAIState();
 
     return (
         <AITabErrorBoundary>
-            <React.Suspense fallback={<div className="flex-1 px-6 py-5 text-sm text-muted-foreground">Loading AI settings...</div>}>
+            <React.Suspense fallback={<div className="flex-1 px-6 py-5 text-sm text-muted-foreground">{t("settings.ai.loading")}</div>}>
                 <SettingsAITab
                     providers={aiState.providers}
                     addProvider={aiState.addProvider}
@@ -212,7 +213,7 @@ const SettingsPageContent: React.FC<{ settings: SettingsState }> = ({ settings }
                             value="ai"
                             className="w-full justify-start gap-2 px-3 py-2 text-sm data-[state=active]:bg-background hover:bg-background/60 rounded-md transition-colors"
                         >
-                            <Sparkles size={14} /> AI
+                            <Sparkles size={14} /> {t("settings.tab.ai")}
                         </TabsTrigger>
                         <TabsTrigger
                             value="system"
