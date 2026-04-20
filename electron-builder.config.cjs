@@ -88,15 +88,8 @@ module.exports = {
             {
                 target: 'nsis',
                 arch: ['x64', 'arm64']
-            },
-            {
-                target: 'portable',
-                arch: ['x64', 'arm64']
             }
         ]
-    },
-    portable: {
-        artifactName: '${productName}-${version}-portable-${os}-${arch}.${ext}',
     },
     nsis: {
         oneClick: false,
