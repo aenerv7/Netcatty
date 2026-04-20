@@ -63,7 +63,8 @@ React Hooks，拥有状态和持久化边界。
 
 - `activeTabStore.ts` — 活动标签 ID (非 React Context，支持跨组件订阅)，包含 `useIsScpActive` 用于 SCP 标签页
 - `customThemeStore.ts` — 自定义终端主题
-- `fontStore.ts` / `uiFontStore.ts` — 字体管理
+- `fontStore.ts` — 终端字体管理（仅显示 @fontsource 内置字体 + Local Font Access API 检测到的系统字体，`TERMINAL_FONTS` 硬编码列表仅用作元数据查找表）
+- `uiFontStore.ts` — UI 字体管理
 
 ## Infrastructure 层 (`infrastructure/`)
 

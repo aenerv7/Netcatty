@@ -59,6 +59,10 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 修复连接进度条抖动：模拟定时器与跳板链回调竞争导致进度回滚，改为单调递增 + 降低定时器增速
 - 修复 SCP 与 SFTP 面板本地文件不同步：通过 `netcatty:local-fs-changed` 自定义事件跨实例通知刷新
 - 右上角工具栏精简：移除了通知铃铛和亮暗色切换按钮，AI 按钮仅在有配置时显示
+- 终端侧边栏精简：移除了 Theme 面板（Palette 图标标签页），侧边栏仅保留 Scripts 和 AI Chat 两个标签
+- 终端工具栏精简：移除了 Scripts 按钮（Zap 图标），Scripts 仅通过侧边栏进入
+- 默认终端字体改为 JetBrains Mono（通过 `@fontsource/jetbrains-mono` 内置，所有平台可用）
+- 终端字体下拉菜单只显示实际可用的字体：内置 @fontsource 字体 + Local Font Access API 检测到的系统字体，不再显示未安装的字体
 - Vault 页面移除了"新建本地 Terminal"按钮（`onCreateLocalTerminal`），仅保留 Serial 按钮
 - 构建仅保留 Windows (NSIS) 和 macOS (DMG)，移除 Linux
 - 所有 repo URL 指向 `aenerv7/Netcatty`（更新检查、electron-builder publish、设置页链接等）
@@ -73,7 +77,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 4. **不加入代码签名**：本项目没有签名证书。workflow 中必须保留 "Disable code signing and notarization" 步骤，并设置 `CSC_IDENTITY_AUTO_DISCOVERY: "false"`。如果上游引入了签名/公证相关配置，不要合入。
 5. **构建触发方式**：只通过打 `v*` tag 的方式触发构建，不使用 `workflow_dispatch`。如果没有更新的上游版本号，需要删除现有的远端和本地 tag 后重新打 tag 触发构建（`git push origin :refs/tags/vX.Y.Z` → `git tag -d vX.Y.Z` → `git tag vX.Y.Z` → `git push origin vX.Y.Z`）。
 6. **package-lock.json 合并**：不要直接 `git checkout upstream/main -- package-lock.json`。本 fork 的 `package.json` 比上游多了 `@types/react` 和 `@types/react-dom` 等 devDependencies，直接替换 lock 文件会导致 `npm ci` 因不匹配而失败。正确做法是让 git merge 自动处理，如有冲突则运行 `npm install --package-lock-only` 重新生成。
-7. **已移除功能的冲突处理**：上游对系统托盘（tray）、客户端自动补全（autocomplete）、终端 SFTP 侧边栏（`SftpSidePanel`）和云同步系统（`CloudSyncSettings`、`useAutoSync`、`useCloudSync`、`syncMerge`、`syncGuards`、设置页面同步标签页）的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除或重写这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`TerminalLayer.tsx`、`Terminal.tsx`、`App.tsx`、`SyncStatusButton.tsx`、`SettingsPage.tsx` 中的相关冲突。
+7. **已移除功能的冲突处理**：上游对系统托盘（tray）、客户端自动补全（autocomplete）、终端 SFTP 侧边栏（`SftpSidePanel`）、云同步系统（`CloudSyncSettings`、`useAutoSync`、`useCloudSync`、`syncMerge`、`syncGuards`、设置页面同步标签页）、终端侧边栏主题面板（`ThemeSidePanel`）和终端工具栏 Scripts 按钮的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除或重写这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`TerminalLayer.tsx`、`Terminal.tsx`、`TerminalToolbar.tsx`、`App.tsx`、`SyncStatusButton.tsx`、`SettingsPage.tsx` 中的相关冲突。
 8. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
 9. **合并后必须验证大文件的 JSX 完整性**：`TerminalLayer.tsx`、`App.tsx` 等大组件在冲突解决时容易丢失整块 JSX 渲染代码（如 `<SftpSidePanel>` 渲染块曾被整体丢弃导致侧边栏空白）。合并后应检查关键组件的渲染输出是否完整，特别是条件渲染块和 `.map()` 循环。
 

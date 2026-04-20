@@ -12,11 +12,14 @@ description: 每个功能模块的实现位置索引表
 | 多会话终端 | `useSessionState` → `components/Terminal.tsx` → `components/TerminalLayer.tsx` |
 | 工作区分割视图 | `domain/workspace.ts` → `useSessionState` (split/focus/prune) |
 | 广播模式 | `useSessionState.toggleBroadcast` → `TerminalLayer` |
-| 终端主题 | `infrastructure/config/terminalThemes.ts` + `customThemeStore` |
+| 终端主题 | `infrastructure/config/terminalThemes.ts` + `customThemeStore`（设置页面 Terminal 标签页和主机详情面板可配置，终端侧边栏主题面板已移除） |
 | 关键词高亮 | `domain/models.ts (KeywordHighlightRule)` → `TerminalSettings` |
 | 本地终端 | `useSessionState.createLocalTerminal` (shell 发现 + node-pty) |
 | 串口连接 | `useSessionState.createSerialSession` → `SerialConnectModal` |
 | 会话日志 | `STORAGE_KEY_SESSION_LOGS_*` → 主进程 `sessionLogStreamManager` |
+| 终端字体 | 默认 JetBrains Mono（@fontsource 内置），`fontStore.ts` 仅显示可用字体（内置 + 系统检测） |
+| 终端侧边栏 | `TerminalLayer.tsx` 侧边栏仅两个标签：Scripts（Zap）和 AI Chat（MessageSquare），Theme 面板已移除 |
+| 终端工具栏 | `TerminalToolbar.tsx` 显示编码切换、关键词高亮、输入栏、搜索、关闭按钮，Scripts 按钮已移除 |
 
 ## 主机管理
 
