@@ -156,7 +156,6 @@ interface TerminalProps {
     sourceSessionId?: string,
   ) => void;
   onOpenScripts?: () => void;
-  onOpenTheme?: () => void;
   isBroadcastEnabled?: boolean;
   onToggleBroadcast?: () => void;
   onToggleComposeBar?: () => void;
@@ -221,7 +220,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onSplitVertical,
   onOpenSftp,
   onOpenScripts,
-  onOpenTheme,
   isBroadcastEnabled,
   onToggleBroadcast,
   onToggleComposeBar,
@@ -1528,7 +1526,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       status={status}
       host={host}
       onOpenScripts={onOpenScripts ?? (() => {})}
-      onOpenTheme={onOpenTheme ?? (() => {})}
       onUpdateHost={onUpdateHost}
       showClose={opts?.showClose}
       onClose={() => onCloseSession?.(sessionId)}

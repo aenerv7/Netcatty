@@ -1,8 +1,8 @@
 /**
  * Terminal Toolbar
- * Displays Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
+ * Displays Scripts, Highlight, Search buttons and close button in terminal status bar
  */
-import { Check, Languages, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, Languages, X, Zap, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -16,7 +16,6 @@ export interface TerminalToolbarProps {
     status: 'connecting' | 'connected' | 'disconnected';
     host?: Host;
     onOpenScripts: () => void;
-    onOpenTheme: () => void;
     onUpdateHost?: (host: Host) => void;
     showClose?: boolean;
     onClose?: () => void;
@@ -35,7 +34,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     status,
     host,
     onOpenScripts,
-    onOpenTheme,
     onUpdateHost,
     showClose,
     onClose,
@@ -111,21 +109,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>{t("terminal.toolbar.scripts")}</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="secondary"
-                        size="icon"
-                        className={buttonBase}
-                        aria-label={t("terminal.toolbar.terminalSettings")}
-                        onClick={onOpenTheme}
-                    >
-                        <Palette size={12} />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("terminal.toolbar.terminalSettings")}</TooltipContent>
             </Tooltip>
 
             {!isLocalTerminal && !isSerialTerminal && (

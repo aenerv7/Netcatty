@@ -1,4 +1,4 @@
-import { Circle, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
+import { Circle, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Server, X, Zap } from 'lucide-react';
 import React, { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveTabId } from '../application/state/activeTabStore';
 import {
@@ -38,7 +38,6 @@ import { resolveGroupDefaults, applyGroupDefaults } from '../domain/groupConfig'
 import { DistroAvatar } from './DistroAvatar';
 import Terminal from './Terminal';
 import { ScriptsSidePanel } from './ScriptsSidePanel';
-import { ThemeSidePanel } from './terminal/ThemeSidePanel';
 import { AIChatSidePanel } from './AIChatSidePanel';
 import { useAIState } from '../application/state/useAIState';
 import { TerminalComposeBar } from './terminal/TerminalComposeBar';
@@ -49,7 +48,7 @@ import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { setupMcpApprovalBridge } from '../infrastructure/ai/shared/approvalGate';
 
-type SidePanelTab = 'scripts' | 'theme' | 'ai' | 'sftp';
+type SidePanelTab = 'scripts' | 'ai';
 
 type WorkspaceRect = { x: number; y: number; w: number; h: number };
 
@@ -1308,11 +1307,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     handleSwitchSidePanelTab('scripts');
   }, [handleSwitchSidePanelTab]);
 
-  // Open theme side panel (called from Terminal toolbar)
-  const handleOpenTheme = useCallback(() => {
-    handleSwitchSidePanelTab('theme');
-  }, [handleSwitchSidePanelTab]);
-
   // Open AI chat side panel
   const handleOpenAI = useCallback(() => {
     handleSwitchSidePanelTab('ai');
@@ -1438,9 +1432,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const focusedFontWeightOverridden = hasHostFontWeightOverride(focusedHost);
   const visibleFocusedThemeId = followAppTerminalTheme ? terminalTheme.id : focusedThemeId;
   const previewedOrVisibleThemeId = activeThemePreviewId ?? visibleFocusedThemeId;
-  const activeTopTabsThemeId = activeSidePanelTab === 'theme' && previewTargetSessionId
-    ? previewedOrVisibleThemeId
-    : (isVisible ? visibleFocusedThemeId : null);
+  const activeTopTabsThemeId = isVisible ? visibleFocusedThemeId : null;
   const appliedPreviewSessionRef = useRef<string | null>(null);
   const customThemes = useCustomThemes();
   const applyTerminalPreviewVars = useCallback((sessionId: string | null, themeId: string | null) => {
@@ -1549,15 +1541,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   }, [followAppTerminalTheme, themePreview.targetSessionId, themePreview.themeId]);
 
   useEffect(() => {
-    const panelOpen = activeSidePanelTab === 'theme' && !!previewTargetSessionId;
-    const shouldKeepPreview =
-      panelOpen &&
-      themePreview.targetSessionId === previewTargetSessionId &&
-      !!themePreview.targetSessionId &&
-      !!themePreview.themeId;
-
-    if (shouldKeepPreview) return;
-
     const appliedSessionId = appliedPreviewSessionRef.current;
     if (appliedSessionId) {
       clearTerminalPreviewVars(appliedSessionId);
@@ -1566,7 +1549,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     if (themePreview.targetSessionId || themePreview.themeId) {
       setThemePreview({ targetSessionId: null, themeId: null });
     }
-  }, [activeSidePanelTab, previewTargetSessionId, themePreview.targetSessionId, themePreview.themeId]);
+  }, [themePreview.targetSessionId, themePreview.themeId]);
 
   useEffect(() => {
     if (
@@ -2020,23 +2003,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                     <Button
                       variant="ghost"
                       size="icon"
-                      data-tab-id="theme"
-                      data-tab-type="sidepanel"
-                      data-state={activeSidePanelTab === 'theme' ? 'active' : 'inactive'}
-                      className="netcatty-tab h-7 w-7 rounded-md p-0 hover:bg-transparent"
-                      style={{
-                        color: activeSidePanelTab === 'theme'
-                          ? 'var(--terminal-sidepanel-fg)'
-                          : 'var(--terminal-sidepanel-muted)',
-                      }}
-                      onClick={handleOpenTheme}
-                      title="Theme"
-                    >
-                      <Palette size={15} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
                       data-tab-id="ai"
                       data-tab-type="sidepanel"
                       data-state={activeSidePanelTab === 'ai' ? 'active' : 'inactive'}
@@ -2086,34 +2052,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                         snippets={snippets}
                         packages={snippetPackages}
                         onSnippetClick={handleSnippetClickForFocusedSession}
-                      />
-                    </div>
-                  )}
-
-                  {/* Theme sub-panel */}
-                  {activeSidePanelTab === 'theme' && (
-                    <div className="absolute inset-0 z-10">
-                      <ThemeSidePanel
-                        followAppTerminalTheme={followAppTerminalTheme}
-                        currentThemeId={previewedOrVisibleThemeId}
-                        globalThemeId={terminalTheme.id}
-                        currentFontFamilyId={focusedFontFamilyId}
-                        globalFontFamilyId={terminalFontFamilyId}
-                        currentFontSize={focusedFontSize}
-                        currentFontWeight={focusedFontWeight}
-                        canResetTheme={focusedThemeOverridden}
-                        canResetFontFamily={focusedFontFamilyOverridden}
-                        canResetFontSize={focusedFontSizeOverridden}
-                        canResetFontWeight={focusedFontWeightOverridden}
-                        onThemeChange={handleThemeChangeForFocusedSession}
-                        onThemeReset={handleThemeResetForFocusedSession}
-                        onFontFamilyChange={handleFontFamilyChangeForFocusedSession}
-                        onFontFamilyReset={handleFontFamilyResetForFocusedSession}
-                        onFontSizeChange={handleFontSizeChangeForFocusedSession}
-                        onFontSizeReset={handleFontSizeResetForFocusedSession}
-                        onFontWeightChange={handleFontWeightChangeForFocusedSession}
-                        onFontWeightReset={handleFontWeightResetForFocusedSession}
-                        previewColors={resolvedPreviewTheme.colors}
                       />
                     </div>
                   )}
@@ -2264,7 +2202,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   keyBindings={keyBindings}
                   onHotkeyAction={onHotkeyAction}
                   onOpenScripts={handleOpenScripts}
-                  onOpenTheme={handleOpenTheme}
                   onCloseSession={handleCloseSession}
                   onStatusChange={handleStatusChange}
                   onSessionExit={handleSessionExit}
