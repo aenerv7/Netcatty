@@ -1,8 +1,8 @@
 /**
  * Terminal Toolbar
- * Displays Scripts, Highlight, Search buttons and close button in terminal status bar
+ * Displays Highlight, Search buttons and close button in terminal status bar
  */
-import { Check, Languages, X, Zap, Search, TextCursorInput } from 'lucide-react';
+import { Check, Languages, X, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -15,7 +15,6 @@ import HostKeywordHighlightPopover from './HostKeywordHighlightPopover';
 export interface TerminalToolbarProps {
     status: 'connecting' | 'connected' | 'disconnected';
     host?: Host;
-    onOpenScripts: () => void;
     onUpdateHost?: (host: Host) => void;
     showClose?: boolean;
     onClose?: () => void;
@@ -33,7 +32,6 @@ export interface TerminalToolbarProps {
 export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     status,
     host,
-    onOpenScripts,
     onUpdateHost,
     showClose,
     onClose,
@@ -95,21 +93,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                     </PopoverContent>
                 </Popover>
             )}
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="secondary"
-                        size="icon"
-                        className={buttonBase}
-                        aria-label={t("terminal.toolbar.scripts")}
-                        onClick={onOpenScripts}
-                    >
-                        <Zap size={12} />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("terminal.toolbar.scripts")}</TooltipContent>
-            </Tooltip>
 
             {!isLocalTerminal && !isSerialTerminal && (
                 <HostKeywordHighlightPopover

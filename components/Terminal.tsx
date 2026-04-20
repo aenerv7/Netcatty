@@ -155,7 +155,7 @@ interface TerminalProps {
     pendingUploadEntries?: DropEntry[],
     sourceSessionId?: string,
   ) => void;
-  onOpenScripts?: () => void;
+  onOpenScripts?: () => void;  // kept for TerminalLayer compatibility but no longer shown in toolbar
   isBroadcastEnabled?: boolean;
   onToggleBroadcast?: () => void;
   onToggleComposeBar?: () => void;
@@ -219,7 +219,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onSplitHorizontal,
   onSplitVertical,
   onOpenSftp,
-  onOpenScripts,
   isBroadcastEnabled,
   onToggleBroadcast,
   onToggleComposeBar,
@@ -1525,7 +1524,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     <TerminalToolbar
       status={status}
       host={host}
-      onOpenScripts={onOpenScripts ?? (() => {})}
       onUpdateHost={onUpdateHost}
       showClose={opts?.showClose}
       onClose={() => onCloseSession?.(sessionId)}
