@@ -73,6 +73,8 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
   const [token, setToken] = useState('');
   const [encryptionPassword, setEncryptionPassword] = useState('');
   const [showEncPassword, setShowEncPassword] = useState(false);
+  const [showWebdavPassword, setShowWebdavPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,25 +129,43 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ onConnect, isConnecting }) => {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="sync-password" className="text-xs">Password</Label>
-            <Input
-              id="sync-password"
-              type="password"
-              value={webdavPassword}
-              onChange={(e) => setWebdavPassword(e.target.value)}
-              className="h-8 text-xs"
-            />
+            <div className="relative">
+              <Input
+                id="sync-password"
+                type={showWebdavPassword ? 'text' : 'password'}
+                value={webdavPassword}
+                onChange={(e) => setWebdavPassword(e.target.value)}
+                className="h-8 text-xs pr-8"
+              />
+              <button
+                type="button"
+                onClick={() => setShowWebdavPassword(!showWebdavPassword)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showWebdavPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
           </div>
         </>
       ) : (
         <div className="space-y-1.5">
           <Label htmlFor="sync-token" className="text-xs">Token</Label>
-          <Input
-            id="sync-token"
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            className="h-8 text-xs"
-          />
+          <div className="relative">
+            <Input
+              id="sync-token"
+              type={showToken ? 'text' : 'password'}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="h-8 text-xs pr-8"
+            />
+            <button
+              type="button"
+              onClick={() => setShowToken(!showToken)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
         </div>
       )}
 
