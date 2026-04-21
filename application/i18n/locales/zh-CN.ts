@@ -48,11 +48,14 @@ const zhCN: Messages = {
   'confirm.closeBusyTerminal.messageWithMore': '进程 "{command}" 及其他 {count} 个正在运行的进程将被终止。',
   'confirm.closeBusyTerminal.cancel': '取消',
   'confirm.closeBusyTerminal.close': '关闭',
+  'dialog.createWorkspace.title': '创建工作区',
   'dialog.renameWorkspace.title': '重命名工作区',
   'dialog.renameSession.title': '重命名会话',
   'field.name': '名称',
+  'field.selectHosts': '选择主机',
   'placeholder.workspaceName': '工作区名称',
   'placeholder.sessionName': '会话名称',
+  'placeholder.searchHosts': '搜索主机…',
   'toast.settingsUnavailable': '当前平台无法打开设置窗口。',
   'credentials.protectionUnavailable.title': '凭据保护不可用',
   'credentials.protectionUnavailable.message': '当前设备无法自动解密已保存的密码和密钥。连接前请重新输入凭据。',
@@ -1416,6 +1419,13 @@ const zhCN: Messages = {
   'settings.terminal.rendering.renderer': '渲染器',
   'settings.terminal.rendering.renderer.desc': '选择终端渲染技术。自动模式会在低内存设备上使用 DOM 渲染。更改将在新终端会话中生效。',
   'settings.terminal.rendering.auto': '自动',
+
+  // Settings > Terminal > Workspace Focus Indicator
+  'settings.terminal.section.workspaceFocus': '工作区焦点指示器',
+  'settings.terminal.workspaceFocus.style': '焦点指示样式',
+  'settings.terminal.workspaceFocus.style.desc': '在分屏视图中如何指示当前聚焦的面板。',
+  'settings.terminal.workspaceFocus.dim': '暗化未聚焦面板',
+  'settings.terminal.workspaceFocus.border': '聚焦面板显示边框',
 
 
   // Settings > Shortcuts
