@@ -555,7 +555,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                 onDragLeave={handleTabDragLeave}
                 onDrop={(e) => handleTabDrop(e, session.id)}
                 className={cn(
-                  "netcatty-tab relative h-7 pl-3 pr-2 min-w-[140px] max-w-[240px] rounded-none text-xs font-semibold cursor-pointer flex items-center justify-between gap-2 app-no-drag flex-shrink-0",
+                  "netcatty-tab relative h-7 pl-3 pr-2 min-w-[140px] max-w-[240px] rounded-t-md overflow-hidden text-xs font-semibold cursor-pointer flex items-center justify-between gap-2 app-no-drag flex-shrink-0",
                   "transition-transform duration-150",
                   isBeingDragged && isDraggingForReorder ? "opacity-40 scale-95" : ""
                 )}
@@ -581,13 +581,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                   }
                 }}
               >
-                {/* Active tab top accent line */}
-                {activeTabId === session.id && (
-                  <div
-                    className="absolute top-0 left-0 right-0 h-[2px]"
-                    style={{ backgroundColor: 'var(--top-tabs-accent, hsl(var(--accent)))' }}
-                  />
-                )}
                 {/* Drop indicator line - before */}
                 {showDropIndicatorBefore && isDraggingForReorder && (
                   <div
@@ -657,7 +650,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                 onDragLeave={handleTabDragLeave}
                 onDrop={(e) => handleTabDrop(e, workspace.id)}
                 className={cn(
-                  "netcatty-tab relative h-7 pl-3 pr-2 min-w-[150px] max-w-[260px] rounded-none text-xs font-semibold cursor-pointer flex items-center justify-between gap-2 app-no-drag flex-shrink-0",
+                  "netcatty-tab relative h-7 pl-3 pr-2 min-w-[150px] max-w-[260px] rounded-t-md overflow-hidden text-xs font-semibold cursor-pointer flex items-center justify-between gap-2 app-no-drag flex-shrink-0",
                   "transition-transform duration-150",
                   isBeingDragged && isDraggingForReorder ? "opacity-40 scale-95" : ""
                 )}
@@ -683,13 +676,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                   }
                 }}
               >
-                {/* Active tab top accent line */}
-                {isActive && (
-                  <div
-                    className="absolute top-0 left-0 right-0 h-[2px]"
-                    style={{ backgroundColor: 'var(--top-tabs-accent, hsl(var(--accent)))' }}
-                  />
-                )}
                 {/* Drop indicator line - before */}
                 {showDropIndicatorBefore && isDraggingForReorder && (
                   <div
@@ -752,7 +738,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
             data-state={isActive ? 'active' : 'inactive'}
             onClick={() => onSelectTab(logView.id)}
             className={cn(
-              "netcatty-tab relative h-7 pl-3 pr-2 min-w-[140px] max-w-[240px] rounded-none text-xs font-semibold cursor-pointer flex items-center justify-between gap-2 app-no-drag flex-shrink-0",
+              "netcatty-tab relative h-7 pl-3 pr-2 min-w-[140px] max-w-[240px] rounded-t-md overflow-hidden text-xs font-semibold cursor-pointer flex items-center justify-between gap-2 app-no-drag flex-shrink-0",
             )}
             style={{
               backgroundColor: isActive
@@ -775,13 +761,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               }
             }}
           >
-            {/* Active tab top accent line */}
-            {isActive && (
-              <div
-                className="absolute top-0 left-0 right-0 h-[2px]"
-                style={{ backgroundColor: 'var(--top-tabs-fg, hsl(var(--foreground)))' }}
-              />
-            )}
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <FileText
                 size={14}
@@ -877,7 +856,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               data-state={isSftpActive ? 'active' : 'inactive'}
               onClick={() => onSelectTab('sftp')}
               className={cn(
-                "netcatty-tab relative h-7 px-3 rounded-none text-xs font-semibold cursor-pointer flex items-center gap-2 app-no-drag",
+                "netcatty-tab relative h-7 px-3 rounded-t-md overflow-hidden text-xs font-semibold cursor-pointer flex items-center gap-2 app-no-drag",
               )}
               style={{
                 backgroundColor: isSftpActive
@@ -900,12 +879,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                 }
               }}
             >
-              {isSftpActive && (
-                <div
-                  className="absolute top-0 left-0 right-0 h-[2px]"
-                  style={{ backgroundColor: 'var(--top-tabs-accent, hsl(var(--accent)))' }}
-                />
-              )}
               <Folder size={14} /> SFTP
             </div>
           )}

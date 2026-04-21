@@ -984,7 +984,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     <div className="h-full min-h-0 flex relative">
       <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <header className="border-b border-border/50 bg-secondary/80 backdrop-blur">
-          <div className="h-14 px-4 py-2 flex items-center gap-2">
+          <div className="h-14 px-4 py-2 flex items-center gap-3">
             {/* Search box */}
             <div className="relative w-64">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1005,7 +1005,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
               }}
               size="sm"
               variant="secondary"
-              className="h-10 gap-2"
+              className="h-10 gap-2 bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
             >
               <FolderPlus size={14} className="mr-1" /> {t('snippets.action.newPackage')}
             </Button>

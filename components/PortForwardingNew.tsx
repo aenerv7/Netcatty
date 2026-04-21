@@ -567,10 +567,13 @@ const PortForwarding: React.FC<PortForwardingProps> = ({
         )}
       >
         {/* Toolbar */}
-        <div className="h-14 px-4 flex items-center gap-3 bg-secondary/60 border-b border-border/60 relative z-20">
+        <div className="h-14 px-4 py-2 flex items-center gap-3 bg-secondary/80 backdrop-blur border-b border-border/50 relative z-20">
           <Dropdown open={showNewMenu} onOpenChange={setShowNewMenu}>
             <DropdownTrigger asChild>
-              <Button variant="secondary" className="h-9 px-3 gap-2">
+              <Button
+                variant="secondary"
+                className="h-10 px-3 gap-2 bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
+              >
                 <Zap size={14} />
                 {t("pf.action.newForwarding")}
                 <ChevronDown
@@ -618,7 +621,7 @@ const PortForwarding: React.FC<PortForwardingProps> = ({
               />
               <Input
                 placeholder={t("common.searchPlaceholder")}
-                className="h-9 pl-8 w-44"
+                className="h-10 pl-9 w-44 bg-secondary border-border/60 text-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -627,7 +630,7 @@ const PortForwarding: React.FC<PortForwardingProps> = ({
             {/* View mode toggle */}
             <Dropdown>
               <DropdownTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9">
+                <Button variant="ghost" size="icon" className="h-10 w-10">
                   {viewMode === "grid" ? (
                     <LayoutGrid size={16} />
                   ) : (
@@ -664,7 +667,7 @@ const PortForwarding: React.FC<PortForwardingProps> = ({
             <SortDropdown
               value={sortMode}
               onChange={setSortMode}
-              className="h-9 w-9"
+              className="h-10 w-10"
             />
           </div>
         </div>
