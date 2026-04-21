@@ -100,6 +100,17 @@ class FontStore {
         }
       }
 
+      // If Local Font Access API returned nothing (permission denied, or
+      // platform doesn't support it), fall back to showing all built-in fonts
+      // so the user still has a reasonable selection.
+      if (fontMap.size <= BUNDLED_FONT_IDS.size && localFonts.length === 0) {
+        for (const font of TERMINAL_FONTS) {
+          if (!fontMap.has(font.id)) {
+            fontMap.set(font.id, font);
+          }
+        }
+      }
+
       this.setState({
         availableFonts: Array.from(fontMap.values()),
         isLoading: false,
@@ -107,11 +118,11 @@ class FontStore {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load local fonts';
-      console.warn('Failed to fetch local fonts, using bundled only:', error);
-      // On error, show only bundled fonts
-      const bundled = TERMINAL_FONTS.filter(f => BUNDLED_FONT_IDS.has(f.id));
+      console.warn('Failed to fetch local fonts, using all built-in fonts:', error);
+      // On error, show all built-in fonts (user can pick any; missing ones
+      // will fall back to monospace at the terminal level)
       this.setState({
-        availableFonts: bundled.length > 0 ? bundled : TERMINAL_FONTS,
+        availableFonts: TERMINAL_FONTS,
         isLoading: false,
         isLoaded: true,
         error: errorMessage,
@@ -125,6 +136,13 @@ class FontStore {
   getFontById = (fontId: string): TerminalFont => {
     const fonts = this.state.availableFonts;
     return fonts.find(f => f.id === fontId) || fonts[0] || TERMINAL_FONTS[0];
+  };
+
+  /**
+   * Check if a font ID is available in the current font list.
+   */
+  isFontAvailable = (fontId: string): boolean => {
+    return this.state.availableFonts.some(f => f.id === fontId);
   };
 }
 

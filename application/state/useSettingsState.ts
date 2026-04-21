@@ -45,6 +45,7 @@ import { DEFAULT_FONT_SIZE } from '../../infrastructure/config/fonts';
 import { DARK_UI_THEMES, LIGHT_UI_THEMES, UiThemeTokens, getUiThemeById } from '../../infrastructure/config/uiThemes';
 import { UI_FONTS, DEFAULT_UI_FONT_ID } from '../../infrastructure/config/uiFonts';
 import { uiFontStore, useUIFontsLoaded } from './uiFontStore';
+import { fontStore } from './fontStore';
 import { localStorageAdapter } from '../../infrastructure/persistence/localStorageAdapter';
 import { netcattyBridge } from '../../infrastructure/services/netcattyBridge';
 
@@ -437,7 +438,15 @@ export const useSettingsState = () => {
     const storedTermTheme = readStoredString(STORAGE_KEY_TERM_THEME);
     if (storedTermTheme) setTerminalThemeId(storedTermTheme);
     const storedTermFont = readStoredString(STORAGE_KEY_TERM_FONT_FAMILY);
-    if (storedTermFont) setTerminalFontFamilyId(storedTermFont);
+    if (storedTermFont) {
+      // If the synced font is not installed locally, fall back to default
+      if (fontStore.isFontAvailable(storedTermFont)) {
+        setTerminalFontFamilyId(storedTermFont);
+      } else {
+        setTerminalFontFamilyId(DEFAULT_FONT_FAMILY);
+        localStorageAdapter.writeString(STORAGE_KEY_TERM_FONT_FAMILY, DEFAULT_FONT_FAMILY);
+      }
+    }
     const storedTermSize = localStorageAdapter.readNumber(STORAGE_KEY_TERM_FONT_SIZE);
     if (storedTermSize != null) setTerminalFontSize(storedTermSize);
     const storedTermSettings = readStoredString(STORAGE_KEY_TERM_SETTINGS);
