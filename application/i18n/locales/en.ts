@@ -415,6 +415,7 @@ const en: Messages = {
   'settings.shortcuts.resetAll': 'Reset All',
   'settings.shortcuts.recording': 'Press keys...',
   'settings.shortcuts.none': 'None',
+  'settings.shortcuts.setDisabled': 'Set to disabled',
   'settings.shortcuts.category.tabs': 'Tabs',
   'settings.shortcuts.category.terminal': 'Terminal',
   'settings.shortcuts.category.navigation': 'Navigation',

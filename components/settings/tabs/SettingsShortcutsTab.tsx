@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { Ban, RotateCcw } from "lucide-react";
 import type { HotkeyScheme, KeyBinding } from "../../../domain/models";
 import { keyEventToString } from "../../../domain/models";
 import { useI18n } from "../../../application/i18n/I18nProvider";
@@ -221,7 +221,18 @@ export default function SettingsShortcutsTab(props: {
                             >
                               {isRecordingThis
                                 ? t("settings.shortcuts.recording")
-                                : currentKey || t("settings.shortcuts.scheme.disabled")}
+                                : currentKey === "Disabled"
+                                  ? t("settings.shortcuts.scheme.disabled")
+                                  : currentKey || t("settings.shortcuts.scheme.disabled")}
+                            </button>
+                          )}
+                          {!isSpecialBinding && (
+                            <button
+                              onClick={() => updateKeyBinding?.(binding.id, scheme, "Disabled")}
+                              className="p-1 hover:bg-muted rounded"
+                              title={t("settings.shortcuts.setDisabled")}
+                            >
+                              <Ban size={12} />
                             </button>
                           )}
                           <button
