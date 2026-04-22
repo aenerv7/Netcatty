@@ -65,7 +65,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 默认终端字体改为 JetBrains Mono（通过 `@fontsource/jetbrains-mono` 内置，所有平台可用）
 - 终端字体下拉菜单只显示实际可用的字体：内置 @fontsource 字体 + Local Font Access API 检测到的系统字体，不再显示未安装的字体
 - Vault 页面移除了"新建本地 Terminal"按钮（`onCreateLocalTerminal`），仅保留 Serial 按钮
-- 构建仅保留 Windows (NSIS) 和 macOS (DMG)，移除 Linux
+- 构建仅保留 Windows (NSIS) 和 macOS (DMG)，移除 Linux 和 Windows Portable
 - 所有 repo URL 指向 `aenerv7/Netcatty`（更新检查、electron-builder publish、设置页链接等）
 
 ## 上游同步规则
@@ -80,8 +80,8 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 6. **package-lock.json 合并**：不要直接 `git checkout upstream/main -- package-lock.json`。本 fork 的 `package.json` 比上游多了 `@types/react` 和 `@types/react-dom` 等 devDependencies，直接替换 lock 文件会导致 `npm ci` 因不匹配而失败。正确做法是让 git merge 自动处理，如有冲突则运行 `npm install --package-lock-only` 重新生成。
 7. **已移除功能的冲突处理**：上游对系统托盘（tray）、客户端自动补全（autocomplete）、终端 SFTP 侧边栏（`SftpSidePanel`）、云同步系统（`CloudSyncSettings`、`useAutoSync`、`useCloudSync`、`syncMerge`、`syncGuards`、设置页面同步标签页）、终端侧边栏主题面板（`ThemeSidePanel`）和终端工具栏 Scripts 按钮的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除或重写这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`TerminalLayer.tsx`、`Terminal.tsx`、`TerminalToolbar.tsx`、`App.tsx`、`SyncStatusButton.tsx`、`SettingsPage.tsx` 中的相关冲突。上游如果重新引入 `public/tray-icon*.png` 资产文件，合并后必须再次删除。
 8. **保留旧版图标**：上游对 `public/icon.png`、`public/logo.svg`、`public/dmg-fix-icon.png`、`components/AppLogo.tsx` 的修改必须丢弃（`git checkout --ours`），除非明确要求同步上游图标。
-8. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
-9. **合并后必须验证大文件的 JSX 完整性**：`TerminalLayer.tsx`、`App.tsx` 等大组件在冲突解决时容易丢失整块 JSX 渲染代码（如 `<SftpSidePanel>` 渲染块曾被整体丢弃导致侧边栏空白）。合并后应检查关键组件的渲染输出是否完整，特别是条件渲染块和 `.map()` 循环。
+9. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
+10. **合并后必须验证大文件的 JSX 完整性**：`TerminalLayer.tsx`、`App.tsx` 等大组件在冲突解决时容易丢失整块 JSX 渲染代码（如 `<SftpSidePanel>` 渲染块曾被整体丢弃导致侧边栏空白）。合并后应检查关键组件的渲染输出是否完整，特别是条件渲染块和 `.map()` 循环。
 
 ## Electron IPC
 - 渲染进程通过 `window.netcatty` 桥接主进程

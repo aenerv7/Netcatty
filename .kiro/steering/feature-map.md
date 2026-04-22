@@ -18,8 +18,8 @@ description: 每个功能模块的实现位置索引表
 | 串口连接 | `useSessionState.createSerialSession` → `SerialConnectModal` |
 | 会话日志 | `STORAGE_KEY_SESSION_LOGS_*` → 主进程 `sessionLogStreamManager` |
 | 终端字体 | 默认 JetBrains Mono（@fontsource 内置），`fontStore.ts` 仅显示可用字体（内置 + 系统检测） |
-| 终端侧边栏 | `TerminalLayer.tsx` 侧边栏仅两个标签：Scripts（Zap）和 AI Chat（MessageSquare），Theme 面板已移除 |
-| 终端工具栏 | `TerminalToolbar.tsx` 显示编码切换、关键词高亮、输入栏、搜索、关闭按钮，Scripts 按钮已移除 |
+| 终端侧边栏 | `TerminalLayer.tsx` 侧边栏仅两个标签：Scripts（Zap）和 AI Chat（MessageSquare），Theme/SFTP 面板已移除。侧边栏以 40px 宽的垂直活动栏形式常驻显示，点击标签展开面板 |
+| 终端工具栏 | `TerminalToolbar.tsx` 溢出菜单（⋮）仅包含编码切换，SFTP/Scripts/Theme 菜单项已移除。主按钮区显示关键词高亮、输入栏、搜索、关闭 |
 
 ## 主机管理
 
@@ -152,5 +152,6 @@ aside-panel, badge, button, card, collapsible, combobox, context-menu, dialog, d
 |------|----------|------|
 | AI Assistant (Sparkles) | 非 Vaults 页 且 `STORAGE_KEY_AI_PROVIDERS` 中有配置 | `window.dispatchEvent('netcatty:toggle-ai-panel')` |
 | Cloud Sync | 始终显示 | `SyncStatusButton` 组件（`useSimpleSync` hook，WebDAV 推送/拉取） |
+| 侧边栏切换 | 已移除（侧边栏现在常驻显示为垂直活动栏） | — |
 | 通知铃铛 | 已移除 | — |
 | 亮暗色切换 | 已移除（仅在设置面板可用） | — |

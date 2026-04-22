@@ -106,7 +106,7 @@ React Hooks，拥有状态和持久化边界。
 - `VaultView.tsx` — Vault 主界面 (主机/密钥/代码片段/已知主机)
 - `SftpView.tsx` — SFTP 文件管理器 (也被 SCP 标签页复用，通过 `scpMode` prop 切换后端协议)
 - `ScpView.tsx` — SCP 文件管理器 (薄 wrapper，渲染 `SftpView` 并传入 `scpMode`)
-- `TerminalLayer.tsx` — 终端渲染层
+- `TerminalLayer.tsx` — 终端渲染层（`isVisible` 排除 vault/sftp/scp 标签页，侧边栏以 40px 活动栏常驻）
 - `SettingsPage.tsx` — 设置界面
 - `TopTabs.tsx` — 顶部标签栏
 
