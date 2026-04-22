@@ -2114,7 +2114,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
         {(isSidePanelOpenForCurrentTab || mountedAiTabIds.length > 0 || isVisible) && (
           <>
             <div
-              style={{ width: isSidePanelOpenForCurrentTab ? sidePanelWidth : 0 }}
+              style={{ width: isSidePanelOpenForCurrentTab ? sidePanelWidth : 40 }}
               className={cn(
                 "flex-shrink-0 h-full relative z-20",
                 sidePanelPosition === 'right' && "order-last",
@@ -2130,10 +2130,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                 />
               )}
               <div
-                className={cn(
-                  "h-full flex flex-col overflow-hidden",
-                  !isSidePanelOpenForCurrentTab && "pointer-events-none",
-                )}
+                className="h-full flex flex-col overflow-hidden"
                 style={{
                     ['--terminal-sidepanel-bg' as never]: resolvedPreviewTheme.colors.background,
                     ['--terminal-sidepanel-fg' as never]: resolvedPreviewTheme.colors.foreground,
@@ -2144,11 +2141,14 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                     borderColor: 'var(--terminal-sidepanel-border)',
                   }}
                 >
-                {isSidePanelOpenForCurrentTab && (
-                  <div
-                    className="flex h-9 items-center px-1.5 py-1 flex-shrink-0 gap-1"
+                <div
+                    className={cn(
+                      "flex items-center px-1.5 py-1 flex-shrink-0 gap-1",
+                      isSidePanelOpenForCurrentTab ? "h-9" : "h-full flex-col justify-start pt-1",
+                    )}
                     style={{
-                      borderBottom: '1px solid var(--terminal-sidepanel-border)',
+                      borderBottom: isSidePanelOpenForCurrentTab ? '1px solid var(--terminal-sidepanel-border)' : undefined,
+                      borderRight: !isSidePanelOpenForCurrentTab ? '1px solid var(--terminal-sidepanel-border)' : undefined,
                     }}
                   >
                     <Button
@@ -2185,6 +2185,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                     >
                       <MessageSquare size={15} />
                     </Button>
+                    {isSidePanelOpenForCurrentTab && (
+                    <>
                     <div className="flex-1" />
                     <Button
                       variant="ghost"
@@ -2210,8 +2212,10 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                     >
                       <X size={15} />
                     </Button>
+                    </>
+                    )}
                   </div>
-                )}
+                {isSidePanelOpenForCurrentTab && (
                 <div className="flex-1 min-h-0 relative">
                   {/* Scripts sub-panel */}
                   {activeSidePanelTab === 'scripts' && (
@@ -2233,6 +2237,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   />
 
                 </div>
+                )}
               </div>
             </div>
           </>
