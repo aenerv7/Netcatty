@@ -496,7 +496,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const activeTabId = useActiveTabId();
   const isVaultActive = activeTabId === 'vault';
   const isSftpActive = activeTabId === 'sftp';
-  const isVisible = (!isVaultActive && !isSftpActive) || !!draggingSessionId;
+  const isScpActive = activeTabId === 'scp';
+  const isVisible = (!isVaultActive && !isSftpActive && !isScpActive) || !!draggingSessionId;
 
   // Stable callback references for Terminal components
   const handleCloseSession = useCallback((sessionId: string) => {
@@ -2111,7 +2112,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             Uses `order-last` instead of flex-row-reverse on the parent so the
             workspace focus-mode sidebar and terminal area below stay in source
             order (sidebar on the left) regardless of the side panel's side. */}
-        {(isSidePanelOpenForCurrentTab || mountedAiTabIds.length > 0 || isVisible) && (
+        {(isSidePanelOpenForCurrentTab || mountedAiTabIds.length > 0 || isTerminalLayerVisible) && (
           <>
             <div
               style={{ width: isSidePanelOpenForCurrentTab ? sidePanelWidth : 40 }}
