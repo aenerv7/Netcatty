@@ -2111,7 +2111,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             Uses `order-last` instead of flex-row-reverse on the parent so the
             workspace focus-mode sidebar and terminal area below stay in source
             order (sidebar on the left) regardless of the side panel's side. */}
-        {(isSidePanelOpenForCurrentTab || mountedSftpTabIds.length > 0 || mountedAiTabIds.length > 0) && (
+        {(isSidePanelOpenForCurrentTab || mountedAiTabIds.length > 0 || isVisible) && (
           <>
             <div
               style={{ width: isSidePanelOpenForCurrentTab ? sidePanelWidth : 0 }}

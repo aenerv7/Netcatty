@@ -116,7 +116,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 <PopoverContent className="w-48 p-1" align="end">
                     {isSSHSession && onSetTerminalEncoding && (
                         <>
-                            <div className="h-px bg-border/60 my-1 mx-1" />
                             <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                                 <Languages size={11} />
                                 {t("terminal.toolbar.encoding")}
