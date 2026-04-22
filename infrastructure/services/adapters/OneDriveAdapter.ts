@@ -309,41 +309,69 @@ export const validateToken = async (accessToken: string): Promise<boolean> => {
 
 const APP_FOLDER_PATH = '/drive/special/approot';
 
+// Eventual-consistency retry for OneDrive "not found" lookups. The Graph API
+// can briefly 404 a file that was uploaded seconds ago from another device
+// (most commonly when the other device is syncing through the OneDrive
+// desktop client and the change has not yet reached Graph). Treating every
+// 404 as authoritative "cloud is empty" lets a second device proceed to an
+// empty-cloud upload path and overwrite real data (#779). We retry a small
+// bounded number of times with short backoff to flush through that window.
+const NOT_FOUND_RETRIES = 2;
+const NOT_FOUND_BACKOFF_MS = 1500;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+async function retryOnNotFound<T>(
+  fetchOnce: () => Promise<T | null>,
+): Promise<T | null> {
+  let result = await fetchOnce();
+  for (let attempt = 1; attempt <= NOT_FOUND_RETRIES && result === null; attempt++) {
+    await sleep(NOT_FOUND_BACKOFF_MS * attempt);
+    result = await fetchOnce();
+  }
+  return result;
+}
+
 /**
  * Ensure app folder exists and find sync file
  */
 export const findSyncFile = async (accessToken: string): Promise<string | null> => {
-  const bridge = netcattyBridge.get();
-  if (bridge?.onedriveFindSyncFile) {
-    const result = await bridge.onedriveFindSyncFile({
-      accessToken,
-      fileName: SYNC_CONSTANTS.SYNC_FILE_NAME,
-    });
-    return result.fileId || null;
-  }
-  try {
-    const response = await fetch(
-      `${SYNC_CONSTANTS.ONEDRIVE_GRAPH_API}/me${APP_FOLDER_PATH}:/${SYNC_CONSTANTS.SYNC_FILE_NAME}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      }
-    );
+  const fetchOnce = async (): Promise<string | null> => {
+    const bridge = netcattyBridge.get();
+    if (bridge?.onedriveFindSyncFile) {
+      const result = await bridge.onedriveFindSyncFile({
+        accessToken,
+        fileName: SYNC_CONSTANTS.SYNC_FILE_NAME,
+      });
+      return result.fileId || null;
+    }
+    try {
+      const response = await fetch(
+        `${SYNC_CONSTANTS.ONEDRIVE_GRAPH_API}/me${APP_FOLDER_PATH}:/${SYNC_CONSTANTS.SYNC_FILE_NAME}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
 
-    if (response.status === 404) {
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to find sync file');
+      }
+
+      const item: DriveItem = await response.json();
+      return item.id;
+    } catch {
       return null;
     }
+  };
 
-    if (!response.ok) {
-      throw new Error('Failed to find sync file');
-    }
-
-    const item: DriveItem = await response.json();
-    return item.id;
-  } catch {
-    return null;
-  }
+  return retryOnNotFound(fetchOnce);
 };
 
 /**
@@ -394,39 +422,43 @@ export const downloadSyncFile = async (
   accessToken: string,
   fileId?: string
 ): Promise<SyncedFile | null> => {
-  const bridge = netcattyBridge.get();
-  if (bridge?.onedriveDownloadSyncFile) {
-    const result = await bridge.onedriveDownloadSyncFile({
-      accessToken,
-      fileId,
-      fileName: SYNC_CONSTANTS.SYNC_FILE_NAME,
-    });
-    return (result.syncedFile as SyncedFile | null) || null;
-  }
-  try {
-    // Can use either file ID or path
-    const url = fileId
-      ? `${SYNC_CONSTANTS.ONEDRIVE_GRAPH_API}/me/drive/items/${fileId}/content`
-      : `${SYNC_CONSTANTS.ONEDRIVE_GRAPH_API}/me${APP_FOLDER_PATH}:/${SYNC_CONSTANTS.SYNC_FILE_NAME}:/content`;
+  const fetchOnce = async (): Promise<SyncedFile | null> => {
+    const bridge = netcattyBridge.get();
+    if (bridge?.onedriveDownloadSyncFile) {
+      const result = await bridge.onedriveDownloadSyncFile({
+        accessToken,
+        fileId,
+        fileName: SYNC_CONSTANTS.SYNC_FILE_NAME,
+      });
+      return (result.syncedFile as SyncedFile | null) || null;
+    }
+    try {
+      // Can use either file ID or path
+      const url = fileId
+        ? `${SYNC_CONSTANTS.ONEDRIVE_GRAPH_API}/me/drive/items/${fileId}/content`
+        : `${SYNC_CONSTANTS.ONEDRIVE_GRAPH_API}/me${APP_FOLDER_PATH}:/${SYNC_CONSTANTS.SYNC_FILE_NAME}:/content`;
 
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-    });
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
 
-    if (response.status === 404) {
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to download sync file');
+      }
+
+      return response.json();
+    } catch {
       return null;
     }
+  };
 
-    if (!response.ok) {
-      throw new Error('Failed to download sync file');
-    }
-
-    return response.json();
-  } catch {
-    return null;
-  }
+  return retryOnNotFound(fetchOnce);
 };
 
 /**

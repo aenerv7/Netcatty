@@ -1,6 +1,7 @@
-import { MouseEvent,useCallback,useMemo,useState } from 'react';
+import { MouseEvent,useCallback,useMemo,useRef,useState } from 'react';
 import { ConnectionLog,Host,SerialConfig,Snippet,TerminalSession,Workspace,WorkspaceViewMode } from '../../domain/models';
 import {
+appendPaneToWorkspaceRoot,
 collectSessionIds,
 createWorkspaceFromSessions as createWorkspaceEntity,
 createWorkspaceFromSessionIds,
@@ -24,6 +25,12 @@ export interface LogView {
 export const useSessionState = () => {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Latest workspaces snapshot for synchronous existence checks outside
+  // setWorkspaces updaters — React doesn't guarantee updaters run
+  // synchronously, so relying on a flag flipped inside them to decide
+  // whether to also call setSessions is racy and can leave orphan panes.
+  const workspacesRef = useRef(workspaces);
+  workspacesRef.current = workspaces;
   // activeTabId is now managed by external store - components subscribe directly
   const setActiveTabId = activeTabStore.setActiveTabId;
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
@@ -383,6 +390,89 @@ export const useSessionState = () => {
     setActiveTabId(workspace.id);
   }, [setActiveTabId]);
 
+  // Like createWorkspaceWithHosts but supports mixed targets — each
+  // entry is either an SSH host or a local terminal. Used by the
+  // "New Workspace" flow in QuickSwitcher.
+  type WorkspaceTarget =
+    | { kind: 'local'; shellType?: TerminalSession['shellType']; shell?: string; shellArgs?: string[]; shellName?: string; shellIcon?: string }
+    | { kind: 'host'; host: Host };
+
+  const createWorkspaceFromTargets = useCallback((targets: WorkspaceTarget[], name: string = 'Workspace'): string | null => {
+    if (targets.length === 0) return null;
+
+    const newSessions: TerminalSession[] = targets.map((target) => {
+      if (target.kind === 'local') {
+        const sessionId = crypto.randomUUID();
+        return {
+          id: sessionId,
+          hostId: `local-${sessionId}`,
+          hostLabel: target.shellName || 'Local Terminal',
+          hostname: 'localhost',
+          username: 'local',
+          status: 'connecting',
+          protocol: 'local',
+          shellType: target.shellType,
+          localShell: target.shell,
+          localShellArgs: target.shellArgs,
+          localShellName: target.shellName,
+          localShellIcon: target.shellIcon,
+        };
+      }
+      const host = target.host;
+      if (host.protocol === 'serial') {
+        const serialConfig: SerialConfig = host.serialConfig || {
+          path: host.hostname,
+          baudRate: host.port || 115200,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+          flowControl: 'none',
+          localEcho: false,
+          lineMode: false,
+        };
+        const portName = serialConfig.path.split('/').pop() || serialConfig.path;
+        return {
+          id: crypto.randomUUID(),
+          hostId: host.id,
+          hostLabel: host.label || `Serial: ${portName}`,
+          hostname: serialConfig.path,
+          username: '',
+          status: 'connecting',
+          protocol: 'serial',
+          serialConfig,
+          charset: host.charset,
+        };
+      }
+      return {
+        id: crypto.randomUUID(),
+        hostId: host.id,
+        hostLabel: host.label,
+        hostname: host.hostname,
+        username: host.username,
+        status: 'connecting',
+        protocol: host.protocol,
+        port: host.port,
+        moshEnabled: host.moshEnabled,
+        charset: host.charset,
+      };
+    });
+
+    const sessionIds = newSessions.map((s) => s.id);
+    // Default to focus-mode (sidebar layout) regardless of target
+    // count — matches the intent behind the QuickSwitcher "New
+    // Workspace" flow, which the user expects to land in focus view.
+    const workspace = createWorkspaceFromSessionIds(sessionIds, {
+      title: name,
+      viewMode: 'focus',
+    });
+    const sessionsWithWorkspace = newSessions.map((s) => ({ ...s, workspaceId: workspace.id }));
+
+    setSessions((prev) => [...prev, ...sessionsWithWorkspace]);
+    setWorkspaces((prev) => [...prev, workspace]);
+    setActiveTabId(workspace.id);
+    return workspace.id;
+  }, [setActiveTabId]);
+
   const createWorkspaceFromSessions = useCallback((
     baseSessionId: string,
     joiningSessionId: string,
@@ -433,6 +523,118 @@ export const useSessionState = () => {
       return prevSessions.map(s => s.id === sessionId ? { ...s, workspaceId } : s);
 	    });
 	  }, [setActiveTabId]);
+
+  // Add a host into an existing workspace by creating a new session for
+  // that host and appending it as the last pane at the workspace root.
+  // Sibling sizes are rebalanced equally by appendPaneToWorkspaceRoot.
+  // Unlike addSessionToWorkspace (which takes a pre-created orphan
+  // session and a SplitHint), this is atomic — the new session is born
+  // already bound to the target workspace and focused.
+  const appendHostToWorkspace = useCallback((
+    workspaceId: string,
+    host: Host,
+    direction: SplitDirection = 'vertical',
+  ): string | null => {
+    // Serial hosts use a different session constructor; they currently
+    // only enter workspaces via createSerialSession + drag, so reject
+    // them here to avoid a partially-constructed session.
+    if (host.protocol === 'serial') return null;
+
+    // Cheap early-exit using the ref when the workspace is clearly
+    // absent. The authoritative check lives inside the setWorkspaces
+    // updater below so we also cover the concurrent-close race.
+    if (!workspacesRef.current.some(w => w.id === workspaceId)) return null;
+
+    const newSessionId = crypto.randomUUID();
+    const newSession: TerminalSession = {
+      id: newSessionId,
+      hostId: host.id,
+      hostLabel: host.label,
+      hostname: host.hostname,
+      username: host.username,
+      status: 'connecting',
+      protocol: host.protocol,
+      port: host.port,
+      moshEnabled: host.moshEnabled,
+      charset: host.charset,
+      workspaceId,
+    };
+
+    // Nest setSessions + setActiveTabId inside the setWorkspaces updater
+    // so we only commit the session when the workspace update actually
+    // matched — otherwise a concurrent closeWorkspace between the ref
+    // check and the updater firing would leave an orphan session with a
+    // workspaceId pointing at nothing, and active tab would jump to a
+    // closed id. The inner setSessions is idempotent (id dedupe) so
+    // StrictMode's dev-time double-invoke does not duplicate the row.
+    setWorkspaces(prev => {
+      const target = prev.find(w => w.id === workspaceId);
+      if (!target) return prev;
+      setSessions(s => s.some(x => x.id === newSessionId) ? s : [...s, newSession]);
+      setActiveTabId(workspaceId);
+      return prev.map(ws => {
+        if (ws.id !== workspaceId) return ws;
+        return {
+          ...ws,
+          root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
+          focusedSessionId: newSessionId,
+        };
+      });
+    });
+    return newSessionId;
+  }, [setActiveTabId]);
+
+  // Atomic "append a local terminal pane" — mirror of appendHostToWorkspace
+  // but constructs a local-protocol session instead of an SSH one.
+  const appendLocalTerminalToWorkspace = useCallback((
+    workspaceId: string,
+    options?: {
+      shellType?: TerminalSession['shellType'];
+      shell?: string;
+      shellArgs?: string[];
+      shellName?: string;
+      shellIcon?: string;
+    },
+    direction: SplitDirection = 'vertical',
+  ): string | null => {
+    // Same pattern as appendHostToWorkspace — ref guard + authoritative
+    // inside-updater match to cover concurrent closeWorkspace.
+    if (!workspacesRef.current.some(w => w.id === workspaceId)) return null;
+
+    const newSessionId = crypto.randomUUID();
+    const localHostId = `local-${newSessionId}`;
+    const newSession: TerminalSession = {
+      id: newSessionId,
+      hostId: localHostId,
+      hostLabel: options?.shellName || 'Local Terminal',
+      hostname: 'localhost',
+      username: 'local',
+      status: 'connecting',
+      protocol: 'local',
+      shellType: options?.shellType,
+      localShell: options?.shell,
+      localShellArgs: options?.shellArgs,
+      localShellName: options?.shellName,
+      localShellIcon: options?.shellIcon,
+      workspaceId,
+    };
+
+    setWorkspaces(prev => {
+      const target = prev.find(w => w.id === workspaceId);
+      if (!target) return prev;
+      setSessions(s => s.some(x => x.id === newSessionId) ? s : [...s, newSession]);
+      setActiveTabId(workspaceId);
+      return prev.map(ws => {
+        if (ws.id !== workspaceId) return ws;
+        return {
+          ...ws,
+          root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
+          focusedSessionId: newSessionId,
+        };
+      });
+    });
+    return newSessionId;
+  }, [setActiveTabId]);
 
   const updateSplitSizes = useCallback((workspaceId: string, splitId: string, sizes: number[]) => {
     setWorkspaces(prev => prev.map(ws => {
@@ -838,8 +1040,11 @@ export const useSessionState = () => {
     closeWorkspace,
     updateSessionStatus,
     createWorkspaceWithHosts,
+    createWorkspaceFromTargets,
     createWorkspaceFromSessions,
     addSessionToWorkspace,
+    appendHostToWorkspace,
+    appendLocalTerminalToWorkspace,
     updateSplitSizes,
     splitSession,
     toggleWorkspaceViewMode,

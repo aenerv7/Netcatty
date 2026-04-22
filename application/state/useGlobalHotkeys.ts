@@ -13,6 +13,7 @@ interface HotkeyActions {
   openHosts: () => void;
   openSftp: () => void;
   quickSwitch: () => void;
+  newWorkspace: () => void;
   commandPalette: () => void;
   portForwarding: () => void;
   snippets: () => void;
@@ -61,6 +62,7 @@ export const getAppLevelActions = (): Set<string> => {
     'openHosts',
     'openSftp',
     'quickSwitch',
+    'newWorkspace',
     'commandPalette',
     'portForwarding',
     'snippets',
@@ -167,6 +169,9 @@ export const useGlobalHotkeys = ({
         break;
       case 'quickSwitch':
         currentActions.quickSwitch?.();
+        break;
+      case 'newWorkspace':
+        currentActions.newWorkspace?.();
         break;
       case 'commandPalette':
         currentActions.commandPalette?.();

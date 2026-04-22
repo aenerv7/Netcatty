@@ -455,7 +455,7 @@ const KnownHostsManager: React.FC<KnownHostsManagerProps> = ({
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 bg-secondary/50">
+      <div className="h-14 px-4 py-2 flex items-center gap-3 border-b border-border/50 bg-secondary/80 backdrop-blur">
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <div className="relative flex-1 max-w-xs">
             <Search
@@ -464,7 +464,7 @@ const KnownHostsManager: React.FC<KnownHostsManagerProps> = ({
             />
             <Input
               placeholder={t("knownHosts.search.placeholder")}
-              className="pl-9 h-9 bg-background border-border/60 text-sm"
+              className="pl-9 h-10 bg-secondary border-border/60 text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -474,7 +474,7 @@ const KnownHostsManager: React.FC<KnownHostsManagerProps> = ({
           {/* View Mode Toggle */}
           <Dropdown>
             <DropdownTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
+              <Button variant="ghost" size="icon" className="h-10 w-10">
                 {viewMode === "grid" ? (
                   <LayoutGrid size={16} />
                 ) : (
@@ -505,15 +505,14 @@ const KnownHostsManager: React.FC<KnownHostsManagerProps> = ({
           <SortDropdown
             value={sortMode}
             onChange={setSortMode}
-            className="h-9 w-9"
+            className="h-10 w-10"
           />
         </div>
         <div className="w-px h-5 bg-border/50" />
         <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 px-3 text-xs"
+            variant="secondary"
+            className="h-10 px-3 bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
             onClick={() => handleScanSystem()}
             disabled={isScanning}
           >
@@ -532,8 +531,7 @@ const KnownHostsManager: React.FC<KnownHostsManagerProps> = ({
           />
           <Button
             variant="secondary"
-            size="sm"
-            className="h-9 px-3 text-xs"
+            className="h-10 px-3 bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
             onClick={openFilePicker}
           >
             <Import size={14} className="mr-2" />

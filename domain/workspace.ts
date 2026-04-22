@@ -16,22 +16,73 @@ export const pruneWorkspaceNode = (node: WorkspaceNode, targetSessionId: string)
 
   const nextChildren: WorkspaceNode[] = [];
   const nextSizes: number[] = [];
-  const sizeList = node.sizes && node.sizes.length === node.children.length ? node.sizes : node.children.map(() => 1);
+  const sizeList = node.sizes && node.sizes.length === node.children.length
+    ? node.sizes
+    : node.children.map(() => 1 / node.children.length);
+  let removedDirectChild = false;
 
   node.children.forEach((child, idx) => {
     const pruned = pruneWorkspaceNode(child, targetSessionId);
     if (pruned) {
       nextChildren.push(pruned);
-      nextSizes.push(sizeList[idx] ?? 1);
+      nextSizes.push(sizeList[idx] ?? 1 / node.children.length);
+    } else {
+      removedDirectChild = true;
     }
   });
 
   if (nextChildren.length === 0) return null;
   if (nextChildren.length === 1) return nextChildren[0];
 
+  // Only rebalance siblings to equal sizes when this level actually
+  // lost one of its direct children. If the prune happened deeper in
+  // one branch, this split's direct children are unchanged and their
+  // original ratios must be preserved (otherwise e.g. a root 0.8/0.2
+  // split gets rewritten to 0.5/0.5 when a grand-child pane closes).
+  if (removedDirectChild) {
+    const equalSize = 1 / nextChildren.length;
+    return { ...node, children: nextChildren, sizes: nextChildren.map(() => equalSize) };
+  }
+
+  // Preserve existing ratios; normalise defensively in case sibling
+  // subtrees changed shape (e.g. a split collapsed to a single pane).
   const total = nextSizes.reduce((acc, n) => acc + n, 0) || 1;
   const normalized = nextSizes.map(n => n / total);
   return { ...node, children: nextChildren, sizes: normalized };
+};
+
+/**
+ * Append a new pane containing `sessionId` to the end of the workspace
+ * root's split. If the root already splits in the requested direction,
+ * the new pane becomes its last sibling and all sibling sizes are reset
+ * to equal. Otherwise the root is wrapped in a new split (same behaviour
+ * as the existing `insertPaneIntoWorkspace(root, id, { targetSessionId:
+ * undefined })` path) with two equal children.
+ */
+export const appendPaneToWorkspaceRoot = (
+  root: WorkspaceNode,
+  sessionId: string,
+  direction: SplitDirection = 'vertical',
+): WorkspaceNode => {
+  const newPane: WorkspaceNode = { id: crypto.randomUUID(), type: 'pane', sessionId };
+
+  if (root.type === 'split' && root.direction === direction) {
+    const nextChildren = [...root.children, newPane];
+    const equalSize = 1 / nextChildren.length;
+    return {
+      ...root,
+      children: nextChildren,
+      sizes: nextChildren.map(() => equalSize),
+    };
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    type: 'split',
+    direction,
+    children: [root, newPane],
+    sizes: [0.5, 0.5],
+  };
 };
 
 const createSplitFromPane = (

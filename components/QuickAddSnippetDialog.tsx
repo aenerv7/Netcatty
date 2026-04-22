@@ -30,6 +30,7 @@ export interface QuickAddSnippetDialogProps {
   snippets: Snippet[];
   packages: string[];
   onCreateSnippet: (snippet: Snippet) => void;
+  onUpdateSnippet?: (snippet: Snippet) => void;
   onCreatePackage?: (packagePath: string) => void;
 }
 
@@ -37,6 +38,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
   snippets,
   packages,
   onCreateSnippet,
+  onUpdateSnippet,
   onCreatePackage,
 }) => {
   const { t } = useI18n();
@@ -44,6 +46,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
   const [label, setLabel] = useState('');
   const [command, setCommand] = useState('');
   const [packagePath, setPackagePath] = useState('');
+  const [editing, setEditing] = useState<Snippet | null>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
 
   // Listen for the global "add snippet" request dispatched by the
@@ -51,6 +54,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
   // every open so stale input from a previous cancel does not leak.
   useEffect(() => {
     const handler = () => {
+      setEditing(null);
       setLabel('');
       setCommand('');
       setPackagePath('');
@@ -58,6 +62,23 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
     };
     window.addEventListener('netcatty:snippets:add', handler);
     return () => window.removeEventListener('netcatty:snippets:add', handler);
+  }, []);
+
+  // Sibling event for editing an existing snippet from the ScriptsSidePanel
+  // context menu. Prefills the form and flips the dialog into update mode.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ snippet?: Snippet }>).detail;
+      const snippet = detail?.snippet;
+      if (!snippet) return;
+      setEditing(snippet);
+      setLabel(snippet.label ?? '');
+      setCommand(snippet.command ?? '');
+      setPackagePath(snippet.package ?? '');
+      setOpen(true);
+    };
+    window.addEventListener('netcatty:snippets:edit', handler);
+    return () => window.removeEventListener('netcatty:snippets:edit', handler);
   }, []);
 
   // Auto-focus the label input once the dialog renders, so the user can
@@ -92,16 +113,27 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
     if (trimmedPackage && !packages.includes(trimmedPackage)) {
       onCreatePackage?.(trimmedPackage);
     }
-    onCreateSnippet({
-      id: crypto.randomUUID(),
-      label: label.trim(),
-      command, // preserve whitespace in multi-line commands
-      tags: [],
-      package: trimmedPackage || '',
-      targets: [],
-    });
+    if (editing && onUpdateSnippet) {
+      // Preserve tags/targets/shortkey/noAutoRun etc. that this lightweight
+      // dialog does not expose — only the three quick-edit fields change.
+      onUpdateSnippet({
+        ...editing,
+        label: label.trim(),
+        command,
+        package: trimmedPackage || '',
+      });
+    } else {
+      onCreateSnippet({
+        id: crypto.randomUUID(),
+        label: label.trim(),
+        command, // preserve whitespace in multi-line commands
+        tags: [],
+        package: trimmedPackage || '',
+        targets: [],
+      });
+    }
     setOpen(false);
-  }, [canSave, packagePath, packages, onCreatePackage, onCreateSnippet, label, command]);
+  }, [canSave, packagePath, packages, onCreatePackage, onCreateSnippet, onUpdateSnippet, editing, label, command]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -118,7 +150,9 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-md" onKeyDown={handleKeyDown}>
         <DialogHeader>
-          <DialogTitle>{t('snippets.panel.newTitle')}</DialogTitle>
+          <DialogTitle>
+            {t(editing ? 'snippets.panel.editTitle' : 'snippets.panel.newTitle')}
+          </DialogTitle>
           <DialogDescription>
             {t('snippets.empty.desc')}
           </DialogDescription>

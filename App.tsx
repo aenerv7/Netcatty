@@ -38,6 +38,7 @@ import { Label } from './components/ui/label';
 import { ToastProvider, toast } from './components/ui/toast';
 import { VaultView, VaultSection } from './components/VaultView';
 import { QuickAddSnippetDialog } from './components/QuickAddSnippetDialog';
+import { AddToWorkspaceDialog } from './components/workspace/AddToWorkspaceDialog';
 import { KeyboardInteractiveModal, KeyboardInteractiveRequest } from './components/KeyboardInteractiveModal';
 import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal';
 import { cn } from './lib/utils';
@@ -186,6 +187,15 @@ function App({ settings }: { settings: SettingsState }) {
 
   const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  // Combined state for the AddToWorkspaceDialog. null = closed; mode
+  // determines whether picking targets appends them to an existing
+  // workspace (focus sidebar "+") or spins up a brand-new workspace
+  // tab (QuickSwitcher's New Workspace button).
+  const [addToWorkspaceDialog, setAddToWorkspaceDialog] = useState<
+    | { mode: 'append'; workspaceId: string }
+    | { mode: 'create' }
+    | null
+  >(null);
   const [quickSearch, setQuickSearch] = useState('');
   // Protocol selection dialog state for QuickSwitcher
   const [protocolSelectHost, setProtocolSelectHost] = useState<Host | null>(null);
@@ -299,6 +309,9 @@ function App({ settings }: { settings: SettingsState }) {
     createWorkspaceWithHosts,
     createWorkspaceFromSessions,
     addSessionToWorkspace,
+    appendHostToWorkspace,
+    appendLocalTerminalToWorkspace,
+    createWorkspaceFromTargets,
     updateSplitSizes,
     splitSession,
     toggleWorkspaceViewMode,
@@ -1014,6 +1027,12 @@ function App({ settings }: { settings: SettingsState }) {
       case 'commandPalette':
         setIsQuickSwitcherOpen(true);
         break;
+      case 'newWorkspace':
+        // Dedicated shortcut to launch the AddToWorkspaceDialog in
+        // create mode — same entry as QuickSwitcher's "New Workspace"
+        // button, but without having to open QS first.
+        setAddToWorkspaceDialog({ mode: 'create' });
+        break;
       case 'portForwarding':
         // Navigate to vault and open port forwarding section
         setActiveTabId('vault');
@@ -1405,6 +1424,19 @@ function App({ settings }: { settings: SettingsState }) {
     };
   }, [handleOpenSettings, t]);
 
+  // Delete-from-sidepanel plumbing: ScriptsSidePanel's right-click menu
+  // dispatches `netcatty:snippets:delete` with the snippet id. Handled here
+  // (rather than in QuickAddSnippetDialog) because delete needs no UI.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      updateSnippets(snippets.filter((s) => s.id !== id));
+    };
+    window.addEventListener('netcatty:snippets:delete', handler);
+    return () => window.removeEventListener('netcatty:snippets:delete', handler);
+  }, [snippets, updateSnippets]);
+
   const handleEndSessionDrag = useCallback(() => {
     setDraggingSessionId(null);
   }, [setDraggingSessionId]);
@@ -1585,6 +1617,9 @@ function App({ settings }: { settings: SettingsState }) {
           onTerminalDataCapture={handleTerminalDataCapture}
           onCreateWorkspaceFromSessions={createWorkspaceFromSessions}
           onAddSessionToWorkspace={addSessionToWorkspace}
+          onRequestAddToWorkspace={(workspaceId) =>
+            setAddToWorkspaceDialog({ mode: 'append', workspaceId })
+          }
           onUpdateSplitSizes={updateSplitSizes}
           onSetDraggingSessionId={setDraggingSessionId}
           onToggleWorkspaceViewMode={toggleWorkspaceViewMode}
@@ -1624,16 +1659,64 @@ function App({ settings }: { settings: SettingsState }) {
         })}
       </div>
 
-      {/* Global "quick add snippet" dialog, triggered by the
-          netcatty:snippets:add window event (from ScriptsSidePanel "+"). */}
+      {/* Global "quick add / edit snippet" dialog, triggered by the
+          netcatty:snippets:add and :edit window events (from ScriptsSidePanel
+          "+" button and right-click menu). Delete is handled by a sibling
+          useEffect above — it does not need a dialog. */}
       <QuickAddSnippetDialog
         snippets={snippets}
         packages={snippetPackages}
         onCreateSnippet={(snippet) => updateSnippets([...snippets, snippet])}
+        onUpdateSnippet={(snippet) =>
+          updateSnippets(snippets.map((s) => (s.id === snippet.id ? snippet : s)))
+        }
         onCreatePackage={(pkg) =>
           updateSnippetPackages(Array.from(new Set([...snippetPackages, pkg])))
         }
       />
+
+      {/* Root-mounted AddToWorkspaceDialog — triggered by the focus-mode
+          "+" button (mode='append') or QuickSwitcher's "New Workspace"
+          button (mode='create'). Single instance so dialog state and
+          styling stay consistent across entry points. */}
+      {addToWorkspaceDialog && (
+        <AddToWorkspaceDialog
+          open
+          onOpenChange={(open) => { if (!open) setAddToWorkspaceDialog(null); }}
+          // Filter serial hosts only in append mode — appendHostToWorkspace
+          // has no serial code path. Create mode goes through
+          // createWorkspaceFromTargets, which builds a SerialConfig-backed
+          // session for serial hosts, so those should remain pickable.
+          hosts={addToWorkspaceDialog.mode === 'append'
+            ? hosts.filter((h) => h.protocol !== 'serial')
+            : hosts}
+          workspaceTitle={
+            addToWorkspaceDialog.mode === 'append'
+              ? workspaces.find((w) => w.id === addToWorkspaceDialog.workspaceId)?.title
+              : 'New Workspace'
+          }
+          onAdd={(targets) => {
+            if (addToWorkspaceDialog.mode === 'append') {
+              // Match the workspace root's current split direction so
+              // the new panes peer the existing siblings instead of
+              // wrapping the whole tree into one side of a fresh split
+              // (which would happen if we always passed the helper's
+              // default 'vertical').
+              const ws = workspaces.find((w) => w.id === addToWorkspaceDialog.workspaceId);
+              const rootDir = ws && ws.root.type === 'split' ? ws.root.direction : 'vertical';
+              for (const target of targets) {
+                if (target.kind === 'local') {
+                  appendLocalTerminalToWorkspace(addToWorkspaceDialog.workspaceId, undefined, rootDir);
+                } else {
+                  appendHostToWorkspace(addToWorkspaceDialog.workspaceId, target.host, rootDir);
+                }
+              }
+            } else {
+              createWorkspaceFromTargets(targets);
+            }
+          }}
+        />
+      )}
 
       {isQuickSwitcherOpen && (
         <Suspense fallback={null}>
@@ -1655,6 +1738,11 @@ function App({ settings }: { settings: SettingsState }) {
               handleCreateLocalTerminal(shell);
               setIsQuickSwitcherOpen(false);
               setQuickSearch('');
+            }}
+            onCreateWorkspace={() => {
+              setIsQuickSwitcherOpen(false);
+              setQuickSearch('');
+              setAddToWorkspaceDialog({ mode: 'create' });
             }}
             onClose={() => {
               setIsQuickSwitcherOpen(false);

@@ -1,8 +1,9 @@
 import {
   Folder,
-  LayoutGrid,
-  Search,
   FolderLock,
+  LayoutGrid,
+  Plus,
+  Search,
   Terminal,
   TerminalSquare,
 } from "lucide-react";
@@ -68,7 +69,7 @@ interface QuickSwitcherProps {
   onSelectTab: (tabId: string) => void;
   onClose: () => void;
   onCreateLocalTerminal?: (shell?: { command: string; args?: string[]; name?: string; icon?: string }) => void;
-  // onCreateWorkspace removed - feature not currently used
+  onCreateWorkspace?: () => void;
   keyBindings?: KeyBinding[];
   showSftpTab: boolean;
 }
@@ -84,6 +85,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
   onSelectTab,
   onClose,
   onCreateLocalTerminal,
+  onCreateWorkspace,
   keyBindings,
   showSftpTab,
 }) => {
@@ -280,13 +282,27 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
         <ScrollArea className="flex-1 h-full">
           {/* Categorized view: Hosts/Tabs/Quick connect */}
           <div>
-            {/* Jump To hint */}
+            {/* Jump To hint + New Workspace action */}
             <div className="px-4 py-2 flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{t("qs.jumpTo")}</span>
               {quickSwitchKey && (
                 <kbd className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">
                   {quickSwitchKey.replace(/ \+ /g, '+')}
                 </kbd>
+              )}
+              {onCreateWorkspace && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreateWorkspace();
+                    onClose();
+                  }}
+                  className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground border border-border rounded px-1.5 py-0.5 transition-colors hover:bg-muted/50"
+                  title="New Workspace"
+                >
+                  <Plus size={11} />
+                  <span>New Workspace</span>
+                </button>
               )}
             </div>
 

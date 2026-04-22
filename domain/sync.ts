@@ -385,7 +385,16 @@ export type SyncEvent =
   | { type: 'AUTH_REQUIRED'; provider: CloudProvider }
   | { type: 'AUTH_COMPLETED'; provider: CloudProvider; account: ProviderAccount }
   | { type: 'SECURITY_STATE_CHANGED'; state: SecurityState }
-  | { type: 'SYNC_BLOCKED_CLEARED' };
+  | { type: 'SYNC_BLOCKED_CLEARED' }
+  | {
+      type: 'PROVIDERS_DIVERGED';
+      summaries: Array<{
+        provider: CloudProvider;
+        hosts: number;
+        keys: number;
+        snippets: number;
+      }>;
+    };
 
 // ============================================================================
 // Storage Keys

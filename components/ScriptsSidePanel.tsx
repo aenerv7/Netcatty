@@ -5,11 +5,17 @@
  * Clicking a snippet executes it in the focused terminal session.
  */
 
-import { ChevronRight, Package, Plus, Search, Zap } from 'lucide-react';
+import { ChevronRight, Edit2, Package, Plus, Search, Trash2, Zap } from 'lucide-react';
 import React, { memo, useCallback, useMemo, useState } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { cn } from '../lib/utils';
 import { Snippet } from '../types';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from './ui/context-menu';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 
@@ -126,6 +132,18 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
     window.dispatchEvent(new CustomEvent('netcatty:snippets:add'));
   }, []);
 
+  const handleEditSnippet = useCallback((snippet: Snippet) => {
+    window.dispatchEvent(
+      new CustomEvent('netcatty:snippets:edit', { detail: { snippet } }),
+    );
+  }, []);
+
+  const handleDeleteSnippet = useCallback((id: string) => {
+    window.dispatchEvent(
+      new CustomEvent('netcatty:snippets:delete', { detail: { id } }),
+    );
+  }, []);
+
   if (!isVisible) return null;
 
   const hasAnyContent = snippets.length > 0 || packages.length > 0;
@@ -213,16 +231,30 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
 
           {/* Snippets */}
           {displayedSnippets.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => handleSnippetClick(s.command, s.noAutoRun)}
-              className="w-full text-left px-3 py-2 hover:bg-accent/50 transition-colors flex flex-col gap-0.5"
-            >
-              <span className="text-xs font-medium truncate">{s.label}</span>
-              <span className="text-muted-foreground truncate font-mono text-[10px] max-w-full">
-                {s.command}
-              </span>
-            </button>
+            <ContextMenu key={s.id}>
+              <ContextMenuTrigger asChild>
+                <button
+                  onClick={() => handleSnippetClick(s.command, s.noAutoRun)}
+                  className="w-full text-left px-3 py-2 hover:bg-accent/50 transition-colors flex flex-col gap-0.5"
+                >
+                  <span className="text-xs font-medium truncate">{s.label}</span>
+                  <span className="text-muted-foreground truncate font-mono text-[10px] max-w-full">
+                    {s.command}
+                  </span>
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onClick={() => handleEditSnippet(s)}>
+                  <Edit2 className="mr-2 h-4 w-4" /> {t('action.edit')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  className="text-destructive"
+                  onClick={() => handleDeleteSnippet(s.id)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> {t('action.delete')}
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
 
           {hasAnyContent && displayedSnippets.length === 0 && filteredPackages.length === 0 && search.trim() && (

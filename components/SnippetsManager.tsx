@@ -402,9 +402,15 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   }, [packages, selectedPackage, snippets]);
 
   const displayedSnippets = useMemo(() => {
-    let result = snippets.filter((s) => (s.package || '') === (selectedPackage || ''));
-    // Apply search filter
-    if (search.trim()) {
+    // Search spans all packages (#777): when the user types in the search
+    // box we drop the current-package scoping so cross-package matches are
+    // reachable without navigating into each one. Otherwise the user is
+    // browsing and we keep the package scope.
+    const hasSearch = search.trim().length > 0;
+    let result = hasSearch
+      ? snippets
+      : snippets.filter((s) => (s.package || '') === (selectedPackage || ''));
+    if (hasSearch) {
       const s = search.toLowerCase();
       result = result.filter(sn =>
         sn.label.toLowerCase().includes(s) ||
@@ -734,16 +740,35 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
           title={editingSnippet.id ? t('snippets.panel.editTitle') : t('snippets.panel.newTitle')}
           layout="inline"
           actions={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleSubmit}
-              disabled={!editingSnippet.label || !editingSnippet.command}
-              aria-label={t('common.save')}
-            >
-              <Check size={16} />
-            </Button>
+            <>
+              {editingSnippet.id && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  onClick={() => {
+                    const id = editingSnippet.id;
+                    if (!id) return;
+                    onDelete(id);
+                    handleClosePanel();
+                  }}
+                  aria-label={t('common.delete')}
+                  title={t('common.delete')}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={handleSubmit}
+                disabled={!editingSnippet.label || !editingSnippet.command}
+                aria-label={t('common.save')}
+              >
+                <Check size={16} />
+              </Button>
+            </>
           }
         >
           <AsidePanelContent>
@@ -959,7 +984,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     <div className="h-full min-h-0 flex relative">
       <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <header className="border-b border-border/50 bg-secondary/80 backdrop-blur">
-          <div className="h-14 px-4 py-2 flex items-center gap-2">
+          <div className="h-14 px-4 py-2 flex items-center gap-3">
             {/* Search box */}
             <div className="relative w-64">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -980,7 +1005,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
               }}
               size="sm"
               variant="secondary"
-              className="h-10 gap-2"
+              className="h-10 gap-2 bg-foreground/5 text-foreground hover:bg-foreground/10 border-border/40"
             >
               <FolderPlus size={14} className="mr-1" /> {t('snippets.action.newPackage')}
             </Button>
@@ -1049,7 +1074,10 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
         )}
 
         <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
-          {displayedPackages.length > 0 && (
+          {/* Hide the sub-package grid while searching (#777) — search spans
+              all packages, so showing the package tiles alongside a flat
+              cross-package snippet list is noisy. */}
+          {displayedPackages.length > 0 && !search.trim() && (
             <>
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-muted-foreground">{t('snippets.section.packages')}</h3>
@@ -1194,6 +1222,29 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
                   </ContextMenu>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Search-with-no-results feedback (#777 codex follow-up). Package
+              tiles are already hidden during search, so the only visible
+              surface is the flat snippet list — if that's empty the content
+              area would be blank without this fallback. The gate intentionally
+              excludes the fully-empty workspace (snippets.length === 0 AND
+              displayedPackages.length === 0), which the global "Create
+              snippet" empty state renders instead — avoids stacking two
+              empty states. Package-only workspaces (no snippets yet) still
+              get this feedback when searching. */}
+          {search.trim() && displayedSnippets.length === 0 && (snippets.length > 0 || displayedPackages.length > 0) && (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <div className="h-14 w-14 rounded-2xl bg-secondary/80 flex items-center justify-center mb-3">
+                <Search size={24} className="opacity-60" />
+              </div>
+              <h3 className="text-base font-semibold text-foreground mb-1">
+                {t('snippets.search.noResults.title')}
+              </h3>
+              <p className="text-xs text-center max-w-sm">
+                {t('snippets.search.noResults.desc', { query: search.trim() })}
+              </p>
             </div>
           )}
         </div>

@@ -520,7 +520,7 @@ echo $3 >> "$FILE"`);
         )}
       >
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 bg-secondary/60 border-b border-border/70 px-3 py-1.5 shrink-0">
+        <div className="h-14 px-4 py-2 flex items-center gap-3 bg-secondary/80 backdrop-blur border-b border-border/50 shrink-0">
           {/* Filter Tabs */}
           <div className="flex items-center gap-1">
             {/* KEY button with split interaction: left=switch view, right=dropdown */}
@@ -528,16 +528,15 @@ echo $3 >> "$FILE"`);
               <div
                 className={cn(
                   "flex items-center rounded-md transition-colors",
-                  activeFilter === "key" ? "bg-primary/15" : "hover:bg-accent",
+                  activeFilter === "key"
+                    ? "bg-foreground/10 text-foreground hover:bg-foreground/15"
+                    : "bg-foreground/5 text-foreground hover:bg-foreground/10",
                 )}
               >
                 <Button
                   size="sm"
                   variant="ghost"
-                  className={cn(
-                    "h-8 px-3 gap-2 rounded-r-none hover:bg-transparent",
-                    activeFilter === "key" && "text-primary",
-                  )}
+                  className="h-10 px-3 gap-2 rounded-r-none hover:bg-transparent text-inherit"
                   onClick={() => setActiveFilter("key")}
                 >
                   <Key size={14} />
@@ -547,10 +546,7 @@ echo $3 >> "$FILE"`);
                   <Button
                     size="sm"
                     variant="ghost"
-                    className={cn(
-                      "h-8 px-1.5 rounded-l-none hover:bg-transparent",
-                      activeFilter === "key" && "text-primary",
-                    )}
+                    className="h-10 px-1.5 rounded-l-none hover:bg-transparent text-inherit"
                   >
                     <ChevronDown size={12} />
                   </Button>
@@ -589,33 +585,24 @@ echo $3 >> "$FILE"`);
                 className={cn(
                   "flex items-center rounded-md transition-colors",
                   activeFilter === "certificate"
-                    ? "bg-primary/15"
-                    : "hover:bg-accent",
+                    ? "bg-foreground/10 text-foreground hover:bg-foreground/15"
+                    : "bg-foreground/5 text-foreground hover:bg-foreground/10",
                 )}
               >
                 <Button
                   size="sm"
                   variant="ghost"
-                  className={cn(
-                    "h-8 px-3 gap-2 rounded-r-none hover:bg-transparent",
-                    activeFilter === "certificate" && "text-primary",
-                  )}
+                  className="h-10 px-3 gap-2 rounded-r-none hover:bg-transparent text-inherit"
                   onClick={() => setActiveFilter("certificate")}
                 >
                   <BadgeCheck size={14} />
                   {t("keychain.filter.certificate")}
-                  <span className="text-[10px] px-1.5 rounded-full bg-muted text-muted-foreground">
-                    {keys.filter((k) => k.certificate).length}
-                  </span>
                 </Button>
                 <DropdownTrigger asChild>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className={cn(
-                      "h-8 px-1.5 rounded-l-none hover:bg-transparent",
-                      activeFilter === "certificate" && "text-primary",
-                    )}
+                    className="h-10 px-1.5 rounded-l-none hover:bg-transparent text-inherit"
                   >
                     <ChevronDown size={12} />
                   </Button>
@@ -645,7 +632,7 @@ echo $3 >> "$FILE"`);
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t("common.searchPlaceholder")}
-                  className="h-9 pl-8 w-full"
+                  className="h-10 pl-9 w-full bg-secondary border-border/60 text-sm"
                 />
               </div>
             )}
@@ -654,7 +641,7 @@ echo $3 >> "$FILE"`);
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 flex-shrink-0"
+                  className="h-10 w-10 flex-shrink-0"
                 >
                   {viewMode === "grid" ? (
                     <LayoutGrid size={16} />
