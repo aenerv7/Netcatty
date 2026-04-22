@@ -53,6 +53,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 移除终端侧边栏的 SFTP 面板（`SftpSidePanel`）：本 fork 使用顶部独立 SFTP/SCP 标签页，不需要终端内嵌 SFTP 侧栏。上游同步时对 `SftpSidePanel` 的引入和终端工具栏的 SFTP 按钮必须丢弃
 - SFTP 顶部标签页始终显示：移除了设置中"显示 SFTP 标签页"的开关（`showSftpTab` 设置项），该标签在本 fork 中永远可见
 - 彻底移除系统托盘（tray icon、tray panel、close-to-tray）及所有相关 IPC / UI / i18n / 存储键 / 图标资产（`public/tray-icon*.png` 已删除，上游同步时如果重新引入必须再次删除）
+- 保留旧版应用图标：上游在 v1.0.96 更换了新 logo，本 fork 保留旧版图标（`public/icon.png`、`public/logo.svg`、`public/dmg-fix-icon.png`、`components/AppLogo.tsx`）。上游同步时对这些文件的修改必须丢弃（`git checkout --ours`），除非明确要求同步上游图标
 - 彻底移除客户端终端自动补全系统（fig autocomplete、ghost text、popup menu），Tab 键完全由远端 shell 处理
 - 修复 macOS 自动更新点击重启无反应：`will-quit` 的 `event.preventDefault()` + `app.exit(0)` 会绕过 electron-updater 的退出生命周期钩子，现在 `quitAndInstall` 时跳过异步清理延迟
 - 修复 macOS 退出偶尔卡死：session log stream 的 `writeStream.end()` 回调可能不触发，增加了多层超时防护和 `will-quit` 重入保护
@@ -78,6 +79,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 5. **构建触发方式**：只通过打 `v*` tag 的方式触发构建，不使用 `workflow_dispatch`。如果没有更新的上游版本号，需要删除现有的远端和本地 tag 后重新打 tag 触发构建（`git push origin :refs/tags/vX.Y.Z` → `git tag -d vX.Y.Z` → `git tag vX.Y.Z` → `git push origin vX.Y.Z`）。
 6. **package-lock.json 合并**：不要直接 `git checkout upstream/main -- package-lock.json`。本 fork 的 `package.json` 比上游多了 `@types/react` 和 `@types/react-dom` 等 devDependencies，直接替换 lock 文件会导致 `npm ci` 因不匹配而失败。正确做法是让 git merge 自动处理，如有冲突则运行 `npm install --package-lock-only` 重新生成。
 7. **已移除功能的冲突处理**：上游对系统托盘（tray）、客户端自动补全（autocomplete）、终端 SFTP 侧边栏（`SftpSidePanel`）、云同步系统（`CloudSyncSettings`、`useAutoSync`、`useCloudSync`、`syncMerge`、`syncGuards`、设置页面同步标签页）、终端侧边栏主题面板（`ThemeSidePanel`）和终端工具栏 Scripts 按钮的修改必须丢弃（`git checkout --ours`），因为本 fork 已彻底移除或重写这些功能。合并时注意检查 `globalShortcutBridge.cjs`、`windowManager.cjs`、`TerminalLayer.tsx`、`Terminal.tsx`、`TerminalToolbar.tsx`、`App.tsx`、`SyncStatusButton.tsx`、`SettingsPage.tsx` 中的相关冲突。上游如果重新引入 `public/tray-icon*.png` 资产文件，合并后必须再次删除。
+8. **保留旧版图标**：上游对 `public/icon.png`、`public/logo.svg`、`public/dmg-fix-icon.png`、`components/AppLogo.tsx` 的修改必须丢弃（`git checkout --ours`），除非明确要求同步上游图标。
 8. **合并后必须检查 TS 类型**：运行 `npx tsc --noEmit` 确认无运行时会崩溃的类型错误（如引用未声明的变量）。Vite 构建不做类型检查，TS 错误不会阻止打包但会导致运行时白屏。
 9. **合并后必须验证大文件的 JSX 完整性**：`TerminalLayer.tsx`、`App.tsx` 等大组件在冲突解决时容易丢失整块 JSX 渲染代码（如 `<SftpSidePanel>` 渲染块曾被整体丢弃导致侧边栏空白）。合并后应检查关键组件的渲染输出是否完整，特别是条件渲染块和 `.map()` 循环。
 
