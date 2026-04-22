@@ -1,4 +1,4 @@
-import { Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, MoreHorizontal, PanelLeft, Plus, Server, Square, TerminalSquare, Usb, X } from 'lucide-react';
+import { Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, MoreHorizontal, Plus, Server, Square, TerminalSquare, Usb, X } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activeTabStore, useActiveTabId } from '../application/state/activeTabStore';
 import { buildWorkspaceActivityMap } from '../application/state/sessionActivity';
@@ -265,9 +265,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   const isSftpActive = activeTabId === 'sftp';
   const isScpActive = activeTabId === 'scp';
   const onSelectTab = activeTabStore.setActiveTabId;
-
-  // Show sidebar toggle only on terminal tabs (not vault/sftp/scp)
-  const isTerminalTab = !isVaultActive && !isSftpActive && !isScpActive;
 
   // Tab reorder drag state
   const [dropIndicator, setDropIndicator] = useState<{ tabId: string; position: 'before' | 'after' } | null>(null);
@@ -988,18 +985,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
 
         {/* Fixed right controls */}
         <div className="flex-shrink-0 flex items-center gap-2 app-drag self-center" style={dragRegionStyle}>
-          {isTerminalTab && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 app-no-drag"
-              style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
-              title={t('terminal.toolbar.toggleSidebar')}
-              onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-sidebar'))}
-            >
-              <PanelLeft size={16} />
-            </Button>
-          )}
           <SyncStatusButton onBuildPayload={onBuildPayload} onApplyPayload={onApplyPayload} />
         </div>
         {/* Custom window controls for Windows/Linux */}
