@@ -64,9 +64,8 @@ For devices that don't support the SFTP subsystem (older routers, embedded syste
 
 ### App Quit Fix
 
-The upstream version has a bug where clicking "Quit" from the system tray often fails to exit the app. This fork fixes it:
+The upstream version has a bug where the app sometimes fails to exit cleanly. This fork fixes it:
 
-- Tray panel window destroyed before `app.quit()` to prevent exit deadlock
 - Synchronous window state save during quit — no more `event.preventDefault()` blocking
 - Session log stream cleanup with 3-second hard timeout to guarantee exit
 

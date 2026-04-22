@@ -287,7 +287,7 @@ function focusMainWindow() {
       }
     } catch {}
 
-    // Cancel any in-flight close-to-tray hide so second-instance / dock-click
+    // Cancel any in-flight fullscreen hide so second-instance / dock-click
     // re-entry beats a pending leave-full-screen → hide sequence.
     try {
       getGlobalShortcutBridge().clearPendingFullscreenHide?.(win);
@@ -1068,7 +1068,7 @@ if (!gotLock) {
       try {
         const mainWin = getWindowManager().getMainWindow?.();
         if (mainWin && !mainWin.isDestroyed?.()) {
-          // If a close-to-tray hide is still pending (fullscreen exit animation
+          // If a fullscreen hide is still pending (fullscreen exit animation
           // not finished yet), cancel it — user intent to bring the window
           // back overrides the pending hide.
           try {
