@@ -452,6 +452,12 @@ const en: Messages = {
   'time.justNow': 'Just now',
   'time.minutesAgo': '{minutes}m ago',
 
+  // Tags
+  'tags.noTags': 'No tags available',
+  'tags.search': 'Search tags',
+  'tags.clearSelection': 'Clear selection',
+  'tags.noMatch': 'No matching tags',
+
   // Vault navigation
   'vault.nav.hosts': 'Hosts',
   'vault.nav.keychain': 'Keychain',

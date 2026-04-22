@@ -1,5 +1,6 @@
 import { Check,ChevronDown,ChevronUp,Pencil,Search,Tag,Trash2,X } from 'lucide-react';
 import React from 'react';
+import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
 import { Button } from './button';
 import { Dropdown,DropdownContent,DropdownTrigger } from './dropdown';
@@ -28,6 +29,7 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
     const [editingTag, setEditingTag] = React.useState<string | null>(null);
     const [editValue, setEditValue] = React.useState('');
     const editInputRef = React.useRef<HTMLInputElement>(null);
+    const { t } = useI18n();
 
     const toggleTag = (tag: string) => {
         if (selectedTags.includes(tag)) {
@@ -130,7 +132,7 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
             <DropdownContent className="w-64" align="end">
                 {allTags.length === 0 ? (
                     <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                        No tags available
+                        {t('tags.noTags')}
                     </div>
                 ) : (
                     <>
@@ -139,7 +141,7 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
                             <div className="relative">
                                 <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
                                 <Input
-                                    placeholder="Search tags"
+                                    placeholder={t('tags.search')}
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     className="h-8 pl-7 text-sm"
@@ -153,7 +155,7 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
                                 className="w-full justify-start gap-2 h-8 text-muted-foreground"
                                 onClick={clearAll}
                             >
-                                Clear selection
+                                {t('tags.clearSelection')}
                             </Button>
                         )}
 
@@ -163,7 +165,7 @@ export const TagFilterDropdown: React.FC<TagFilterDropdownProps> = ({
                             <div className="space-y-0.5">
                                 {filteredTags.length === 0 ? (
                                     <div className="px-3 py-2 text-center text-sm text-muted-foreground">
-                                        No matching tags
+                                        {t('tags.noMatch')}
                                     </div>
                                 ) : (
                                     filteredTags.map(tag => {

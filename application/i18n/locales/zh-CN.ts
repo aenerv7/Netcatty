@@ -275,6 +275,12 @@ const zhCN: Messages = {
   'time.justNow': '刚刚',
   'time.minutesAgo': '{minutes} 分钟前',
 
+  // Tags
+  'tags.noTags': '暂无标签',
+  'tags.search': '搜索标签',
+  'tags.clearSelection': '清除选择',
+  'tags.noMatch': '没有匹配的标签',
+
   // Vault navigation
   'vault.nav.hosts': '主机',
   'vault.nav.keychain': '钥匙串',
