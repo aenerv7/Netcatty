@@ -886,9 +886,12 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
             </div>
           )}
           <div
+            data-tab-id="scp"
+            data-tab-type="root"
+            data-state={isScpActive ? 'active' : 'inactive'}
             onClick={() => onSelectTab('scp')}
             className={cn(
-              "relative h-7 px-3 rounded-none text-xs font-semibold cursor-pointer flex items-center gap-2 app-no-drag",
+              "netcatty-tab relative h-7 px-3 rounded-t-md overflow-hidden text-xs font-semibold cursor-pointer flex items-center gap-2 app-no-drag",
             )}
             style={{
               backgroundColor: isScpActive
@@ -911,12 +914,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
               }
             }}
           >
-            {isScpActive && (
-              <div
-                className="absolute top-0 left-0 right-0 h-[2px]"
-                style={{ backgroundColor: 'var(--top-tabs-accent, hsl(var(--accent)))' }}
-              />
-            )}
             <Folder size={14} /> SCP
           </div>
         </div>

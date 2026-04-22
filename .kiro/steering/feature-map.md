@@ -61,7 +61,8 @@ SCP 复用 SFTP 的完整 UI，通过 `scpMode` prop 切换后端协议。适用
 | 活动标签 | `application/state/activeTabStore.ts` (`useIsScpActive`) |
 | UI 复用 | `components/ScpView.tsx` → `SftpView` (传入 `scpMode` prop) |
 | Store 隔离 | `SftpContext.tsx` (`createActiveTabStore` 工厂 + `ActiveTabStoreProvider` Context) |
-| 标签页按钮 | `components/TopTabs.tsx` (Vaults / SFTP / SCP 三个固定标签) |
+| 标签页按钮 | `components/TopTabs.tsx` (Vaults / SFTP / SCP 三个固定标签，SCP 标签样式与 SFTP 一致) |
+| 设置共享 | 设置页面 "SFTP & SCP" 标签页的所有设置（双击行为、自动同步、隐藏文件、压缩上传等）同时作用于 SFTP 和 SCP |
 | useScp 传递链 | `SftpView` → `useSftpState(options.useScp)` → `useSftpConnections(useScp)` → `openSftp({ useScp })` |
 
 ## 密钥链

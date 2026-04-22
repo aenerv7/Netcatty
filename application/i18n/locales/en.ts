@@ -832,7 +832,7 @@ const en: Messages = {
   'sftp.preview.fitToWindow': 'Fit to Window',
 
   // Settings > SFTP File Associations
-  'settings.tab.sftpFileAssociations': 'SFTP',
+  'settings.tab.sftpFileAssociations': 'SFTP & SCP',
   'settings.tab.ai': 'AI',
   'settings.ai.loading': 'Loading AI settings...',
   'settings.ai.error': 'AI Settings Error',

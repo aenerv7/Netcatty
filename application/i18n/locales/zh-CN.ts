@@ -1213,7 +1213,7 @@ const zhCN: Messages = {
   'sftp.preview.fitToWindow': '适应窗口',
 
   // Settings > SFTP File Associations
-  'settings.tab.sftpFileAssociations': 'SFTP',
+  'settings.tab.sftpFileAssociations': 'SFTP & SCP',
   'settings.tab.ai': 'AI',
   'settings.ai.loading': '正在加载 AI 设置…',
   'settings.ai.error': 'AI 设置错误',
