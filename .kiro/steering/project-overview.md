@@ -50,7 +50,7 @@ components/      UI 层 — 展示组件，仅消费 hooks 输出
 - 新增 SCP 文件管理（复用 SFTP UI，后端走 SSH exec）
 - 云同步彻底重写：移除了上游的多云同步系统（CloudSyncManager 状态机、useAutoSync/useCloudSync hooks、三方合并、冲突检测、shrink guard、设置页面同步标签页），替换为仅 WebDAV 的简单推送/拉取模式。同步入口仅在右上角工具栏的云按钮，不再有设置页面的同步配置。
 - WebDAV 同步文件存放在 `/Netcatty/` 子目录（兼容坚果云等不允许根目录操作的服务），数据使用 AES-256-GCM 加密
-- 移除终端侧边栏的 SFTP 面板（`SftpSidePanel`）：本 fork 使用顶部独立 SFTP/SCP 标签页，不需要终端内嵌 SFTP 侧栏
+- 移除终端侧边栏的 SFTP 面板（`SftpSidePanel`）：本 fork 使用顶部独立 SFTP/SCP 标签页，不需要终端内嵌 SFTP 侧栏。上游同步时对 `SftpSidePanel` 的引入和终端工具栏的 SFTP 按钮必须丢弃
 - SFTP 顶部标签页始终显示：移除了设置中"显示 SFTP 标签页"的开关（`showSftpTab` 设置项），该标签在本 fork 中永远可见
 - 彻底移除系统托盘（tray icon、tray panel、close-to-tray）及所有相关 IPC / UI / i18n / 存储键 / 图标资产（`public/tray-icon*.png` 已删除，上游同步时如果重新引入必须再次删除）
 - 彻底移除客户端终端自动补全系统（fig autocomplete、ghost text、popup menu），Tab 键完全由远端 shell 处理
