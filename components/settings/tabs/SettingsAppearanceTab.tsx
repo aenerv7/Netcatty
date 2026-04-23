@@ -290,7 +290,8 @@ export default function SettingsAppearanceTab(props: {
           value={customCSS}
           onChange={(e) => setCustomCSS(e.target.value)}
           placeholder={t("settings.appearance.customCss.placeholder")}
-          className="w-full h-32 px-3 py-2 text-xs font-mono bg-muted/50 border border-border rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-primary/50"
+          className="w-full h-32 px-3 py-2 text-xs bg-muted/50 border border-border rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-primary/50"
+          style={{ fontFamily: (availableUIFonts.find(f => f.id === uiFontFamilyId) ?? availableUIFonts[0])?.family }}
           spellCheck={false}
         />
       </div>
