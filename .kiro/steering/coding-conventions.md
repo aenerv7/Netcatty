@@ -97,7 +97,29 @@ npm run lint:fix     # ESLint 自动修复
 ```
 
 本 fork 仅构建 Windows 和 macOS，Linux 构建已从 CI 移除。
-GitHub Actions workflow: `.github/workflows/release.yml`（tag push 或手动触发）。
+GitHub Actions workflow: `.github/workflows/release.yml`（仅 tag push `v*` 触发）。
+
+### CI 构建触发方式
+
+**始终使用打 tag 的方式触发构建**，不使用 `workflow_dispatch`。
+
+```bash
+# 正常发布新版本
+git tag v1.0.99
+git push origin v1.0.99
+
+# 如果最新 tag 指向的不是当前 HEAD（例如合并上游后需要重新构建）
+# 先删除远程和本地旧 tag，再重新打在当前 HEAD 上
+git tag -d v1.0.98
+git push origin :refs/tags/v1.0.98
+git tag v1.0.98
+git push origin v1.0.98
+```
+
+### 注意事项
+
+- 合并上游后 `package-lock.json` 可能与 `package.json` 不同步，CI 的 `npm ci` 会失败。合并后务必运行 `npm install --package-lock-only` 重新生成 lock 文件并提交
+- 上游的 tag（如 `v1.0.97`、`v1.0.98`）会被 `git fetch upstream` 拉到本地，它们指向上游的提交而非 fork 的 HEAD。发布前检查 tag 指向：`git log --oneline <tag> -1`
 
 ## 路径别名
 
