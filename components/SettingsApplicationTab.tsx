@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ArrowUpCircle, Bug, Check, Github, Loader2, MessageCircle, Newspaper, RefreshCcw } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowUpCircle, Check, Github, Loader2, Newspaper, RefreshCcw } from "lucide-react";
 import AppLogo from "./AppLogo";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
@@ -16,30 +16,6 @@ type AppInfo = {
 };
 
 const REPO_URL = "https://github.com/aenerv7/Netcatty";
-
-const buildIssueUrl = (appInfo: AppInfo) => {
-  const title = "Bug: ";
-  const bodyLines = [
-    "## Describe the problem",
-    "",
-    "## Steps to reproduce",
-    "1.",
-    "",
-    "## Expected behavior",
-    "",
-    "## Actual behavior",
-    "",
-    "## Environment",
-    `- App: ${appInfo.name} ${appInfo.version}`,
-    `- Platform: ${appInfo.platform || "unknown"}`,
-    `- UA: ${typeof navigator !== "undefined" ? navigator.userAgent : "unknown"}`,
-  ];
-  const params = new URLSearchParams({
-    title,
-    body: bodyLines.join("\n"),
-  });
-  return `${REPO_URL}/issues/new?${params.toString()}`;
-};
 
 const ActionRow: React.FC<{
   icon: React.ReactNode;
@@ -141,9 +117,7 @@ export default function SettingsApplicationTab({ updateState, checkNow, openRele
     setTimeout(() => setLastCheckResult('none'), 3000);
   };
 
-  const issueUrl = useMemo(() => buildIssueUrl(appInfo), [appInfo]);
   const releasesUrl = `${REPO_URL}/releases`;
-  const discussionsUrl = `${REPO_URL}/discussions`;
 
   return (
     <SettingsTabContent value="application">
@@ -213,18 +187,6 @@ export default function SettingsApplicationTab({ updateState, checkNow, openRele
 
         <div className="flex-1">
           <div className="space-y-2">
-            <ActionRow
-              icon={<Bug size={18} />}
-              title={t("settings.application.reportProblem")}
-              subtitle={t("settings.application.reportProblem.subtitle")}
-              onClick={() => void handleOpenExternal(issueUrl)}
-            />
-            <ActionRow
-              icon={<MessageCircle size={18} />}
-              title={t("settings.application.community")}
-              subtitle={t("settings.application.community.subtitle")}
-              onClick={() => void handleOpenExternal(discussionsUrl)}
-            />
             <ActionRow
               icon={<Github size={18} />}
               title={t("settings.application.github")}
