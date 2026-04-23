@@ -50,7 +50,53 @@ export interface DeviceFlowState {
   verificationUri: string;
   expiresAt: number;
   interval: number;
+  authAttemptId?: number;
 }
+
+const createGitHubPollId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `github-poll-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const createGitHubCancelError = (): Error => {
+  const error = new Error('GitHub auth cancelled');
+  error.name = 'AbortError';
+  return error;
+};
+
+const throwIfAborted = (signal?: AbortSignal): void => {
+  if (signal?.aborted) {
+    throw createGitHubCancelError();
+  }
+};
+
+const delayWithSignal = (ms: number, signal?: AbortSignal): Promise<void> => {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(createGitHubCancelError());
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(createGitHubCancelError());
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+};
 
 // ============================================================================
 // Device Flow Authentication
@@ -117,64 +163,96 @@ export const pollForToken = async (
   deviceCode: string,
   interval: number,
   expiresAt: number,
-  onPending?: () => void
+  onPending?: () => void,
+  signal?: AbortSignal
 ): Promise<OAuthTokens | null> => {
   const pollInterval = Math.max(interval, 5) * 1000; // Minimum 5 seconds
   const bridge = netcattyBridge.get();
 
   while (Date.now() < expiresAt) {
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    await delayWithSignal(pollInterval, signal);
+    throwIfAborted(signal);
+    const pollId = createGitHubPollId();
+    const cancelPoll = () => {
+      void bridge?.githubCancelDeviceFlowPoll?.(pollId);
+    };
 
-    const data = bridge?.githubPollDeviceFlowToken
-      ? await bridge.githubPollDeviceFlowToken({
-          clientId: SYNC_CONSTANTS.GITHUB_CLIENT_ID,
-          deviceCode,
-        })
-      : await (async () => {
-          const response = await fetch(SYNC_CONSTANTS.GITHUB_ACCESS_TOKEN_URL, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-              client_id: SYNC_CONSTANTS.GITHUB_CLIENT_ID,
-              device_code: deviceCode,
-              grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-            }).toString(),
-          });
-          return response.json();
-        })();
-
-    if (data.access_token) {
-      return {
-        accessToken: data.access_token,
-        tokenType: data.token_type || 'bearer',
-        scope: data.scope,
-      };
+    if (signal) {
+      signal.addEventListener('abort', cancelPoll, { once: true });
     }
 
-    if (data.error === 'authorization_pending') {
-      onPending?.();
-      continue;
-    }
+    try {
+      let data;
+      try {
+        data = bridge?.githubPollDeviceFlowToken
+          ? await bridge.githubPollDeviceFlowToken({
+              clientId: SYNC_CONSTANTS.GITHUB_CLIENT_ID,
+              deviceCode,
+              pollId,
+            })
+          : await (async () => {
+              const response = await fetch(SYNC_CONSTANTS.GITHUB_ACCESS_TOKEN_URL, {
+                method: 'POST',
+                signal,
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                  client_id: SYNC_CONSTANTS.GITHUB_CLIENT_ID,
+                  device_code: deviceCode,
+                  grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+                }).toString(),
+              });
+              return response.json();
+            })();
+      } catch (error) {
+        if (
+          signal?.aborted ||
+          (error instanceof Error &&
+            (error.name === 'AbortError' || error.message.toLowerCase().includes('abort')))
+        ) {
+          throw createGitHubCancelError();
+        }
+        throw error;
+      }
 
-    if (data.error === 'slow_down') {
-      // Increase interval as requested
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      continue;
-    }
+      throwIfAborted(signal);
 
-    if (data.error === 'expired_token') {
-      throw new Error('Device code expired. Please try again.');
-    }
+      if (data.access_token) {
+        return {
+          accessToken: data.access_token,
+          tokenType: data.token_type || 'bearer',
+          scope: data.scope,
+        };
+      }
 
-    if (data.error === 'access_denied') {
-      throw new Error('User denied authorization.');
-    }
+      if (data.error === 'authorization_pending') {
+        onPending?.();
+        continue;
+      }
 
-    if (data.error) {
-      throw new Error(`GitHub auth error: ${data.error_description || data.error}`);
+      if (data.error === 'slow_down') {
+        // Increase interval as requested
+        await delayWithSignal(5000, signal);
+        continue;
+      }
+
+      if (data.error === 'expired_token') {
+        throw new Error('Device code expired. Please try again.');
+      }
+
+      if (data.error === 'access_denied') {
+        throw new Error('User denied authorization.');
+      }
+
+      if (data.error) {
+        throw new Error(`GitHub auth error: ${data.error_description || data.error}`);
+      }
+    } finally {
+      if (signal) {
+        signal.removeEventListener('abort', cancelPoll);
+      }
     }
   }
 
@@ -188,8 +266,12 @@ export const pollForToken = async (
 /**
  * Get authenticated user info
  */
-export const getUserInfo = async (accessToken: string): Promise<ProviderAccount> => {
+export const getUserInfo = async (
+  accessToken: string,
+  signal?: AbortSignal
+): Promise<ProviderAccount> => {
   const response = await fetch(`${SYNC_CONSTANTS.GITHUB_API_BASE}/user`, {
+    signal,
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/vnd.github.v3+json',
@@ -234,9 +316,13 @@ export const validateToken = async (accessToken: string): Promise<boolean> => {
 /**
  * Find existing Netcatty sync gist
  */
-export const findSyncGist = async (accessToken: string): Promise<string | null> => {
+export const findSyncGist = async (
+  accessToken: string,
+  signal?: AbortSignal
+): Promise<string | null> => {
   // List user's gists and find ours
   const response = await fetch(`${SYNC_CONSTANTS.GITHUB_API_BASE}/gists?per_page=100`, {
+    signal,
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/vnd.github.v3+json',
@@ -471,15 +557,18 @@ export class GitHubAdapter {
     deviceCode: string,
     interval: number,
     expiresAt: number,
-    onPending?: () => void
+    onPending?: () => void,
+    signal?: AbortSignal
   ): Promise<OAuthTokens> {
-    const tokens = await pollForToken(deviceCode, interval, expiresAt, onPending);
+    const tokens = await pollForToken(deviceCode, interval, expiresAt, onPending, signal);
     if (!tokens) {
       throw new Error('Failed to obtain access token');
     }
 
+    throwIfAborted(signal);
     this.accessToken = tokens.accessToken;
-    this.account = await getUserInfo(tokens.accessToken);
+    this.account = await getUserInfo(tokens.accessToken, signal);
+    throwIfAborted(signal);
 
     return tokens;
   }
@@ -509,12 +598,12 @@ export class GitHubAdapter {
   /**
    * Initialize or find sync gist
    */
-  async initializeSync(): Promise<string | null> {
+  async initializeSync(signal?: AbortSignal): Promise<string | null> {
     if (!this.accessToken) {
       throw new Error('Not authenticated');
     }
 
-    this.gistId = await findSyncGist(this.accessToken);
+    this.gistId = await findSyncGist(this.accessToken, signal);
     return this.gistId;
   }
 

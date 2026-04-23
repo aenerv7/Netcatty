@@ -40,7 +40,11 @@ const DEBUG_WINDOWS = process.env.NETCATTY_DEBUG_WINDOWS === "1";
 const OAUTH_DEFAULT_WIDTH = 600;
 const OAUTH_DEFAULT_HEIGHT = 700;
 const OAUTH_OVERLAY_ID = "__netcatty_oauth_loading__";
-const OAUTH_LOOPBACK_PORT = 45678; // must match electron/bridges/oauthBridge.cjs
+// The OAuth callback port is chosen dynamically by oauthBridge (prefers
+// 45678, falls back to an OS-assigned free port if that is in use, #823),
+// so the in-app popup allow-list has to consult the bridge at popup-open
+// time instead of a hardcoded constant.
+const oauthBridge = require("./oauthBridge.cjs");
 const WINDOW_STATE_FILE = "window-state.json";
 const DEFAULT_WINDOW_WIDTH = 1400;
 const DEFAULT_WINDOW_HEIGHT = 900;
@@ -606,10 +610,14 @@ function createAppWindowOpenHandler(shell, { backgroundColor, appIcon }) {
         return allowedPopupHosts.has(u.hostname);
       }
       if (u.protocol === "http:") {
-        // Allow ONLY the loopback OAuth callback page.
+        // Allow ONLY the loopback OAuth callback page, and only while an
+        // OAuth flow is actively prepared — the acceptable port matches
+        // whatever oauthBridge just bound for this session.
         const isLoopback =
           u.hostname === "127.0.0.1" || u.hostname === "localhost";
-        return isLoopback && u.port === String(OAUTH_LOOPBACK_PORT) && u.pathname === "/oauth/callback";
+        if (!isLoopback || u.pathname !== "/oauth/callback") return false;
+        const activePort = oauthBridge.getActiveOAuthPort?.();
+        return activePort != null && u.port === String(activePort);
       }
       return false;
     } catch {

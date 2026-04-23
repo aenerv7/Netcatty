@@ -1466,6 +1466,7 @@ const en: Messages = {
   'cloudSync.conflict.keepLocal': 'Overwrite cloud (keep local)',
   'cloudSync.conflict.useCloud': 'Download cloud (overwrite local)',
   'cloudSync.connect.browserContinue': 'Complete authorization in browser',
+  'cloudSync.connect.browserCancelled': 'Previous browser authorization was cancelled',
   'cloudSync.connect.github.success': 'GitHub connected successfully',
   'cloudSync.connect.github.failedTitle': 'GitHub connection failed',
   'cloudSync.connect.github.timeout': 'GitHub connection timed out. Check your network or proxy settings.',
@@ -1728,6 +1729,12 @@ const en: Messages = {
 
   // Text Editor
   'sftp.editor.wordWrap': 'Word Wrap',
+  'sftp.editor.maximize': 'Maximize',
+  'sftp.editor.unsavedTitle': 'Unsaved changes',
+  'sftp.editor.unsavedMessage': '{fileName} has unsaved changes. Save before closing?',
+  'sftp.editor.discardChanges': 'Discard',
+  'sftp.editor.saveAndClose': 'Save and close',
+  'sftp.editor.quitBlockedByDirty': 'Unsaved editors — please save or discard before quitting',
 
   // AI Settings
   'ai.agentSettings': 'Agent Settings',

@@ -6,7 +6,9 @@
 const net = require("node:net");
 const fs = require("node:fs");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 const os = require("node:os");
+const crypto = require("node:crypto");
 const { exec } = require("node:child_process");
 const { Client: SSHClient, utils: sshUtils } = require("ssh2");
 const { NetcattyAgent } = require("./netcattyAgent.cjs");
@@ -21,6 +23,7 @@ const {
   requestPassphrasesForEncryptedKeys,
   findAllDefaultPrivateKeys: findAllDefaultPrivateKeysFromHelper,
   getSshAgentSocket,
+  readFileNoFollow,
 } = require("./sshAuthHelper.cjs");
 const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
 const { trackSessionIdlePrompt } = require("./ai/shellUtils.cjs");
@@ -122,9 +125,8 @@ async function findDefaultPrivateKey() {
   for (const name of sorted) {
     const keyPath = path.join(sshDir, name);
     try {
-      const stat = await fs.promises.stat(keyPath);
-      if (!stat.isFile()) continue;
-      const privateKey = await fs.promises.readFile(keyPath, "utf8");
+      const privateKey = await readFileNoFollow(keyPath);
+      if (!privateKey) continue;
       if (!looksLikePrivateKey(privateKey)) {
         log("Skipping non-key file", { keyPath, keyName: name });
         continue;
@@ -168,9 +170,8 @@ async function findAllDefaultPrivateKeys() {
   const promises = sorted.map(async (name) => {
     const keyPath = path.join(sshDir, name);
     try {
-      const stat = await fs.promises.stat(keyPath);
-      if (!stat.isFile()) return null;
-      const privateKey = await fs.promises.readFile(keyPath, "utf8");
+      const privateKey = await readFileNoFollow(keyPath);
+      if (!privateKey) return null;
       if (!looksLikePrivateKey(privateKey)) {
         log("Skipping non-key file", { keyPath, keyName: name });
         return null;
@@ -251,6 +252,19 @@ const log = (msg, data) => {
   console.log("[SSH]", msg, data ? JSON.stringify(data, null, 2) : "");
 };
 
+// FIPS-enabled OpenSSL builds disable MD5. Feature-detect once so the legacy
+// algorithm list can skip hmac-md5 on those builds — ssh2 validates exact
+// algorithm lists strictly and would otherwise throw "Unsupported algorithm"
+// before the SSH handshake even starts.
+let _md5Supported = null;
+function md5Supported() {
+  if (_md5Supported === null) {
+    try { _md5Supported = crypto.getHashes().includes("md5"); }
+    catch { _md5Supported = false; }
+  }
+  return _md5Supported;
+}
+
 /**
  * Build SSH algorithm configuration.
  * When legacyEnabled is true, legacy algorithms are appended to each list
@@ -285,6 +299,32 @@ function buildAlgorithms(legacyEnabled) {
       'rsa-sha2-512', 'rsa-sha2-256',
       'ssh-rsa', 'ssh-dss',
     ];
+    // Legacy HMACs — required by very old servers (e.g. FreeBSD 6.1 OpenSSH
+    // ~2006, issue #807). Without hmac-sha1/md5 in the offered list, the
+    // handshake exchange-hash MAC never agrees and the host-key signature
+    // verification that depends on it fails with
+    // "Handshake failed: signature verification failed" — which looks like
+    // a host-key problem but is really a MAC negotiation mismatch.
+    //
+    // hmac-md5 is only appended when the local OpenSSL build actually
+    // supports MD5. FIPS-enabled Node builds disable MD5 entirely, and
+    // ssh2 strictly validates exact algorithm lists — listing an unavailable
+    // algorithm would throw "Unsupported algorithm" before any SSH
+    // negotiation, turning the legacy toggle into a hard failure for FIPS
+    // users. hmac-sha1 is allowed for HMAC even under FIPS 140-2 so it
+    // stays unconditionally.
+    // hmac-sha1-etm@openssh.com is in ssh2's default MAC set — keep it so
+    // hosts that only accept EtM SHA-1 MACs don't regress to "no matching
+    // C->S MAC" when legacy mode replaces the default list.
+    algorithms.hmac = [
+      'hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com',
+      'hmac-sha2-256', 'hmac-sha2-512',
+      'hmac-sha1-etm@openssh.com',
+      'hmac-sha1',
+    ];
+    if (md5Supported()) {
+      algorithms.hmac.push('hmac-md5');
+    }
   }
 
   return algorithms;
@@ -648,9 +688,7 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
  * Start an SSH session
  */
 async function startSSHSession(event, options) {
-  const sessionId =
-    options.sessionId ||
-    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const sessionId = options.sessionId || randomUUID();
 
   const cols = options.cols || 80;
   const rows = options.rows || 24;
@@ -1558,7 +1596,7 @@ async function execCommand(event, payload) {
   const baseTimeoutMs = payload.timeout || 10000;
   const timeoutMs = enableKeyboardInteractive ? Math.max(baseTimeoutMs, 120000) : baseTimeoutMs;
   const sender = event.sender;
-  const sessionId = payload.sessionId || `exec-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const sessionId = payload.sessionId || randomUUID();
   const defaultKeys = enableKeyboardInteractive ? await findAllDefaultPrivateKeysFromHelper() : [];
 
   return new Promise((resolve, reject) => {

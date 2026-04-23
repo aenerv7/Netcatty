@@ -37,7 +37,7 @@ import packageJson from '../../package.json';
 import { EncryptionService } from './EncryptionService';
 import { createAdapter, type CloudAdapter } from './adapters';
 import { localStorageAdapter } from '../persistence/localStorageAdapter';
-import type { GitHubAdapter } from './adapters/GitHubAdapter';
+import type { DeviceFlowState, GitHubAdapter } from './adapters/GitHubAdapter';
 import type { GoogleDriveAdapter } from './adapters/GoogleDriveAdapter';
 import type { OneDriveAdapter } from './adapters/OneDriveAdapter';
 import {
@@ -98,6 +98,16 @@ interface ProviderSyncAnchor {
   observedAt: number;
 }
 
+interface ProviderAuthRestoreState {
+  attemptId: number;
+  connection: ProviderConnection;
+  adapter: CloudAdapter | null;
+}
+
+export type StartProviderAuthResult =
+  | { type: 'device_code'; data: DeviceFlowState & { authAttemptId: number } }
+  | { type: 'url'; data: { url: string; redirectUri: string; authAttemptId: number } };
+
 // ============================================================================
 // CloudSyncManager Class
 // ============================================================================
@@ -125,6 +135,12 @@ export class CloudSyncManager {
   // decrypt results are discarded.
   private providerDecryptSeq: Record<CloudProvider, number> = {
     github: 0, google: 0, onedrive: 0, webdav: 0, s3: 0,
+  };
+  private providerAuthAttemptSeq: Record<CloudProvider, number> = {
+    github: 0, google: 0, onedrive: 0, webdav: 0, s3: 0,
+  };
+  private providerAuthRestoreState: Record<CloudProvider, ProviderAuthRestoreState | null> = {
+    github: null, google: null, onedrive: null, webdav: null, s3: null,
   };
   // Per-provider write sequence counters for saveProviderConnection.
   // Only bumped when a new save is initiated, so status-only updates
@@ -252,14 +268,21 @@ export class CloudSyncManager {
     this.notifyStateChange();
   }
 
-  private async saveProviderConnection(provider: CloudProvider, connection: ProviderConnection): Promise<void> {
+  private async saveProviderConnection(
+    provider: CloudProvider,
+    connection: ProviderConnection,
+    authAttemptId?: number
+  ): Promise<void> {
     const key = SYNC_STORAGE_KEYS[`PROVIDER_${provider.toUpperCase()}` as keyof typeof SYNC_STORAGE_KEYS];
     // Use write-specific counter so status-only updates cannot discard
     // an in-flight encrypted write that must be persisted.
     const seq = ++this.providerWriteSeq[provider];
     const encrypted = await encryptProviderSecrets(connection);
     // Only persist if no newer save has started during the async gap
-    if (seq === this.providerWriteSeq[provider]) {
+    if (
+      seq === this.providerWriteSeq[provider] &&
+      (authAttemptId == null || this.isActiveAuthAttempt(provider, authAttemptId))
+    ) {
       this.saveToStorage(key, encrypted);
     }
   }
@@ -696,16 +719,29 @@ export class CloudSyncManager {
 
   /**
    * Start authentication flow for a provider
-   * Returns data needed for the auth flow (device code for GitHub, URL for others)
+   * Returns data needed for the auth flow (device code for GitHub, URL for others).
+   *
+   * For PKCE providers (Google / OneDrive) the caller must supply the
+   * redirect URI the loopback callback server bound to — the port is chosen
+   * dynamically by the main process (#823) so it can't be hardcoded here.
    */
-  async startProviderAuth(provider: CloudProvider): Promise<{
-    type: 'device_code' | 'url';
-    data: unknown;
-  }> {
+  async startProviderAuth(
+    provider: CloudProvider,
+    redirectUri?: string
+  ): Promise<StartProviderAuthResult> {
     if (provider === 'webdav' || provider === 's3') {
       throw new Error('Provider requires manual configuration');
     }
+    const authAttemptId = ++this.providerAuthAttemptSeq[provider];
+    this.providerAuthRestoreState[provider] = {
+      attemptId: authAttemptId,
+      connection: { ...this.state.providers[provider] },
+      adapter: this.adapters.get(provider) ?? null,
+    };
     const adapter = await createAdapter(provider);
+    if (!this.isActiveAuthAttempt(provider, authAttemptId)) {
+      throw new Error(`${provider} auth superseded`);
+    }
     this.adapters.set(provider, adapter);
 
     this.updateProviderStatus(provider, 'connecting');
@@ -717,23 +753,31 @@ export class CloudSyncManager {
 
         return {
           type: 'device_code',
-          data: deviceFlow,
+          data: { ...deviceFlow, authAttemptId },
         };
       } else {
         // Google and OneDrive use PKCE with redirect
-        const redirectUri = 'http://127.0.0.1:45678/oauth/callback';
+        if (!redirectUri) {
+          throw new Error(
+            `startProviderAuth('${provider}') requires a redirectUri — ` +
+              'call prepareOAuthCallback on the bridge first and pass its redirectUri through.'
+          );
+        }
 
         if (provider === 'google') {
           const gdAdapter = adapter as GoogleDriveAdapter;
           const url = await gdAdapter.startAuth(redirectUri);
-          return { type: 'url', data: { url, redirectUri } };
+          return { type: 'url', data: { url, redirectUri, authAttemptId } };
         } else {
           const odAdapter = adapter as OneDriveAdapter;
           const url = await odAdapter.startAuth(redirectUri);
-          return { type: 'url', data: { url, redirectUri } };
+          return { type: 'url', data: { url, redirectUri, authAttemptId } };
         }
       }
     } catch (error) {
+      if (!this.isActiveAuthAttempt(provider, authAttemptId)) {
+        throw error;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[CloudSync] ${provider} connect failed`, {
         error: errorMessage,
@@ -750,8 +794,13 @@ export class CloudSyncManager {
     deviceCode: string,
     interval: number,
     expiresAt: number,
-    onPending?: () => void
+    onPending?: () => void,
+    signal?: AbortSignal,
+    authAttemptId?: number
   ): Promise<void> {
+    if (authAttemptId != null && !this.isActiveAuthAttempt('github', authAttemptId)) {
+      throw new Error('github auth superseded');
+    }
     const adapter = this.adapters.get('github');
     if (!adapter) {
       throw new Error('GitHub adapter not initialized');
@@ -766,7 +815,15 @@ export class CloudSyncManager {
       // version, where the key didn't exist yet).
       const previousAccount = this.state.providers.github?.account;
 
-      const tokens = await ghAdapter.completeAuth(deviceCode, interval, expiresAt, onPending);
+      const tokens = await ghAdapter.completeAuth(deviceCode, interval, expiresAt, onPending, signal);
+      if (authAttemptId != null && !this.isActiveAuthAttempt('github', authAttemptId)) {
+        throw new Error('github auth superseded');
+      }
+      const resourceId = await ghAdapter.initializeSync(signal);
+
+      if (authAttemptId != null && !this.isActiveAuthAttempt('github', authAttemptId)) {
+        throw new Error('github auth superseded');
+      }
 
       ++this.providerDecryptSeq.github;
       this.state.providers.github = {
@@ -776,13 +833,14 @@ export class CloudSyncManager {
         account: ghAdapter.accountInfo || undefined,
       };
 
-      // Initialize sync (find or create gist)
-      const resourceId = await ghAdapter.initializeSync();
       if (resourceId) {
         this.state.providers.github.resourceId = resourceId;
       }
 
-      await this.saveProviderConnection('github', this.state.providers.github);
+      await this.saveProviderConnection('github', this.state.providers.github, authAttemptId);
+      if (authAttemptId != null && !this.isActiveAuthAttempt('github', authAttemptId)) {
+        throw new Error('github auth superseded');
+      }
 
       // Only clear the merge base if the authenticated account identity differs
       // from the previously-stored one. See notes in completePKCEAuth.
@@ -802,8 +860,20 @@ export class CloudSyncManager {
         provider: 'github',
         account: ghAdapter.accountInfo!,
       });
+      this.providerAuthRestoreState.github = null;
     } catch (error) {
-      this.updateProviderStatus('github', 'error', String(error));
+      if (authAttemptId != null && !this.isActiveAuthAttempt('github', authAttemptId)) {
+        throw error;
+      }
+      if (error instanceof Error && error.message.includes('auth superseded')) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === 'AbortError') {
+        this.resetProviderStatus('github', authAttemptId);
+        throw error;
+      }
+      this.resetProviderStatus('github', authAttemptId);
+      this.setProviderError('github', String(error));
       throw error;
     }
   }
@@ -814,8 +884,12 @@ export class CloudSyncManager {
   async completePKCEAuth(
     provider: 'google' | 'onedrive',
     code: string,
-    redirectUri: string
+    redirectUri: string,
+    authAttemptId?: number
   ): Promise<void> {
+    if (authAttemptId != null && !this.isActiveAuthAttempt(provider, authAttemptId)) {
+      throw new Error(`${provider} auth superseded`);
+    }
     const adapter = this.adapters.get(provider);
     if (!adapter) {
       throw new Error(`${provider} adapter not initialized`);
@@ -841,6 +915,16 @@ export class CloudSyncManager {
         account = odAdapter.accountInfo;
       }
 
+      if (authAttemptId != null && !this.isActiveAuthAttempt(provider, authAttemptId)) {
+        throw new Error(`${provider} auth superseded`);
+      }
+
+      const resourceId = await adapter.initializeSync();
+
+      if (authAttemptId != null && !this.isActiveAuthAttempt(provider, authAttemptId)) {
+        throw new Error(`${provider} auth superseded`);
+      }
+
       ++this.providerDecryptSeq[provider];
       this.state.providers[provider] = {
         ...this.state.providers[provider],
@@ -849,13 +933,14 @@ export class CloudSyncManager {
         account: account || undefined,
       };
 
-      // Initialize sync
-      const resourceId = await adapter.initializeSync();
       if (resourceId) {
         this.state.providers[provider].resourceId = resourceId;
       }
 
-      await this.saveProviderConnection(provider, this.state.providers[provider]);
+      await this.saveProviderConnection(provider, this.state.providers[provider], authAttemptId);
+      if (authAttemptId != null && !this.isActiveAuthAttempt(provider, authAttemptId)) {
+        throw new Error(`${provider} auth superseded`);
+      }
 
       // Only clear the merge base if the authenticated account identity differs
       // from the previously-stored one. Same-account re-auth preserves the base
@@ -877,8 +962,16 @@ export class CloudSyncManager {
         provider,
         account: account!,
       });
+      this.providerAuthRestoreState[provider] = null;
     } catch (error) {
-      this.updateProviderStatus(provider, 'error', String(error));
+      if (authAttemptId != null && !this.isActiveAuthAttempt(provider, authAttemptId)) {
+        throw error;
+      }
+      if (error instanceof Error && error.message.includes('auth superseded')) {
+        throw error;
+      }
+      this.resetProviderStatus(provider, authAttemptId);
+      this.setProviderError(provider, String(error));
       throw error;
     }
   }
@@ -927,11 +1020,62 @@ export class CloudSyncManager {
    * Used when an auth attempt is cancelled/fails — avoids destroying a previously
    * working connection if the user was re-authenticating.
    */
-  resetProviderStatus(provider: CloudProvider): void {
-    // Only reset if currently 'connecting' — don't drop an already authenticated
-    // provider back to 'disconnected' (e.g., if auth succeeded but sync init failed).
-    if (this.state.providers[provider]?.status === 'connecting') {
+  resetProviderStatus(provider: CloudProvider, authAttemptId?: number): void {
+    const restoreState = this.providerAuthRestoreState[provider];
+    if (
+      authAttemptId != null &&
+      restoreState &&
+      restoreState.attemptId !== authAttemptId
+    ) {
+      return;
+    }
+
+    if (restoreState) {
+      this.state.providers[provider] = { ...restoreState.connection };
+      if (restoreState.adapter) {
+        this.adapters.set(provider, restoreState.adapter);
+      } else {
+        this.adapters.delete(provider);
+      }
+      this.notifyStateChange();
+    } else if (this.state.providers[provider]?.status === 'connecting') {
       this.updateProviderStatus(provider, 'disconnected');
+      return;
+    }
+    if (!restoreState || authAttemptId == null || restoreState.attemptId === authAttemptId) {
+      this.providerAuthRestoreState[provider] = null;
+    }
+  }
+
+  setProviderError(provider: CloudProvider, error: string): void {
+    this.updateProviderStatus(provider, 'error', error);
+  }
+
+  clearProviderError(provider: CloudProvider): void {
+    const connection = this.state.providers[provider];
+    if (!connection?.error && connection?.status !== 'error') {
+      return;
+    }
+    this.state.providers[provider] = {
+      ...connection,
+      status: connection.status === 'error' ? 'disconnected' : connection.status,
+      error: undefined,
+    };
+    this.notifyStateChange();
+  }
+
+  cancelProviderAuthAttempt(provider: CloudProvider, authAttemptId?: number): void {
+    if (
+      authAttemptId != null &&
+      !this.isActiveAuthAttempt(provider, authAttemptId)
+    ) {
+      return;
+    }
+    this.resetProviderStatus(provider, authAttemptId);
+    ++this.providerAuthAttemptSeq[provider];
+    const restoreState = this.providerAuthRestoreState[provider];
+    if (!restoreState || authAttemptId == null || restoreState.attemptId === authAttemptId) {
+      this.providerAuthRestoreState[provider] = null;
     }
   }
 
@@ -939,6 +1083,7 @@ export class CloudSyncManager {
    * Disconnect a provider
    */
   async disconnectProvider(provider: CloudProvider): Promise<void> {
+    this.cancelProviderAuthAttempt(provider);
     const adapter = this.adapters.get(provider);
     if (adapter) {
       adapter.signOut();
@@ -979,6 +1124,10 @@ export class CloudSyncManager {
       error,
     };
     this.notifyStateChange(); // Notify UI of status change
+  }
+
+  private isActiveAuthAttempt(provider: CloudProvider, authAttemptId: number): boolean {
+    return this.providerAuthAttemptSeq[provider] === authAttemptId;
   }
 
   private buildAccountFromConfig(

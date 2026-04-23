@@ -6,6 +6,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { randomUUID } = require("node:crypto");
 const { pipeline } = require("node:stream/promises");
 const { TextDecoder } = require("node:util");
 const SftpClient = require("ssh2-sftp-client");
@@ -785,7 +786,7 @@ function buildStagedRemotePath(remotePath) {
   const dir = lastSeparatorIndex >= 0 ? remotePath.slice(0, lastSeparatorIndex + 1) : "";
   const baseName = lastSeparatorIndex >= 0 ? remotePath.slice(lastSeparatorIndex + 1) : remotePath;
   const safeBaseName = baseName || "upload";
-  const stagedName = `.netcatty-upload-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}-${safeBaseName}.part`;
+  const stagedName = `.netcatty-upload-${randomUUID().slice(0, 8)}-${safeBaseName}.part`;
   return dir ? `${dir}${stagedName}` : stagedName;
 }
 
@@ -794,7 +795,7 @@ function buildBackupRemotePath(remotePath) {
   const dir = lastSeparatorIndex >= 0 ? remotePath.slice(0, lastSeparatorIndex + 1) : "";
   const baseName = lastSeparatorIndex >= 0 ? remotePath.slice(lastSeparatorIndex + 1) : remotePath;
   const safeBaseName = baseName || "upload";
-  const backupName = `.netcatty-backup-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}-${safeBaseName}.bak`;
+  const backupName = `.netcatty-backup-${randomUUID().slice(0, 8)}-${safeBaseName}.bak`;
   return dir ? `${dir}${backupName}` : backupName;
 }
 
@@ -1033,7 +1034,7 @@ async function openSftpForSession(_event, payload) {
 
   throwIfAborted(payload?.abortSignal);
   const { sshClient } = ensureRemoteSftpSupport(sessionId);
-  const sftpId = `${sessionId}-sftp-${Math.random().toString(16).slice(2, 10)}`;
+  const sftpId = `${sessionId}-sftp-${randomUUID()}`;
   const client = createSessionBackedSftpClient(sessionId, sshClient);
   try {
     await requireSftpChannel(client, {
@@ -1684,7 +1685,7 @@ async function openSftp(event, options) {
   }
 
   const client = new SftpClient();
-  const connId = options.sessionId || `${Date.now()}-sftp-${Math.random().toString(16).slice(2)}`;
+  const connId = options.sessionId || randomUUID();
 
   // Get default keys early to use for both chain and target
   const defaultKeys = await findAllDefaultPrivateKeysFromHelper();

@@ -325,6 +325,7 @@ export const useSftpState = (
     readTextFile,
     readBinaryFile,
     writeTextFile,
+    writeTextFileByConnection,
     downloadToTempAndOpen,
     uploadExternalFiles,
     uploadExternalEntries,
@@ -333,6 +334,7 @@ export const useSftpState = (
     activeFileWatchCountRef,
   } = useSftpExternalOperations({
     getActivePane,
+    getPaneByConnectionId,
     refresh,
     sftpSessionsRef,
     connectionCacheKeyMapRef,
@@ -383,6 +385,7 @@ export const useSftpState = (
     readTextFile,
     readBinaryFile,
     writeTextFile,
+    writeTextFileByConnection,
     downloadToTempAndOpen,
     uploadExternalFiles,
     uploadExternalEntries,
@@ -437,6 +440,7 @@ export const useSftpState = (
     readTextFile,
     readBinaryFile,
     writeTextFile,
+    writeTextFileByConnection,
     downloadToTempAndOpen,
     uploadExternalFiles,
     uploadExternalEntries,
@@ -500,6 +504,8 @@ export const useSftpState = (
     readTextFile: (...args: Parameters<typeof readTextFile>) => methodsRef.current.readTextFile(...args),
     readBinaryFile: (...args: Parameters<typeof readBinaryFile>) => methodsRef.current.readBinaryFile(...args),
     writeTextFile: (...args: Parameters<typeof writeTextFile>) => methodsRef.current.writeTextFile(...args),
+    writeTextFileByConnection: (...args: Parameters<typeof writeTextFileByConnection>) =>
+      methodsRef.current.writeTextFileByConnection(...args),
     downloadToTempAndOpen: (...args: Parameters<typeof downloadToTempAndOpen>) => methodsRef.current.downloadToTempAndOpen(...args),
     uploadExternalFiles: (...args: Parameters<typeof uploadExternalFiles>) => methodsRef.current.uploadExternalFiles(...args),
     uploadExternalEntries: (...args: Parameters<typeof uploadExternalEntries>) =>

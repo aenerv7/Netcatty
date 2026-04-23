@@ -414,10 +414,6 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
   };
 
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-    if (e.type !== "keydown") {
-      return true;
-    }
-
     // Preserve mouse selection across keystrokes when enabled. xterm.js
     // unconditionally clears the selection on user input
     // (SelectionService.ts: coreService.onUserInput → clearSelection).
@@ -425,7 +421,17 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     // processed the key + cleared. The microtask runs after both
     // synchronous listeners, so by then either the selection is gone (and
     // we restore) or it's still there (we no-op).
+    //
+    // Both keydown AND keypress must be hooked: xterm routes Space
+    // (keyCode 32 fails Keyboard.ts: `ev.keyCode >= 48`) and A–Z
+    // (CoreBrowserTerminal.ts:_keyDown A–Z IME HACK) through the
+    // `keypress` event, calling triggerDataEvent in _keyPress rather
+    // than _keyDown. For those keys, keydown's microtask drains before
+    // keypress fires, so hasSelection is still true → no-op. Attaching
+    // to keypress gives us a second microtask that drains after
+    // _keyPress clears the selection, so the restore runs.
     if (
+      (e.type === "keydown" || e.type === "keypress") &&
       ctx.terminalSettingsRef.current?.preserveSelectionOnInput &&
       term.hasSelection()
     ) {
@@ -474,6 +480,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
             // Wrap for this terminal only, after broadcasting
             const snippetIsMultiLine = snippetData.includes("\n");
             if (snippetIsMultiLine && term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste) snippetData = wrapBracketedPaste(snippetData);
+            // Notify autocomplete with the final (possibly bracket-wrapped)
+            // bytes so its keystroke buffer can tell literal multi-line
+            // paste ("\x1b[200~...\x1b[201~") from the non-bracketed path
+            // where each \n executes an intermediate command (#814 P2).
             ctx.terminalBackend.writeToSession(id, snippetData);
             if (!snippet.noAutoRun && ctx.onCommandExecuted) {
               const cmd = snippet.command.trim();
@@ -514,8 +524,12 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
           navigator.clipboard.readText().then((text) => {
             const id = ctx.sessionRef.current;
             if (id) {
-              let data = normalizeLineEndings(text);
-              if (term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste) data = wrapBracketedPaste(data);
+              const rawData = normalizeLineEndings(text);
+              const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
+                ? wrapBracketedPaste(rawData)
+                : rawData;
+              // Notify autocomplete with the final bytes so bracketed
+              // pastes preserve their inner newlines as literal input.
               ctx.terminalBackend.writeToSession(id, data);
               scrollToBottomAfterPaste();
             }
@@ -526,8 +540,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
           const selection = term.getSelection();
           const id = ctx.sessionRef.current;
           if (selection && id) {
-            let data = normalizeLineEndings(selection);
-            if (term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste) data = wrapBracketedPaste(data);
+            const rawData = normalizeLineEndings(selection);
+            const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
+              ? wrapBracketedPaste(rawData)
+              : rawData;
             ctx.terminalBackend.writeToSession(id, data);
             scrollToBottomAfterPaste();
           }
@@ -561,8 +577,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       try {
         const text = await navigator.clipboard.readText();
         if (text && ctx.sessionRef.current) {
-          let data = normalizeLineEndings(text);
-          if (term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste) data = wrapBracketedPaste(data);
+          const rawData = normalizeLineEndings(text);
+          const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
+            ? wrapBracketedPaste(rawData)
+            : rawData;
           ctx.terminalBackend.writeToSession(ctx.sessionRef.current, data);
           scrollToBottomAfterPaste();
         }

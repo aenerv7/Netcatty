@@ -1085,6 +1085,7 @@ const zhCN: Messages = {
   'cloudSync.conflict.keepLocal': '覆盖云端（保留本地）',
   'cloudSync.conflict.useCloud': '下载云端（覆盖本地）',
   'cloudSync.connect.browserContinue': '请在浏览器中完成授权',
+  'cloudSync.connect.browserCancelled': '已取消上一个浏览器授权流程',
   'cloudSync.connect.github.success': 'GitHub 已连接',
   'cloudSync.connect.github.failedTitle': 'GitHub 连接失败',
   'cloudSync.connect.github.timeout': '连接 GitHub 超时，请检查网络或代理设置。',
@@ -1747,6 +1748,12 @@ const zhCN: Messages = {
 
   // Text Editor
   'sftp.editor.wordWrap': '自动换行',
+  'sftp.editor.maximize': '最大化',
+  'sftp.editor.unsavedTitle': '未保存的修改',
+  'sftp.editor.unsavedMessage': '{fileName} 有未保存的修改，是否保存后关闭？',
+  'sftp.editor.discardChanges': '不保存',
+  'sftp.editor.saveAndClose': '保存并关闭',
+  'sftp.editor.quitBlockedByDirty': '存在未保存的编辑器，请先处理后再退出',
 
   // AI Settings
   'ai.agentSettings': 'Agent 设置',

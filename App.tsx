@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { activeTabStore, useActiveTabId, useIsScpActive, useIsSftpActive, useIsTerminalLayerVisible, useIsVaultActive } from './application/state/activeTabStore';
+import { activeTabStore, useActiveTabId, useIsScpActive, useIsSftpActive, useIsTerminalLayerVisible, useIsVaultActive, toEditorTabId, fromEditorTabId, isEditorTabId } from './application/state/activeTabStore';
 import { useImmersiveMode } from './application/state/useImmersiveMode';
 import { useManagedSourceSync } from './application/state/useManagedSourceSync';
 import { usePortForwardingAutoStart } from './application/state/usePortForwardingAutoStart';
@@ -9,6 +9,7 @@ import { useSettingsState } from './application/state/useSettingsState';
 import { useUpdateCheck } from './application/state/useUpdateCheck';
 import { useVaultState } from './application/state/useVaultState';
 import { useWindowControls } from './application/state/useWindowControls';
+import { useEditorTabs, editorTabStore } from './application/state/editorTabStore';
 import { initializeFonts } from './application/state/fontStore';
 import { initializeUIFonts } from './application/state/uiFontStore';
 import { I18nProvider, useI18n } from './application/i18n/I18nProvider';
@@ -49,6 +50,9 @@ import { LogView as LogViewType } from './application/state/useSessionState';
 import type { SftpView as SftpViewComponent } from './components/SftpView';
 import type { ScpView as ScpViewComponent } from './components/ScpView';
 import type { TerminalLayer as TerminalLayerComponent } from './components/TerminalLayer';
+import { TextEditorTabView } from './components/editor/TextEditorTabView';
+import { UnsavedChangesProvider } from './components/editor/UnsavedChangesDialog';
+import { editorSftpWrite } from './application/state/editorSftpBridge';
 
 // Initialize fonts eagerly at app startup
 initializeFonts();
@@ -337,6 +341,7 @@ function App({ settings }: { settings: SettingsState }) {
   // ---------------------------------------------------------------------------
   const activeTabId = useActiveTabId();
   const customThemes = useCustomThemes();
+  const editorTabs = useEditorTabs();
 
   useEffect(() => {
     if (!settings.showSftpTab && activeTabId === 'sftp') {
@@ -649,6 +654,19 @@ function App({ settings }: { settings: SettingsState }) {
     groupConfigs,
   });
 
+  // Quit guard: block app exit while any editor tab has unsaved changes.
+  // Main process sends "app:query-dirty-editors"; we respond with the result.
+  useEffect(() => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.onCheckDirtyEditors) return;
+    const unsub = bridge.onCheckDirtyEditors(() => {
+      const hasDirty = editorTabStore.getTabs().some((tab) => tab.content !== tab.baselineContent);
+      if (hasDirty) toast.warning(t('sftp.editor.quitBlockedByDirty'), 'SFTP');
+      bridge.reportDirtyEditorsResult?.(hasDirty);
+    });
+    return unsub;
+  }, [t]);
+
   // Keyboard-interactive authentication (2FA/MFA) event listener
   useEffect(() => {
     const bridge = netcattyBridge.get();
@@ -789,6 +807,10 @@ function App({ settings }: { settings: SettingsState }) {
   const closeSidePanelRef = useRef<(() => void) | null>(null);
   const activeSidePanelTabRef = useRef<string | null>(null);
   const closeTabInFlightRef = useRef(false);
+  // Populated by UnsavedChangesProvider render-prop below so that the hotkey
+  // dispatcher (defined outside that scope) can still reach the dirty-confirm
+  // close flow.
+  const handleRequestCloseEditorTabRef = useRef<(id: string) => void>(() => {});
 
   const createLocalTerminalWithCurrentShell = useCallback(() => {
     const resolved = resolveShellSetting(terminalSettings.localShell, discoveredShells);
@@ -907,13 +929,13 @@ function App({ settings }: { settings: SettingsState }) {
 
   // Shared hotkey action handler - used by both global handler and terminal callback
   const executeHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
-    // Build complete tab list: vault + (sftp when visible) + scp + sessions/workspaces.
+    // Build complete tab list: vault + (sftp when visible) + scp + sessions/workspaces + editor tabs.
     // Hiding the SFTP tab must also remove it from keyboard cycling so nextTab
     // doesn't land on a hidden tab (which would get redirected back) and so
     // number shortcuts don't shift.
     const allTabs = settings.showSftpTab
-      ? ['vault', 'sftp', 'scp', ...orderedTabs]
-      : ['vault', 'scp', ...orderedTabs];
+      ? ['vault', 'sftp', 'scp', ...orderedTabs, ...editorTabs.map((t) => toEditorTabId(t.id))]
+      : ['vault', 'scp', ...orderedTabs, ...editorTabs.map((t) => toEditorTabId(t.id))];
     switch (action) {
       case 'switchToTab': {
         // Get the number key pressed (1-9)
@@ -951,6 +973,13 @@ function App({ settings }: { settings: SettingsState }) {
         const currentId = activeTabStore.getActiveTabId();
         if (!currentId || currentId === 'vault' || currentId === 'sftp') break;
         if (closeTabInFlightRef.current) break;
+
+        // Editor tabs route through their own dirty-confirm close flow.
+        if (isEditorTabId(currentId)) {
+          const editorId = fromEditorTabId(currentId);
+          if (editorId) handleRequestCloseEditorTabRef.current(editorId);
+          break;
+        }
 
         const session = sessions.find((s) => s.id === currentId) ?? null;
         const workspace = workspaces.find((w) => w.id === currentId) ?? null;
@@ -1115,7 +1144,7 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
     }
-  }, [orderedTabs, sessions, workspaces, setActiveTabId, closeSession, closeWorkspace, createLocalTerminalWithCurrentShell, splitSessionWithCurrentShell, moveFocusInWorkspace, toggleBroadcast, settings.showSftpTab, confirmIfBusyLocalTerminal]);
+  }, [orderedTabs, editorTabs, sessions, workspaces, setActiveTabId, closeSession, closeWorkspace, createLocalTerminalWithCurrentShell, splitSessionWithCurrentShell, moveFocusInWorkspace, toggleBroadcast, settings.showSftpTab, confirmIfBusyLocalTerminal]);
 
   // Callback for terminal to invoke app-level hotkey actions
   const handleHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
@@ -1469,7 +1498,59 @@ function App({ settings }: { settings: SettingsState }) {
     e.preventDefault();
   }, []);
 
+  // Combined ordered tab list including editor tab ids (for TopTabs scrollable area)
+  const orderedTabsWithEditors = useMemo(
+    () => [...orderedTabs, ...editorTabs.map((t) => toEditorTabId(t.id))],
+    [orderedTabs, editorTabs],
+  );
+
   return (
+    <UnsavedChangesProvider>
+      {({ prompt }) => {
+        // Helper: close an editor tab and activate the neighbor (left-preference), or vault.
+        const closeEditorAndActivateNeighbor = (id: string) => {
+          const closingTabId = toEditorTabId(id);
+          const list = orderedTabsWithEditors;
+          const idx = list.indexOf(closingTabId);
+          editorTabStore.close(id);
+          if (activeTabStore.getActiveTabId() !== closingTabId) return;
+          const next = list[idx - 1] ?? list[idx + 1] ?? 'vault';
+          activeTabStore.setActiveTabId(next === closingTabId ? 'vault' : next);
+        };
+
+        // Real dirty-confirm close handler.
+        const handleRequestCloseEditorTab = async (id: string) => {
+          const tab = editorTabStore.getTab(id);
+          if (!tab) return;
+          const dirty = tab.content !== tab.baselineContent;
+          if (!dirty) {
+            closeEditorAndActivateNeighbor(id);
+            return;
+          }
+          const choice = await prompt(tab.fileName);
+          if (choice === 'cancel') return;
+          if (choice === 'discard') {
+            closeEditorAndActivateNeighbor(id);
+            return;
+          }
+          if (choice === 'save') {
+            try {
+              editorTabStore.setSavingState(id, 'saving');
+              await editorSftpWrite(tab.sessionId, tab.hostId, tab.remotePath, tab.content);
+              editorTabStore.markSaved(id, tab.content);
+              closeEditorAndActivateNeighbor(id);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : 'Save failed';
+              editorTabStore.setSavingState(id, 'error', msg);
+              toast.error(msg, 'SFTP');
+            }
+          }
+        };
+
+        // Expose to the hotkey dispatcher (Cmd/Ctrl+W).
+        handleRequestCloseEditorTabRef.current = handleRequestCloseEditorTab;
+
+        return (
     <div className={cn("flex flex-col h-screen text-foreground font-sans netcatty-shell", activeTerminalTheme && "immersive-transition")} onContextMenu={handleRootContextMenu}>
       <TopTabs
         theme={resolvedTheme}
@@ -1478,7 +1559,7 @@ function App({ settings }: { settings: SettingsState }) {
         orphanSessions={orphanSessions}
         workspaces={workspaces}
         logViews={logViews}
-        orderedTabs={orderedTabs}
+        orderedTabs={orderedTabsWithEditors}
         draggingSessionId={draggingSessionId}
         isMacClient={isMacClient}
         onCloseSession={closeSession}
@@ -1498,6 +1579,9 @@ function App({ settings }: { settings: SettingsState }) {
         onEndSessionDrag={handleEndSessionDrag}
         onReorderTabs={reorderTabs}
         showSftpTab={settings.showSftpTab}
+        editorTabs={editorTabs}
+        onRequestCloseEditorTab={handleRequestCloseEditorTab}
+        hostById={hostById}
       />
 
       <div className="flex-1 relative min-h-0">
@@ -1657,6 +1741,19 @@ function App({ settings }: { settings: SettingsState }) {
             />
           );
         })}
+
+        {/* Editor Tabs — kept mounted for Monaco instance persistence; visibility toggled via CSS */}
+        {editorTabs.map((tab) => (
+          <TextEditorTabView
+            key={tab.id}
+            tabId={tab.id}
+            isVisible={activeTabId === toEditorTabId(tab.id)}
+            hotkeyScheme={hotkeyScheme}
+            keyBindings={keyBindings}
+            hostById={hostById}
+            onRequestClose={(id) => handleRequestCloseEditorTabRef.current(id)}
+          />
+        ))}
       </div>
 
       {/* Global "quick add / edit snippet" dialog, triggered by the
@@ -1850,6 +1947,9 @@ function App({ settings }: { settings: SettingsState }) {
         onSkip={handlePassphraseSkip}
       />
     </div>
+        );
+      }}
+    </UnsavedChangesProvider>
   );
 }
 

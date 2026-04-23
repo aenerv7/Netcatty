@@ -591,6 +591,12 @@ declare global {
     // Notify main process the renderer has mounted/painted (used to avoid initial blank screen).
     rendererReady?(): void;
 
+    // Quit guard: subscribe to main-process quit requests that query for dirty editors.
+    // Listener is called with no arguments; return value is an unsubscribe function.
+    onCheckDirtyEditors?(listener: () => void): () => void;
+    // Report the dirty-check result back to the main process.
+    reportDirtyEditorsResult?(hasDirty: boolean): void;
+
     onLanguageChanged?(cb: (language: string) => void): () => void;
 
     // Chain progress listener for jump host connections
@@ -600,9 +606,14 @@ declare global {
     // SFTP connection progress listener (auth method logs)
     onSftpConnectionProgress?(cb: (sessionId: string, label: string, status: string, detail?: string) => void): () => void;
 
-    // OAuth callback server for cloud sync
-    startOAuthCallback?(expectedState?: string): Promise<{ code: string; state?: string }>;
-    cancelOAuthCallback?(): Promise<void>;
+    // OAuth callback server for cloud sync. `prepareOAuthCallback` binds the
+    // loopback listener and returns the chosen port (preferred 45678, falls
+    // back to an OS-assigned free port if busy). The caller then builds the
+    // OAuth URL against `redirectUri`, opens the browser, and finally awaits
+    // the code via `awaitOAuthCallback`.
+    prepareOAuthCallback?(): Promise<{ sessionId: string; port: number; redirectUri: string }>;
+    awaitOAuthCallback?(expectedState?: string, sessionId?: string): Promise<{ code: string; state?: string }>;
+    cancelOAuthCallback?(sessionId?: string): Promise<void>;
 
     // GitHub Device Flow (cloud sync)
     githubStartDeviceFlow?(options?: { clientId?: string; scope?: string }): Promise<{
@@ -612,13 +623,14 @@ declare global {
       expiresAt: number;
       interval: number;
     }>;
-    githubPollDeviceFlowToken?(options: { clientId?: string; deviceCode: string }): Promise<{
+    githubPollDeviceFlowToken?(options: { clientId?: string; deviceCode: string; pollId?: string }): Promise<{
       access_token?: string;
       token_type?: string;
       scope?: string;
       error?: string;
       error_description?: string;
     }>;
+    githubCancelDeviceFlowPoll?(pollId: string): Promise<void>;
 
     // Google OAuth (cloud sync) - proxied via main process to avoid CORS
     googleExchangeCodeForTokens?(options: {
