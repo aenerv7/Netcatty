@@ -1,6 +1,6 @@
 /**
  * Terminal Toolbar
- * Displays Highlight, Search buttons and overflow menu in terminal status bar
+ * Displays high-frequency terminal actions and close button in the terminal status bar.
  */
 import { Check, ChevronRight, FolderInput, Languages, MoreVertical, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
@@ -83,6 +83,26 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 buttonClassName={buttonBase}
             />
 
+            {!hidesSftp && (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="secondary"
+                            size="icon"
+                            className={cn(buttonBase, status !== 'connected' && "opacity-50")}
+                            aria-label={status === 'connected' ? t("terminal.toolbar.openSftp") : t("terminal.toolbar.availableAfterConnect")}
+                            onClick={onOpenSFTP}
+                            disabled={status !== 'connected'}
+                        >
+                            <FolderInput size={12} />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        {status === 'connected' ? t("terminal.toolbar.openSftp") : t("terminal.toolbar.availableAfterConnect")}
+                    </TooltipContent>
+                </Tooltip>
+            )}
+
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -115,7 +135,9 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 <TooltipContent>{t("terminal.toolbar.searchTerminal")}</TooltipContent>
             </Tooltip>
 
-            {/* Overflow menu — encoding selector behind a ⋮ trigger.
+            {/* Overflow menu — keeps lower-frequency opener-style actions
+                (Encoding / Scripts / Terminal Settings) behind a single
+                trigger so the toolbar doesn't feel crowded.
                 Highlight / Compose / Search stay visible because they
                 are toggled mid-session, not just once. */}
             <Popover
@@ -153,21 +175,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                         }
                     }}
                 >
-                    {!hidesSftp && (
-                        <PopoverClose asChild>
-                            <button
-                                type="button"
-                                className={cn(menuItemClass, status !== 'connected' && "opacity-50 pointer-events-none")}
-                                onClick={onOpenSFTP}
-                                disabled={status !== 'connected'}
-                            >
-                                <FolderInput size={12} className="shrink-0" />
-                                <span className="flex-1 text-left truncate">
-                                    {status === 'connected' ? t("terminal.toolbar.openSftp") : t("terminal.toolbar.availableAfterConnect")}
-                                </span>
-                            </button>
-                        </PopoverClose>
-                    )}
                     <PopoverClose asChild>
                         <button type="button" className={menuItemClass} onClick={onOpenScripts}>
                             <Zap size={12} className="shrink-0" />
