@@ -6,7 +6,11 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { toLocalISOString, stripAnsi, terminalDataToHtml } = require("./sessionLogsBridge.cjs");
+const {
+  toLocalISOString,
+  wrapTerminalHtmlContent,
+} = require("./sessionLogsBridge.cjs");
+const { createTerminalTextRenderer } = require("./terminalLogSanitizer.cjs");
 
 // Active log streams keyed by sessionId
 const activeStreams = new Map();
@@ -42,34 +46,45 @@ function startStream(sessionId, opts) {
 
     const date = new Date(startTime || Date.now());
     const dateStr = toLocalISOString(date);
-    // For html format, write raw data to a temp file during streaming,
-    // then convert on stopStream.
+    // Raw logs are written directly. Txt/html logs keep terminal parser state
+    // in memory and write the rendered file on each flush.
+    const isRaw = format === "raw";
     const isHtml = format === "html";
-    const ext = isHtml ? "log.tmp" : format === "raw" ? "log" : "txt";
+    const ext = isRaw ? "log" : isHtml ? "html" : "txt";
     const fileName = `${dateStr}.${ext}`;
     const filePath = path.join(hostDir, fileName);
 
-    const writeStream = fs.createWriteStream(filePath, { flags: "w", encoding: "utf8" });
+    const writeStream = isRaw
+      ? fs.createWriteStream(filePath, { flags: "w", encoding: "utf8" })
+      : null;
 
-    writeStream.on("error", (err) => {
-      console.error(`[SessionLogStream] Write error for ${sessionId}:`, err.message);
-      // Disable this stream on error to avoid cascading failures
-      const entry = activeStreams.get(sessionId);
-      if (entry) {
-        entry.disabled = true;
-      }
-    });
+    if (writeStream) {
+      writeStream.on("error", (err) => {
+        console.error(`[SessionLogStream] Write error for ${sessionId}:`, err.message);
+        // Disable this stream on error to avoid cascading failures
+        const entry = activeStreams.get(sessionId);
+        if (entry) {
+          entry.disabled = true;
+        }
+      });
+    }
 
     const entry = {
       writeStream,
       filePath,
       hostDir,
       format,
+      isRaw,
       isHtml,
+      renderer: isRaw ? null : createTerminalTextRenderer(),
       hostLabel: hostLabel || hostname || "unknown",
       startTime: startTime || Date.now(),
       buffer: "",
       flushTimer: null,
+      snapshotPromise: null,
+      snapshotRequested: false,
+      snapshotDirty: false,
+      closing: false,
       disabled: false,
     };
 
@@ -96,18 +111,53 @@ function flushBuffer(entry) {
     const data = entry.buffer;
     entry.buffer = "";
 
-    if (entry.isHtml) {
-      // For HTML format, write raw data during streaming; convert on close
-      entry.writeStream.write(data);
-    } else if (entry.format === "raw") {
+    if (entry.isRaw) {
       entry.writeStream.write(data);
     } else {
-      // txt format: strip ANSI codes
-      entry.writeStream.write(stripAnsi(data));
+      entry.renderer.feed(data);
+      entry.snapshotDirty = true;
+      scheduleSnapshot(entry);
     }
   } catch (err) {
     console.error("[SessionLogStream] Flush error:", err.message);
     entry.disabled = true;
+  }
+}
+
+function renderSnapshotContent(entry) {
+  return entry.isHtml
+    ? wrapTerminalHtmlContent(entry.renderer.toHtmlContent(), entry.hostLabel, entry.startTime)
+    : entry.renderer.toString();
+}
+
+function scheduleSnapshot(entry) {
+  if (!entry || entry.disabled || entry.isRaw || entry.closing) return;
+  if (!entry.snapshotDirty) return;
+
+  if (entry.snapshotPromise) {
+    entry.snapshotRequested = true;
+    return;
+  }
+
+  entry.snapshotDirty = false;
+  entry.snapshotPromise = fs.promises
+    .writeFile(entry.filePath, renderSnapshotContent(entry), "utf8")
+    .catch((err) => {
+      console.error("[SessionLogStream] Snapshot write failed:", err.message);
+      entry.snapshotDirty = true;
+    })
+    .finally(() => {
+      entry.snapshotPromise = null;
+      if ((entry.snapshotRequested || entry.snapshotDirty) && !entry.closing) {
+        entry.snapshotRequested = false;
+        scheduleSnapshot(entry);
+      }
+    });
+}
+
+async function waitForSnapshotIdle(entry) {
+  while (entry.snapshotPromise) {
+    await entry.snapshotPromise;
   }
 }
 
@@ -139,6 +189,7 @@ async function stopStream(sessionId) {
   const entry = activeStreams.get(sessionId);
   if (!entry) return null;
   activeStreams.delete(sessionId);
+  entry.closing = true;
 
   // Stop periodic flush
   if (entry.flushTimer) {
@@ -148,44 +199,35 @@ async function stopStream(sessionId) {
 
   // Flush remaining buffer
   flushBuffer(entry);
+  await waitForSnapshotIdle(entry);
 
   // Close the write stream and wait for it to finish.
   // Guard against streams that never call the end callback (e.g. already
   // errored/destroyed) with a short timeout.
-  await new Promise((resolve) => {
-    const safetyTimer = setTimeout(resolve, 1000);
-    try {
-      entry.writeStream.end(() => {
+  if (entry.writeStream) {
+    await new Promise((resolve) => {
+      const safetyTimer = setTimeout(resolve, 1000);
+      try {
+        entry.writeStream.end(() => {
+          clearTimeout(safetyTimer);
+          resolve();
+        });
+      } catch {
         clearTimeout(safetyTimer);
         resolve();
-      });
-    } catch {
-      clearTimeout(safetyTimer);
-      resolve();
-    }
-  });
-
-  let finalPath = entry.filePath;
-
-  // For HTML format: read the temp raw file and convert to HTML
-  if (entry.isHtml && !entry.disabled) {
-    try {
-      const rawData = await fs.promises.readFile(entry.filePath, "utf8");
-      const htmlContent = terminalDataToHtml(rawData, entry.hostLabel, entry.startTime);
-      const htmlPath = entry.filePath.replace(/\.log\.tmp$/, ".html");
-      await fs.promises.writeFile(htmlPath, htmlContent, "utf8");
-      // Remove temp file
-      try {
-        await fs.promises.unlink(entry.filePath);
-      } catch {
-        // Ignore cleanup errors
       }
-      finalPath = htmlPath;
+    });
+  } else if (!entry.disabled && entry.snapshotDirty) {
+    try {
+      await fs.promises.writeFile(entry.filePath, renderSnapshotContent(entry), "utf8");
+      entry.snapshotDirty = false;
     } catch (err) {
-      console.error(`[SessionLogStream] HTML conversion failed for ${sessionId}:`, err.message);
-      // Keep the raw temp file as fallback
+      console.error(`[SessionLogStream] Final snapshot write failed for ${sessionId}:`, err.message);
+      entry.disabled = true;
     }
   }
+
+  const finalPath = entry.filePath;
 
   console.log(`[SessionLogStream] Stopped stream for ${sessionId} -> ${finalPath}`);
   return finalPath;

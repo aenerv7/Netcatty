@@ -10,7 +10,7 @@ import {
   Terminal as TerminalIcon,
   Trash2,
 } from 'lucide-react';
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { KeyBinding, RightClickBehavior } from '../../domain/models';
 import {
@@ -59,6 +59,17 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
 }) => {
   const { t } = useI18n();
   const isMac = hotkeyScheme === 'mac';
+  // Tracks the .workspace-pane whose context menu is currently open so we can
+  // keep its `:focus-within`-driven opacity stable while focus is in the
+  // menu portal (otherwise the pane dims for the menu's lifetime).
+  const markedPaneRef = useRef<HTMLElement | null>(null);
+
+  const handleOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      markedPaneRef.current?.removeAttribute('data-menu-open');
+      markedPaneRef.current = null;
+    }
+  }, []);
 
   // Helper to get shortcut from keyBindings and format for display
   const getShortcut = (bindingId: string): string => {
@@ -91,7 +102,15 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
       }
 
       // Shift+Right-Click or context-menu mode: let Radix open the menu
-      if (e.shiftKey || rightClickBehavior === 'context-menu') return;
+      if (e.shiftKey || rightClickBehavior === 'context-menu') {
+        const pane = (e.target as HTMLElement | null)?.closest<HTMLElement>('.workspace-pane');
+        if (pane) {
+          markedPaneRef.current?.removeAttribute('data-menu-open');
+          pane.setAttribute('data-menu-open', '');
+          markedPaneRef.current = pane;
+        }
+        return;
+      }
 
       // Paste / select-word: intercept and prevent the context menu
       e.preventDefault();
@@ -107,7 +126,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   // Always use ContextMenu wrapper to maintain consistent React tree structure
   // This prevents terminal from unmounting when rightClickBehavior changes
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={handleOpenChange}>
       <ContextMenuTrigger
         asChild
         onContextMenu={handleRightClick}

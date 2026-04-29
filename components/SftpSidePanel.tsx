@@ -47,6 +47,7 @@ interface SftpSidePanelProps {
   /** The host to connect to (follows focused terminal) */
   activeHost: Host | null;
   initialLocation?: { hostId: string; path: string } | null;
+  onInitialLocationApplied?: (location: { hostId: string; path: string }) => void;
   showWorkspaceHostHeader?: boolean;
   isVisible?: boolean;
   renderOverlays?: boolean;
@@ -67,6 +68,7 @@ interface SftpSidePanelProps {
   editorWordWrap: boolean;
   setEditorWordWrap: (value: boolean) => void;
   onGetTerminalCwd?: () => Promise<string | null>;
+  onRequestTerminalFocus?: () => void;
 }
 
 const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
@@ -77,6 +79,7 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   sftpDefaultViewMode,
   activeHost,
   initialLocation,
+  onInitialLocationApplied,
   showWorkspaceHostHeader = false,
   isVisible = true,
   renderOverlays = true,
@@ -91,6 +94,7 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   editorWordWrap,
   setEditorWordWrap,
   onGetTerminalCwd,
+  onRequestTerminalFocus,
 }) => {
   const { t } = useI18n();
 
@@ -465,16 +469,18 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
     const locationKey = `${connectedKeyRef.current}:${initialLocation.path}`;
     if (lastAppliedInitialLocationKeyRef.current === locationKey) return;
 
+    lastAppliedInitialLocationKeyRef.current = locationKey;
+    onInitialLocationApplied?.(initialLocation);
+
     if (connection.currentPath === initialLocation.path) {
-      lastAppliedInitialLocationKeyRef.current = locationKey;
       return;
     }
 
-    lastAppliedInitialLocationKeyRef.current = locationKey;
     sftpRef.current.navigateTo("left", initialLocation.path);
   }, [
     activeHost,
     initialLocation,
+    onInitialLocationApplied,
     sftp.leftPane,
   ]);
 
@@ -723,6 +729,7 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
           handleFileOpenerSelect={handleFileOpenerSelect}
           handleSelectSystemApp={handleSelectSystemApp}
           onPromoteToTab={onPromoteToTab}
+          onRequestTerminalFocus={onRequestTerminalFocus}
         />
       )}
     </SftpContextProvider>
@@ -750,6 +757,7 @@ const sidePanelAreEqual = (prev: SftpSidePanelProps, next: SftpSidePanelProps): 
   prev.editorWordWrap === next.editorWordWrap &&
   prev.setEditorWordWrap === next.setEditorWordWrap &&
   prev.onGetTerminalCwd === next.onGetTerminalCwd &&
+  prev.onRequestTerminalFocus === next.onRequestTerminalFocus &&
   prev.initialLocation?.hostId === next.initialLocation?.hostId &&
   prev.initialLocation?.path === next.initialLocation?.path;
 

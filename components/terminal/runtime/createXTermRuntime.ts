@@ -37,6 +37,7 @@ import {
   isEraseScrollbackSequence,
   preserveTerminalViewportInScrollback,
 } from "../clearTerminalViewport";
+import { installUserCursorPreferenceGuard } from "./cursorPreference";
 import type {
   Host,
   KeyBinding,
@@ -810,6 +811,8 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     return true;
   });
 
+  const cursorPreferenceDisposable = installUserCursorPreferenceGuard(term, ctx.terminalSettingsRef);
+
   let resizeTimeout: NodeJS.Timeout | null = null;
   const resizeDebounceMs = XTERM_PERFORMANCE_CONFIG.resize.debounceMs;
   term.onResize(({ cols, rows }) => {
@@ -837,6 +840,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       eraseScrollbackDisposable.dispose();
       osc7Disposable.dispose();
       osc52Disposable.dispose();
+      cursorPreferenceDisposable?.dispose();
       try {
         term.dispose();
       } catch (err) {

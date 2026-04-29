@@ -15,6 +15,7 @@ const { NetcattyAgent } = require("./netcattyAgent.cjs");
 const keyboardInteractiveHandler = require("./keyboardInteractiveHandler.cjs");
 const passphraseHandler = require("./passphraseHandler.cjs");
 const { createProxySocket } = require("./proxyUtils.cjs");
+const { attachX11Forwarding } = require("./x11Forwarding.cjs");
 const {
   buildAuthHandler,
   createKeyboardInteractiveHandler,
@@ -1182,6 +1183,7 @@ async function startSSHSession(event, options) {
     return new Promise((resolve, reject) => {
       const logPrefix = hasJumpHosts ? '[Chain]' : '[SSH]';
       let settled = false;
+      let detachX11Forwarding = null;
 
       conn.once("handshake", () => {
         console.log(`${logPrefix} ${options.hostname} handshake complete`);
@@ -1202,25 +1204,56 @@ async function startSSHSession(event, options) {
         sendProgress(totalHops, totalHops, options.hostname, 'authenticated');
         sendProgress(totalHops, totalHops, options.hostname, 'shell');
 
+        const sendTerminalMessage = (data) => {
+          safeSend(event.sender, "netcatty:data", { sessionId, data });
+        };
+
+        const x11FakeCookie = options.x11Forwarding
+          ? crypto.randomBytes(16).toString("hex")
+          : null;
+
+        if (options.x11Forwarding) {
+          detachX11Forwarding = attachX11Forwarding(conn, {
+            display: options.x11Display,
+            fakeCookie: x11FakeCookie,
+            sendMessage: sendTerminalMessage,
+          });
+        }
+
+        const shellOptions = {
+          env: {
+            LANG: resolveLangFromCharset(options.charset),
+            COLORTERM: "truecolor",
+            ...(options.env || {}),
+          },
+        };
+
+        if (options.x11Forwarding) {
+          shellOptions.x11 = {
+            protocol: "MIT-MAGIC-COOKIE-1",
+            cookie: x11FakeCookie,
+            screen: 0,
+            single: false,
+          };
+        }
+
         conn.shell(
           {
             term: "xterm-256color",
             cols,
             rows,
           },
-          {
-            env: {
-              LANG: resolveLangFromCharset(options.charset),
-              COLORTERM: "truecolor",
-              ...(options.env || {}),
-            },
-          },
+          shellOptions,
           (err, stream) => {
             if (err) {
+              if (detachX11Forwarding) detachX11Forwarding();
               settled = true;
               conn.end();
               for (const c of chainConnections) {
                 try { c.end(); } catch { }
+              }
+              if (options.x11Forwarding && /x11/i.test(err.message || "")) {
+                sendTerminalMessage("\r\n[X11] Could not enable X11 forwarding. Make sure X11 forwarding is allowed on the server and xauth is installed.\r\n");
               }
               sendProgress(totalHops, totalHops, options.hostname, 'error', `Failed to open shell: ${err.message}`);
               reject(err);
@@ -1349,6 +1382,10 @@ async function startSSHSession(event, options) {
               }
               flushBuffer();
               sessionLogStreamManager.stopStream(sessionId);
+              if (detachX11Forwarding) {
+                detachX11Forwarding();
+                detachX11Forwarding = null;
+              }
 
               // Only send exit if session hasn't already been cleaned up by
               // conn.once("close") — which fires before stream.on("close")
@@ -1431,6 +1468,10 @@ async function startSSHSession(event, options) {
         sendProgress(totalHops, totalHops, options.hostname, 'error', err.message);
         safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
         sessionLogStreamManager.stopStream(sessionId);
+        if (detachX11Forwarding) {
+          detachX11Forwarding();
+          detachX11Forwarding = null;
+        }
         sessions.get(sessionId)?.zmodemSentry?.cancel();
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);

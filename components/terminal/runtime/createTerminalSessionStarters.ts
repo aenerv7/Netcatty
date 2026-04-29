@@ -570,6 +570,8 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
             ? (effectivePassphrase || sanitizeCredentialValue(attempt.key.passphrase))
             : undefined,
           agentForwarding: ctx.host.agentForwarding,
+          x11Forwarding: ctx.host.x11Forwarding,
+          x11Display: ctx.terminalSettings?.x11Display,
           legacyAlgorithms: ctx.host.legacyAlgorithms,
           cols: term.cols,
           rows: term.rows,
@@ -760,6 +762,7 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
         username: ctx.host.username || "root",
         port: ctx.host.port || 22,
         moshServerPath: ctx.host.moshServerPath,
+        moshClientPath: ctx.terminalSettings?.moshClientPath || undefined,
         agentForwarding: ctx.host.agentForwarding,
         cols: term.cols,
         rows: term.rows,

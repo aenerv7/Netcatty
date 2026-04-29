@@ -24,13 +24,32 @@ function stripAnsi(input) {
   return String(input || "").replace(ANSI_OSC_REGEX, "").replace(ANSI_ESCAPE_REGEX, "");
 }
 
+// Default PowerShell prompt (e.g. `PS C:\Users\alice>`, `PS>`,
+// `PS /home/alice>`). Anchored so command output that merely starts with
+// `PS` (e.g. `PSO>`) doesn't match. The `\S` after `\s+` rejects literal
+// `"PS >"` (which the default prompt never emits) so a script that prints
+// such a line can't trick prompt-driven shell-kind selection.
+const POWERSHELL_PROMPT_PATTERN = /^PS(?:\s+\S.*)?>$/;
+
+function isDefaultPowerShellPromptLine(line) {
+  return POWERSHELL_PROMPT_PATTERN.test(String(line || ""));
+}
+
 function extractTrailingIdlePrompt(output) {
-  const normalized = stripAnsi(output).replace(/\r/g, "");
+  // Treat `\r` as a line break, not as a stripped character: PSReadLine /
+  // ConPTY repaints emit bare `\r` to redraw the current line, and we
+  // want only the redrawn line to be considered, not the concatenation
+  // of every overwritten frame.
+  const normalized = stripAnsi(output).replace(/\r/g, "\n");
   if (!normalized || normalized.endsWith("\n")) return "";
 
   const lastLine = normalized.split("\n").pop() || "";
   const rightTrimmed = lastLine.replace(/\s+$/, "");
   if (!rightTrimmed) return "";
+
+  if (isDefaultPowerShellPromptLine(rightTrimmed)) {
+    return lastLine;
+  }
 
   if (/^[^\s@]+@[^\s:]+(?::[^\n\r]*)?[#$]$/.test(rightTrimmed)) {
     return lastLine;
@@ -52,6 +71,32 @@ function trackSessionIdlePrompt(session, chunk) {
   }
 
   return prompt;
+}
+
+// Return `session.lastIdlePrompt` only if the PTY's recent rolling tail
+// still ends with it. The cached prompt is updated only when
+// extractTrailingIdlePrompt recognizes a known shape (PowerShell or
+// `user@host[:path][#$]`); a remote shell switch into cmd.exe, an
+// oh-my-posh / starship / custom PS1, or any unrecognized prompt would
+// otherwise leave a stale value behind, which `resolveEffectiveShellKind`
+// would then keep using to coerce future commands into a PowerShell
+// wrapper. By re-checking the live tail we self-correct: if the visible
+// last line no longer matches the cached prompt, the prompt is treated
+// as expired and downstream wrapper selection / suffix matching falls
+// back to `shellKind` alone.
+function getFreshIdlePrompt(session) {
+  if (!session) return "";
+  const cached = session.lastIdlePrompt;
+  if (!cached) return "";
+
+  const tail = session._promptTrackTail;
+  if (typeof tail !== "string" || !tail) return "";
+
+  const normalizedTail = stripAnsi(tail).replace(/\r/g, "\n");
+  const normalizedCached = stripAnsi(cached).replace(/\r/g, "\n");
+  if (!normalizedCached) return "";
+
+  return normalizedTail.endsWith(normalizedCached) ? cached : "";
 }
 
 // ── URL helpers ──
@@ -319,6 +364,8 @@ function serializeStreamChunk(chunk) {
 module.exports = {
   stripAnsi,
   extractTrailingIdlePrompt,
+  getFreshIdlePrompt,
+  isDefaultPowerShellPromptLine,
   trackSessionIdlePrompt,
   isLocalhostHostname,
   extractFirstNonLocalhostUrl,

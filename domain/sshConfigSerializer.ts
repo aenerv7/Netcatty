@@ -113,6 +113,10 @@ export const serializeHostsToSshConfig = (hosts: Host[], allHosts?: Host[]): str
       lines.push(`    Port ${host.port}`);
     }
 
+    if (host.x11Forwarding && !host.moshEnabled) {
+      lines.push("    ForwardX11 yes");
+    }
+
     // Serialize IdentityFile paths
     if (host.identityFilePaths && host.identityFilePaths.length > 0) {
       for (const keyPath of host.identityFilePaths) {

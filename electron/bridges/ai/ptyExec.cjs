@@ -12,7 +12,7 @@
 const crypto = require("crypto");
 const { StringDecoder } = require("node:string_decoder");
 const iconv = require("iconv-lite");
-const { stripAnsi } = require("./shellUtils.cjs");
+const { stripAnsi, isDefaultPowerShellPromptLine } = require("./shellUtils.cjs");
 const { classifyLocalShellType } = require("../../../lib/localShell.cjs");
 
 // Build a stateful decoder for a full exec call. Serial data events can
@@ -84,6 +84,54 @@ function escapeFishSingleQuoted(text) {
 
 function escapeCmdForNestedShell(text) {
   return String(text || "").replace(/"/g, '""').replace(/%/g, "%%");
+}
+
+// Matches PowerShell's default prompt only (e.g. `PS C:\Users\alice>`,
+// `PS>`). Custom prompt functions (oh-my-posh, starship, PSReadLine themes
+// that emit `❯`/`λ`/etc.) intentionally fall through — we'd rather miss
+// the override than wrap a fish/zsh prompt as PowerShell. Pattern lives
+// in shellUtils.cjs so prompt extraction and wrapper selection share one
+// source of truth.
+function isPowerShellPrompt(prompt) {
+  // Treat `\r` as a line break too so a PSReadLine/ConPTY redraw like
+  // `PS C:\old>\rPS C:\new>` is matched against the redrawn last line,
+  // not the doubled string.
+  const lastLine = stripAnsi(String(prompt || ""))
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .pop()
+    .replace(/\s+$/, "");
+  return isDefaultPowerShellPromptLine(lastLine);
+}
+
+// Prompt-driven override is intentionally narrow: only flip to PowerShell
+// when the session has no confirmed shell type. This keeps the issue #841
+// fix working (SSH/Telnet sessions never set shellKind — see
+// sshBridge.cjs:1265) while preventing a malicious remote process from
+// spoofing a `PS ...>` line on a real bash/zsh/fish/cmd session to coerce
+// a single mis-wrapped command.
+//
+// Universe of shellKind values (see lib/localShell.cjs:23-33 and
+// terminalBridge.cjs:368, :932, :1074):
+//   "posix" | "powershell" | "cmd" | "fish" | "unknown" | "raw" | "" | undefined
+// Excluded on purpose:
+//   - "posix" / "fish" / "cmd": confirmed POSIX-family or cmd.exe — never override.
+//   - "powershell": already correct; no override needed (would be a no-op).
+//   - "raw": serial / network device — execViaRawPty bypasses buildWrappedCommand.
+const SHELL_KINDS_OPEN_TO_PROMPT_OVERRIDE = new Set([
+  "",
+  "unknown",
+]);
+
+function resolveEffectiveShellKind(shellKind, expectedPrompt) {
+  const baseKind = shellKind || "";
+  if (
+    SHELL_KINDS_OPEN_TO_PROMPT_OVERRIDE.has(baseKind) &&
+    isPowerShellPrompt(expectedPrompt)
+  ) {
+    return "powershell";
+  }
+  return baseKind || "posix";
 }
 
 function buildWrappedCommand(command, shellKind, marker) {
@@ -305,7 +353,7 @@ function startPtyJob(ptyStream, command, options) {
   } = options || {};
 
   const marker = `__NCMCP_${Date.now().toString(36)}_${crypto.randomBytes(16).toString('hex')}__`;
-  const resolvedShellKind = shellKind || "posix";
+  const resolvedShellKind = resolveEffectiveShellKind(shellKind, expectedPrompt);
   const CANCEL_RETRY_MS = 5000;
   const CANCEL_WALL_TIMEOUT_MS = 30000;
 
@@ -1133,5 +1181,6 @@ module.exports = {
   execViaChannel,
   execViaRawPty,
   detectShellKind,
+  resolveEffectiveShellKind,
   stripAnsi,
 };

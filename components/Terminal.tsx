@@ -26,6 +26,7 @@ import {
   shouldScrollOnTerminalInput,
 } from "../domain/terminalScroll";
 import {
+  applyCustomAccentToTerminalTheme,
   resolveHostTerminalThemeId,
 } from "../domain/terminalAppearance";
 import { classifyDistroId } from "../domain/host";
@@ -49,6 +50,7 @@ import { ZmodemProgressIndicator } from "./terminal/ZmodemProgressIndicator";
 import { useZmodemTransfer } from "./terminal/hooks/useZmodemTransfer";
 import { createTerminalSessionStarters, type PendingAuth } from "./terminal/runtime/createTerminalSessionStarters";
 import { createXTermRuntime, primaryFontFamily, type XTermRuntime } from "./terminal/runtime/createXTermRuntime";
+import { applyUserCursorPreference } from "./terminal/runtime/cursorPreference";
 import { shouldPreserveTerminalFocusOnMouseDown } from "./terminal/toolbarFocus";
 import { preserveTerminalViewportInScrollback } from "./terminal/clearTerminalViewport";
 import { XTERM_PERFORMANCE_CONFIG } from "../infrastructure/config/xtermPerformance";
@@ -125,6 +127,8 @@ interface TerminalProps {
   fontSize: number;
   terminalTheme: TerminalTheme;
   followAppTerminalTheme?: boolean;
+  accentMode?: "theme" | "custom";
+  customAccent?: string;
   terminalSettings?: TerminalSettings;
   sessionId: string;
   startupCommand?: string;
@@ -182,6 +186,29 @@ function formatNetSpeed(bytesPerSec: number): string {
   }
 }
 
+type XTermWithPrivateRenderService = XTerm & {
+  _core?: {
+    _renderService?: {
+      _renderRows?: (start: number, end: number) => void;
+    };
+  };
+};
+
+function forceSyncRenderAfterResize(term: XTerm): void {
+  const renderService = (term as XTermWithPrivateRenderService)._core?._renderService;
+  const renderRows = renderService?._renderRows;
+  if (typeof renderRows !== "function") return;
+
+  const endRow = term.rows - 1;
+  if (endRow < 0) return;
+
+  try {
+    renderRows.call(renderService, 0, endRow);
+  } catch (err) {
+    logger.warn("Sync render after resize failed", err);
+  }
+}
+
 const TerminalComponent: React.FC<TerminalProps> = ({
   host,
   keys,
@@ -199,6 +226,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   fontSize,
   terminalTheme,
   followAppTerminalTheme = false,
+  accentMode = "theme",
+  customAccent = "",
   terminalSettings,
   sessionId,
   startupCommand,
@@ -552,18 +581,21 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     // When "Follow Application Theme" is on and there's no active
     // preview, skip per-host overrides — all terminals should use the
     // UI-matched theme passed via terminalTheme prop.
-    if (followAppTerminalTheme && !themePreviewId) return terminalTheme;
+    if (followAppTerminalTheme && !themePreviewId) {
+      return applyCustomAccentToTerminalTheme(terminalTheme, accentMode, customAccent);
+    }
     const themeId = themePreviewId ?? resolveHostTerminalThemeId(
       { theme: host.theme, themeOverride: host.themeOverride },
       terminalTheme.id,
     );
+    let baseTheme = terminalTheme;
     if (themeId) {
       const hostTheme = TERMINAL_THEMES.find((t) => t.id === themeId)
         || customThemes.find((t) => t.id === themeId);
-      if (hostTheme) return hostTheme;
+      if (hostTheme) baseTheme = hostTheme;
     }
-    return terminalTheme;
-  }, [customThemes, followAppTerminalTheme, host.theme, host.themeOverride, terminalTheme, themePreviewId]);
+    return applyCustomAccentToTerminalTheme(baseTheme, accentMode, customAccent);
+  }, [accentMode, customAccent, customThemes, followAppTerminalTheme, host.theme, host.themeOverride, terminalTheme, themePreviewId]);
 
   const resolvedChainHosts =
     chainHosts;
@@ -873,8 +905,21 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
     const runFit = () => {
       try {
+        const term = termRef.current;
+        if (!term) return;
+
+        const dimensions = fitAddon.proposeDimensions();
+        if (!dimensions || Number.isNaN(dimensions.cols) || Number.isNaN(dimensions.rows)) return;
+
         lastFittedSizeRef.current = { width, height };
-        fitAddon.fit();
+        // addon-fit 0.11 clears the renderer before resizing, which can show
+        // as a one-frame WebGL blink during layout changes. Resize directly
+        // using the proposed dimensions to preserve the existing behavior
+        // without forcing a blank intermediate frame.
+        if (term.cols !== dimensions.cols || term.rows !== dimensions.rows) {
+          term.resize(dimensions.cols, dimensions.rows);
+          forceSyncRenderAfterResize(term);
+        }
         if (typeof requestAnimationFrame === "function") {
           requestAnimationFrame(() => {
             // fit complete
@@ -916,8 +961,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       termRef.current.options.fontFamily = resolvedFontFamily;
 
       if (terminalSettings) {
-        termRef.current.options.cursorStyle = terminalSettings.cursorShape;
-        termRef.current.options.cursorBlink = terminalSettings.cursorBlink;
+        applyUserCursorPreference(termRef.current, terminalSettings);
         termRef.current.options.scrollback = terminalSettings.scrollback === 0 ? 999999 : terminalSettings.scrollback;
         termRef.current.options.fontWeight = effectiveFontWeight as
           | 100
@@ -1572,8 +1616,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     ['--terminal-ui-border' as never]: `var(--terminal-preview-border, color-mix(in srgb, ${effectiveTheme.colors.foreground} 8%, ${effectiveTheme.colors.background} 92%))`,
     ['--terminal-ui-toolbar-btn' as never]: `var(--terminal-preview-toolbar-btn, color-mix(in srgb, ${effectiveTheme.colors.background} 88%, ${effectiveTheme.colors.foreground} 12%))`,
     ['--terminal-ui-toolbar-btn-hover' as never]: `var(--terminal-preview-toolbar-btn-hover, color-mix(in srgb, ${effectiveTheme.colors.background} 78%, ${effectiveTheme.colors.foreground} 22%))`,
-    ['--terminal-ui-toolbar-btn-active' as never]: `var(--terminal-preview-toolbar-btn-active, color-mix(in srgb, ${effectiveTheme.colors.background} 68%, ${effectiveTheme.colors.foreground} 32%))`,
-  }), [effectiveTheme.colors.background, effectiveTheme.colors.foreground]);
+    ['--terminal-ui-toolbar-btn-active' as never]: `var(--terminal-preview-toolbar-btn-active, color-mix(in srgb, ${effectiveTheme.colors.cursor} 78%, ${effectiveTheme.colors.background} 22%))`,
+  }), [effectiveTheme.colors.background, effectiveTheme.colors.cursor, effectiveTheme.colors.foreground]);
 
   return (
     <TerminalContextMenu

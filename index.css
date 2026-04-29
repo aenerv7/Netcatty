@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+/* Bundled icon-only fallback so terminals show Nerd Font glyphs (powerline,
+   devicons, etc.) regardless of which base font the user picks. The font is
+   referenced last in the fontFamily fallback chain (see withCjkFallback in
+   infrastructure/config/fonts.ts) — base text comes from the user's chosen
+   font, missing PUA glyphs fall through to this face.
+
+   Source: https://github.com/ryanoasis/nerd-fonts (NerdFontsSymbolsOnly,
+   v3.4.0). License: MIT — see public/fonts/SymbolsNerdFont-LICENSE.txt. */
+@font-face {
+  font-family: "Symbols Nerd Font Mono";
+  /* Absolute path resolves against the document origin in both dev
+     (http://localhost:5173) and packaged (app://netcatty), regardless of
+     where the bundled CSS file ends up. A relative ./fonts/... would be
+     resolved against dist/assets/index-*.css in production and 404. */
+  src: url("/fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 /* ============================================
    Tailwind CSS v4 Theme Configuration
    ============================================ */
@@ -397,6 +417,11 @@ body {
 /* Dim terminal text in unfocused workspace panes (default) */
 .workspace-pane:not(:focus-within) .xterm-screen {
   opacity: 0.82;
+}
+/* Keep current pane fully visible while its context menu / popover is open;
+   focus moves to the menu portal and would otherwise drop :focus-within. */
+.workspace-pane[data-menu-open] .xterm-screen {
+  opacity: 1;
 }
 /* Border-style focus indicator (opt-in via data attribute) */
 [data-workspace-focus="border"] .workspace-pane:not(:focus-within) .xterm-screen {

@@ -54,7 +54,7 @@ try {
   electronModule = require("electron");
 }
 
-const { app, BrowserWindow, Menu, protocol, shell, clipboard } = electronModule || {};
+const { app, BrowserWindow, Menu, protocol, shell, clipboard, session } = electronModule || {};
 if (!app || !BrowserWindow) {
   throw new Error("Failed to load Electron runtime. Ensure the app is launched with the Electron binary.");
 }
@@ -999,6 +999,77 @@ if (!gotLock) {
   app.whenReady().then(() => {
     registerAppProtocol();
 
+    // Grant only the Chromium permissions the app actually uses, and only
+    // to the app's own origin. The default session is shared with in-app
+    // OAuth pop-ups (accounts.google.com, login.microsoftonline.com, ...),
+    // so non-app origins are denied outright; for the app itself we keep
+    // an explicit allow-list rather than blanket-approving everything.
+    try {
+      const defaultSession = session?.defaultSession;
+      if (defaultSession) {
+        // app:// is registered as a standard scheme in Chromium
+        // (registerSchemesAsPrivileged above) but Node's WHATWG URL parser
+        // doesn't include it in its special-scheme list, so
+        // `new URL('app://netcatty/...').origin` returns the string "null"
+        // — matching against an `app://netcatty` origin string would
+        // therefore fail in packaged builds. Match by protocol + host
+        // instead, and only fall back to .origin for HTTP-family URLs
+        // (the dev server).
+        const allowedHttpOrigins = new Set();
+        if (effectiveDevServerUrl) {
+          try {
+            allowedHttpOrigins.add(new URL(effectiveDevServerUrl).origin);
+          } catch {
+            // ignore malformed dev server URL
+          }
+        }
+        const isAppOrigin = (rawUrl) => {
+          if (!rawUrl) return false;
+          try {
+            const parsed = new URL(String(rawUrl));
+            if (parsed.protocol === "app:") {
+              return parsed.host === "netcatty";
+            }
+            return allowedHttpOrigins.has(parsed.origin);
+          } catch {
+            return false;
+          }
+        };
+
+        // Permissions the renderer is known to need:
+        //   - local-fonts: terminal font picker enumeration (this PR)
+        //   - clipboard-read / clipboard-sanitized-write: terminal & SFTP
+        //     copy-paste flows (navigator.clipboard.{read,write}Text)
+        const APP_ALLOWED_PERMISSIONS = new Set([
+          "local-fonts",
+          "clipboard-read",
+          "clipboard-sanitized-write",
+        ]);
+
+        defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+          const requestingUrl =
+            details?.requestingUrl ||
+            (typeof wc?.getURL === "function" ? wc.getURL() : "");
+          if (!isAppOrigin(requestingUrl)) {
+            callback(false);
+            return;
+          }
+          callback(APP_ALLOWED_PERMISSIONS.has(permission));
+        });
+
+        defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
+          const url =
+            requestingOrigin ||
+            details?.requestingUrl ||
+            (typeof wc?.getURL === "function" ? wc.getURL() : "");
+          if (!isAppOrigin(url)) return false;
+          return APP_ALLOWED_PERMISSIONS.has(permission);
+        });
+      }
+    } catch (err) {
+      console.warn("[Main] Failed to install permission handlers:", err);
+    }
+
     // Set dock icon on macOS
     if (isMac && appIcon && app.dock?.setIcon) {
       try {
@@ -1144,35 +1215,92 @@ if (!gotLock) {
     }
 
     const { ipcMain: _ipcMain } = electronModule;
-    const win = BrowserWindow.getAllWindows()[0];
-    // No window — nothing to check; commit to quit directly.
-    if (!win || win.isDestroyed?.()) {
+    // Target the main window explicitly. Falling back to
+    // BrowserWindow.getAllWindows()[0] could pick the tray panel or settings
+    // window, whose renderers don't listen for app:query-dirty-editors and
+    // would force the 5s timeout fallback to run on every quit.
+    const win = getWindowManager().getMainWindow();
+    // No main window, or it's hidden (tray-panel "Quit" path) — there's no
+    // visible UI to surface a "save first" toast on, so skip the round-trip
+    // and quit directly. The renderer's dirty-editor check exists to warn the
+    // user; if they can't see the warning, it's just dead 5-second wait.
+    //
+    // A minimized window is *not* hidden: the user has a taskbar/Dock entry
+    // and can restore in one click, so we still want to gate the quit on the
+    // dirty-editor check there. Some platforms report isVisible()=false on a
+    // minimized window (see globalShortcutBridge.cjs:478), so check both.
+    const isReachableByUser =
+      win && !win.isDestroyed?.() &&
+      (win.isVisible?.() || win.isMinimized?.());
+    if (!isReachableByUser) {
+      commitQuit();
+      return;
+    }
+
+    // The renderer needs to be alive for the IPC roundtrip to make sense.
+    // A crashed renderer would silently drop the message and we'd wait
+    // 5 s for nothing — skip straight to quit (we can't ask the user
+    // anyway, the UI is gone).
+    const wc = win.webContents;
+    if (!wc || wc.isDestroyed?.() || wc.isCrashed?.()) {
       commitQuit();
       return;
     }
 
     quitGuardChannelBusy = true;
     event.preventDefault();
-    win.webContents.send("app:query-dirty-editors");
+
+    // The response and the timeout race against each other; whichever
+    // one fires first wins. A naive `clearTimeout` is not enough — once
+    // the timer has already been queued for the next tick, clearTimeout
+    // is a no-op and the timeout callback runs even after the response
+    // arrived, which would commit the quit even on a `hasDirty=true`
+    // reply (i.e. silently override the user's "save first" intent).
+    let settled = false;
+    let timeoutId = null;
+    const settle = (decision) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      _ipcMain.removeListener("app:dirty-editors-result", onResult);
+      quitGuardChannelBusy = false;
+      if (decision === "commit") commitQuit();
+      // decision === "stay": renderer showed a toast for dirty editors.
+      // Do not touch isQuitting so tray / close-to-tray gating keeps working.
+    };
+    function onResult(evt, payload) {
+      // Defence in depth: this channel is queried with a specific
+      // webContents in mind. A reply from any other window (e.g. a
+      // misbehaving extension or a future bug that wires the channel
+      // elsewhere) is silently ignored so it can't decide the quit.
+      // We use `.on` (not `.once`) so a rogue reply doesn't consume
+      // the listener slot and let the real reply fall through. Reject
+      // strictly: a missing/falsy sender is anomalous in real IPC and
+      // is treated the same as a wrong-window reply.
+      if (evt?.sender !== wc) return;
+      const hasDirty = payload && payload.hasDirty === true;
+      settle(hasDirty ? "stay" : "commit");
+    }
+    _ipcMain.on("app:dirty-editors-result", onResult);
 
     // Timeout fallback: if the renderer never replies (crash, unhandled
     // exception in the listener, etc.) we'd otherwise be stuck with
     // quitGuardChannelBusy=true and the app un-quittable.
-    const timeoutId = setTimeout(() => {
-      _ipcMain.removeAllListeners("app:dirty-editors-result");
-      quitGuardChannelBusy = false;
-      commitQuit();
-    }, QUIT_GUARD_TIMEOUT_MS);
+    timeoutId = setTimeout(() => settle("commit"), QUIT_GUARD_TIMEOUT_MS);
 
-    _ipcMain.once("app:dirty-editors-result", (_evt, { hasDirty }) => {
-      clearTimeout(timeoutId);
-      quitGuardChannelBusy = false;
-      if (!hasDirty) {
-        commitQuit();
-      }
-      // If hasDirty === true the renderer has shown a toast; stay put. Do not
-      // touch isQuitting so tray/close-to-tray gating keeps working.
-    });
+    try {
+      wc.send("app:query-dirty-editors");
+    } catch (err) {
+      // `webContents.send` can throw if the renderer was destroyed
+      // between our `isCrashed?.()` check and this call (a real race
+      // when the GPU process is dying). Tear the listener/timer down
+      // synchronously so we don't strand quitGuardChannelBusy=true.
+      console.warn("[Main] Failed to query renderer for dirty editors:", err);
+      settle("commit");
+    }
   });
 
   // Cleanup all PTY sessions and port forwarding tunnels before quitting
