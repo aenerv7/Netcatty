@@ -7,9 +7,16 @@ on:
         description: "Publish GitHub Release after build"
         type: boolean
         default: false
+      mosh_bin_release:
+        description: "Release tag containing bundled mosh-client binaries"
+        type: string
+        default: ""
   push:
     tags:
       - "v*"
+
+env:
+  MOSH_BIN_RELEASE: ${{ github.event.inputs.mosh_bin_release || vars.MOSH_BIN_RELEASE || '' }}
 
 jobs:
   build:
@@ -56,6 +63,23 @@ jobs:
             npm install "@zed-industries/codex-acp-darwin-x64@${CODEX_VER}" "@zed-industries/codex-acp-darwin-arm64@${CODEX_VER}" --no-save --force
           elif [[ "${{ matrix.name }}" == "windows" ]]; then
             npm install "@zed-industries/codex-acp-win32-x64@${CODEX_VER}" "@zed-industries/codex-acp-win32-arm64@${CODEX_VER}" --no-save --force
+          fi
+
+      - name: Require bundled mosh-client release
+        shell: bash
+        run: |
+          if [[ -z "${MOSH_BIN_RELEASE:-}" ]]; then
+            echo "::error::Set workflow input mosh_bin_release or repository variable MOSH_BIN_RELEASE before packaging."
+            exit 1
+          fi
+
+      - name: Fetch bundled mosh-client
+        shell: bash
+        run: |
+          if [[ "${{ matrix.name }}" == "macos" ]]; then
+            npm run fetch:mosh -- --platform=darwin --arch=universal
+          elif [[ "${{ matrix.name }}" == "windows" ]]; then
+            npm run fetch:mosh -- --platform=win32 --arch=x64
           fi
 
       - name: Set version
@@ -143,6 +167,16 @@ jobs:
           npm_config_arch: x64
         run: bash scripts/ensure-node-pty-linux.sh prepare x64
 
+      - name: Require bundled mosh-client release
+        run: |
+          if [ -z "${MOSH_BIN_RELEASE:-}" ]; then
+            echo "::error::Set workflow input mosh_bin_release or repository variable MOSH_BIN_RELEASE before packaging."
+            exit 1
+          fi
+
+      - name: Fetch bundled mosh-client
+        run: npm run fetch:mosh -- --platform=linux --arch=x64
+
       - name: Build package
         env:
           npm_config_arch: x64
@@ -213,6 +247,16 @@ jobs:
         env:
           npm_config_arch: arm64
         run: bash scripts/ensure-node-pty-linux.sh prepare arm64
+
+      - name: Require bundled mosh-client release
+        run: |
+          if [ -z "${MOSH_BIN_RELEASE:-}" ]; then
+            echo "::error::Set workflow input mosh_bin_release or repository variable MOSH_BIN_RELEASE before packaging."
+            exit 1
+          fi
+
+      - name: Fetch bundled mosh-client
+        run: npm run fetch:mosh -- --platform=linux --arch=arm64
 
       - name: Build package
         env:
