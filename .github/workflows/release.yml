@@ -28,7 +28,7 @@ jobs:
             pack_script: pack:mac
           - name: windows
             os: windows-latest
-            pack_script: pack:win
+            pack_script: pack:win-x64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -142,7 +142,6 @@ jobs:
           | OS | Architecture | Download |
           | :--- | :--- | :--- |
           | **Windows** | x64 | [Netcatty-${VERSION}-win-x64.exe](${BASE}/Netcatty-${VERSION}-win-x64.exe) |
-          | **Windows** | arm64 | [Netcatty-${VERSION}-win-arm64.exe](${BASE}/Netcatty-${VERSION}-win-arm64.exe) |
           | **macOS** | Apple Silicon | [Netcatty-${VERSION}-mac-arm64.dmg](${BASE}/Netcatty-${VERSION}-mac-arm64.dmg) |
           | **macOS** | Intel | [Netcatty-${VERSION}-mac-x64.dmg](${BASE}/Netcatty-${VERSION}-mac-x64.dmg) |
           EOF
