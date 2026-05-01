@@ -12,6 +12,7 @@ const script = path.resolve(__dirname, "fetch-mosh-binaries.cjs");
 const execFileAsync = promisify(execFile);
 const {
   parseMoshBinRepository,
+  replaceDir,
   resolveHostTarget,
   resolveTarArchiveInvocation,
 } = require("./fetch-mosh-binaries.cjs");
@@ -85,6 +86,32 @@ test("tar archive invocation uses a relative archive name for Windows paths", ()
       archive: "bundle.tar.gz",
     },
   );
+});
+
+test("replaceDir falls back to copy when rename crosses devices", (t) => {
+  const root = makeTmp(t);
+  const src = path.join(root, "src");
+  const dest = path.join(root, "dest");
+  fs.mkdirSync(src);
+  fs.writeFileSync(path.join(src, "mosh-client.exe"), "exe");
+
+  const originalRenameSync = fs.renameSync;
+  fs.renameSync = (from, to) => {
+    if (from === src && to === dest) {
+      const error = new Error("cross-device link not permitted");
+      error.code = "EXDEV";
+      throw error;
+    }
+    return originalRenameSync(from, to);
+  };
+  t.after(() => {
+    fs.renameSync = originalRenameSync;
+  });
+
+  replaceDir(src, dest);
+
+  assert.equal(fs.existsSync(src), false);
+  assert.equal(fs.readFileSync(path.join(dest, "mosh-client.exe"), "utf8"), "exe");
 });
 
 test("fetch-mosh-binaries host mode skips unsupported local targets", async (t) => {

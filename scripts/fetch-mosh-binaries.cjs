@@ -202,7 +202,13 @@ function normalizeWindowsBundle(extractDir, target) {
 function replaceDir(srcDir, destDir) {
   fs.rmSync(destDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(destDir), { recursive: true });
-  fs.renameSync(srcDir, destDir);
+  try {
+    fs.renameSync(srcDir, destDir);
+  } catch (err) {
+    if (!err || err.code !== "EXDEV") throw err;
+    fs.cpSync(srcDir, destDir, { recursive: true });
+    fs.rmSync(srcDir, { recursive: true, force: true });
+  }
 }
 
 function unpackTarGz(buf, target, { resDir }) {
@@ -321,6 +327,7 @@ if (require.main === module) {
 module.exports = {
   TARGETS,
   parseMoshBinRepository,
+  replaceDir,
   resolveHostTarget,
   resolveTarArchiveInvocation,
   parseSums,
