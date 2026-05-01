@@ -179,6 +179,7 @@ declare global {
       sessionId?: string;
       hostname: string;
       username?: string;
+      password?: string;
       port?: number;
       moshServerPath?: string;
       moshClientPath?: string;
@@ -189,13 +190,6 @@ declare global {
       env?: Record<string, string>;
       sessionLog?: { enabled: boolean; directory: string; format: string };
     }): Promise<string>;
-    detectMoshClient?(): Promise<{
-      platform: string;
-      found: boolean;
-      path: string | null;
-      searchedPaths: string[];
-    }>;
-    pickMoshClient?(): Promise<{ canceled: boolean; filePath: string | null }>;
     startLocalSession?(options: { sessionId?: string; cols?: number; rows?: number; shell?: string; shellArgs?: string[]; cwd?: string; env?: Record<string, string>; sessionLog?: { enabled: boolean; directory: string; format: string } }): Promise<string>;
     startSerialSession?(options: {
       sessionId?: string;
@@ -473,6 +467,7 @@ declare global {
     windowClose?(): Promise<void>;
     windowIsMaximized?(): Promise<boolean>;
     windowIsFullscreen?(): Promise<boolean>;
+    windowFocus?(): Promise<boolean>;
     onWindowFullScreenChanged?(cb: (isFullscreen: boolean) => void): () => void;
 
     // Settings window
@@ -947,6 +942,7 @@ declare global {
     aiCloseAgentStdin?(agentId: string): Promise<{ ok: boolean; error?: string }>;
     aiKillAgent?(agentId: string): Promise<{ ok: boolean; error?: string }>;
     aiAcpStream?(requestId: string, chatSessionId: string, acpCommand: string, acpArgs: string[], prompt: string, cwd?: string, providerId?: string, model?: string, existingSessionId?: string, historyMessages?: Array<{ role: 'user' | 'assistant'; content: string }>, images?: Array<{ base64Data: string; mediaType: string; filename?: string }>, toolIntegrationMode?: 'mcp' | 'skills', defaultTargetSession?: { sessionId: string; hostname: string; label: string; os?: string; username?: string; protocol?: string; shellType?: string; deviceType?: string; connected: boolean; source: 'scope-target' | 'only-connected-in-scope' }, userSkillsContext?: string): Promise<{ ok: boolean; error?: string }>;
+    aiAcpListModels?(acpCommand: string, acpArgs?: string[], cwd?: string, providerId?: string, chatSessionId?: string): Promise<{ ok: boolean; models?: Array<{ id: string; name: string; description?: string; thinkingLevels?: string[] }>; currentModelId?: string | null; error?: string }>;
     aiAcpCancel?(requestId: string, chatSessionId?: string): Promise<{ ok: boolean; error?: string }>;
     aiAcpCleanup?(chatSessionId: string): Promise<{ ok: boolean }>;
     onAiAcpEvent?(requestId: string, cb: (event: Record<string, unknown>) => void): () => void;

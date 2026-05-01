@@ -35,6 +35,10 @@ const PREFERRED_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
 // Match any private key file: id_* but not *.pub
 const SSH_KEY_PATTERN = /^id_[\w-]+$/;
 
+function quoteShellArg(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
 /**
  * Quick check if file content looks like an SSH private key.
  * Rejects non-key files that happen to match the id_* filename pattern.
@@ -1990,10 +1994,56 @@ async function getSessionPwd(event, payload) {
       resolve({ success: false, error: 'Timeout getting pwd' });
     }, 5000);
 
-    // Find the interactive shell's cwd silently via a separate exec channel.
-    // Both the exec channel and the interactive shell share the same sshd
-    // parent ($PPID). We exclude our own PID ($$) to avoid reading our own cwd.
-    const cmd = `p=$(ps --ppid $PPID -o pid=,comm= 2>/dev/null | awk -v self=$$ '$1!=self && $2~/^(ba|z|fi|k|da)?sh$/{pid=$1}END{print pid}'); [ -n "$p" ] && readlink /proc/$p/cwd 2>/dev/null && exit 0; p=$(ps -e -o pid=,ppid=,comm= 2>/dev/null | awk -v pp=$PPID -v self=$$ '$1!=self && $2==pp && $3~/^(ba|z|fi|k|da)?sh$/{pid=$1}END{print pid}'); [ -n "$p" ] && readlink /proc/$p/cwd 2>/dev/null && exit 0; eval echo "~"`;
+    // POSIX sh script that:
+    //   1. Finds the sibling interactive shell under sshd ($PPID).
+    //   2. Follows foreground child shells only, which covers bash->fish
+    //      without mistaking background shell scripts for the active shell.
+    //   3. Reads /proc/<pid>/cwd via readlink.
+    //   4. Falls back to the user's home directory if anything fails.
+    //
+    // `exec` makes sh replace the user's login shell (fish/bash/...)
+    // so sh keeps the same PID and $PPID = sshd. Starting another shell
+    // without exec would make $PPID point at the intermediate shell instead.
+    const posixScript = `SELF=$$
+find_child_shell() {
+  mode=$2
+  ps -e -o pid=,ppid=,stat=,comm= 2>/dev/null | awk -v pp="$1" -v self="$SELF" -v mode="$mode" '
+    $1 != self && $2 == pp && $4 ~ /^(ba|z|fi|k|da)?sh$/ {
+      if (index($3, "+") > 0) { print $1; found=1; exit }
+      if (mode != "foreground" && pid == "") pid=$1
+    }
+    END { if (!found && mode != "foreground" && pid != "") print pid }
+  '
+}
+pid=$(find_child_shell "$PPID" any)
+while [ -n "$pid" ]; do
+  child=$(find_child_shell "$pid" foreground)
+  [ -n "$child" ] || break
+  pid="$child"
+done
+if [ -n "$pid" ]; then
+  cwd=$(readlink /proc/$pid/cwd 2>/dev/null)
+  [ -n "$cwd" ] && printf '%s\\n' "$cwd" && exit 0
+fi
+emit_home() {
+  case "$1" in
+    /*) printf '%s\\n' "$1"; exit 0 ;;
+  esac
+}
+home=$(eval echo "~" 2>/dev/null)
+emit_home "$home"
+uid=$(id -u 2>/dev/null)
+if [ -n "$uid" ]; then
+  home=$(getent passwd "$uid" 2>/dev/null | awk -F: 'NR == 1 { print $6; exit }')
+  emit_home "$home"
+  home=$(awk -F: -v uid="$uid" '$3 == uid { print $6; exit }' /etc/passwd 2>/dev/null)
+  emit_home "$home"
+fi
+home=$(id -P 2>/dev/null | awk -F: 'NR == 1 { print $9; exit }')
+emit_home "$home"
+emit_home "$HOME"
+exit 1`;
+    const cmd = `exec sh -c ${quoteShellArg(posixScript)}`;
 
     session.conn.exec(cmd, (err, stream) => {
       if (err) {

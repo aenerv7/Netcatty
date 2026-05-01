@@ -462,10 +462,20 @@ body {
   margin-left: 0 !important;
 }
 
-[data-streamdown="code-block-actions"] {
+[data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
   position: absolute !important;
   top: 4px !important;
   right: 4px !important;
+  z-index: 10 !important;
+  display: flex !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  pointer-events: none !important;
+}
+
+[data-streamdown="code-block-actions"] {
+  position: static !important;
   border: none !important;
   background: none !important;
   backdrop-filter: none !important;
@@ -507,10 +517,21 @@ body {
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
-  padding: 0 12px 10px !important;
+  padding: 6px 12px 10px !important;
   width: max-content !important;
   min-width: 100% !important;
   font-size: 12px !important;
   line-height: 1.5 !important;
   white-space: pre !important;
+}
+
+/* Streamdown table overrides */
+.ai-chat-message-content[data-role="assistant"] [data-streamdown="table-wrapper"] {
+  gap: 4px !important;
+  padding: 4px 8px 8px !important;
+}
+
+.ai-chat-message-content[data-role="assistant"] [data-streamdown="table-wrapper"] > div:first-child > button,
+.ai-chat-message-content[data-role="assistant"] [data-streamdown="table-wrapper"] > div:first-child > div > button {
+  padding: 3px !important;
 }

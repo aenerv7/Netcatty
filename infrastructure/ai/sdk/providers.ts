@@ -2,6 +2,17 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { ProviderConfig } from '../types';
+import {
+  applyOpenAIChatContinuationToBody,
+  extractProviderContinuationFromRawChunk,
+  mergeProviderContinuation,
+  rawOpenAIChatChunkHasToolCalls,
+  type OpenAIChatAssistantFields,
+} from '../providerContinuation';
+
+export interface ProviderRequestContext {
+  getOpenAIChatAssistantFields?: () => Array<OpenAIChatAssistantFields | undefined>;
+}
 
 /**
  * Bridge API subset used for SDK fetch adapter.
@@ -53,6 +64,57 @@ function isStreamingRequest(init?: RequestInit): boolean {
   }
 }
 
+function mergeOpenAIChatAssistantFields(
+  current: OpenAIChatAssistantFields | undefined,
+  incoming: OpenAIChatAssistantFields | undefined,
+): OpenAIChatAssistantFields | undefined {
+  return mergeProviderContinuation(
+    { openAIChatAssistantFields: current },
+    { openAIChatAssistantFields: incoming },
+  )?.openAIChatAssistantFields;
+}
+
+function createOpenAIChatStreamFieldCapture(
+  requestContext?: ProviderRequestContext,
+): (data: string) => void {
+  const assistantFields = requestContext?.getOpenAIChatAssistantFields?.();
+  if (!assistantFields) return () => undefined;
+
+  let streamFieldIndex: number | undefined;
+  let pendingFields: OpenAIChatAssistantFields | undefined;
+
+  const ensureStreamFieldSlot = (): number => {
+    if (streamFieldIndex !== undefined) return streamFieldIndex;
+    streamFieldIndex = assistantFields.length;
+    assistantFields.push(undefined);
+    return streamFieldIndex;
+  };
+
+  const flushPendingFields = (fieldIndex: number) => {
+    if (!pendingFields) return;
+    assistantFields[fieldIndex] = mergeOpenAIChatAssistantFields(
+      assistantFields[fieldIndex],
+      pendingFields,
+    );
+    pendingFields = undefined;
+  };
+
+  return (data: string) => {
+    const continuation = extractProviderContinuationFromRawChunk(data);
+    const fields = continuation?.openAIChatAssistantFields;
+    if (fields) {
+      pendingFields = mergeOpenAIChatAssistantFields(pendingFields, fields);
+      if (streamFieldIndex !== undefined) {
+        flushPendingFields(streamFieldIndex);
+      }
+    }
+
+    if (rawOpenAIChatChunkHasToolCalls(data)) {
+      flushPendingFields(ensureStreamFieldSlot());
+    }
+  };
+}
+
 /**
  * Extract headers as a plain Record<string, string> from various header formats.
  */
@@ -100,7 +162,10 @@ function toSafeStatusText(message: string, fallback: string): string {
   return byteStringSafe.slice(0, 120) || fallback;
 }
 
-export function createBridgeFetchForSDK(providerId?: string): typeof globalThis.fetch {
+export function createBridgeFetchForSDK(
+  providerId?: string,
+  requestContext?: ProviderRequestContext,
+): typeof globalThis.fetch {
   return async (
     input: string | URL | Request,
     init?: RequestInit,
@@ -132,10 +197,17 @@ export function createBridgeFetchForSDK(providerId?: string): typeof globalThis.
     const headers = extractHeaders(resolvedInit?.headers);
     const body =
       resolvedInit?.body != null ? String(resolvedInit.body) : undefined;
+    const requestBody = body != null
+      ? applyOpenAIChatContinuationToBody(
+          body,
+          requestContext?.getOpenAIChatAssistantFields?.() ?? [],
+        )
+      : undefined;
 
     // Streaming path
     if (isStreamingRequest(resolvedInit)) {
       const requestId = `sdk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const captureOpenAIChatFields = createOpenAIChatStreamFieldCapture(requestContext);
 
       // Set up IPC event listeners BEFORE starting the stream to avoid
       // missing early events.
@@ -144,6 +216,7 @@ export function createBridgeFetchForSDK(providerId?: string): typeof globalThis.
       let cleanedUp = false;
 
       const unsubData = bridge.onAiStreamData(requestId, (data: string) => {
+        captureOpenAIChatFields(data);
         // Re-wrap as SSE so the SDK can parse it
         streamController?.enqueue(encoder.encode(`data: ${data}\n\n`));
       });
@@ -186,7 +259,7 @@ export function createBridgeFetchForSDK(providerId?: string): typeof globalThis.
         requestId,
         url,
         headers,
-        body || '',
+        requestBody || '',
         providerId,
       );
 
@@ -231,7 +304,7 @@ export function createBridgeFetchForSDK(providerId?: string): typeof globalThis.
     }
 
     // Non-streaming path
-    const result = await bridge.aiFetch(url, method, headers, body, providerId);
+    const result = await bridge.aiFetch(url, method, headers, requestBody, providerId);
 
     return new Response(result.data, {
       status: result.status,
@@ -249,10 +322,13 @@ export function createBridgeFetchForSDK(providerId?: string): typeof globalThis.
  * process replaces the placeholder with the real decrypted key before
  * making the HTTP request.
  */
-export function createModelFromConfig(config: ProviderConfig) {
+export function createModelFromConfig(
+  config: ProviderConfig,
+  requestContext?: ProviderRequestContext,
+) {
   // Use placeholder API key — the main process will inject the real key
   const safeApiKey = config.apiKey ? API_KEY_PLACEHOLDER : undefined;
-  const customFetch = createBridgeFetchForSDK(config.id);
+  const customFetch = createBridgeFetchForSDK(config.id, requestContext);
   const modelId = config.defaultModel || '';
 
   switch (config.providerId) {

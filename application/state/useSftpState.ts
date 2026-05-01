@@ -295,7 +295,7 @@ export const useSftpState = (
 
   const {
     transfers,
-    conflicts,
+    conflicts: transferConflicts,
     activeTransfersCount,
     startTransfer,
     downloadToLocal,
@@ -306,7 +306,7 @@ export const useSftpState = (
     retryTransfer,
     clearCompletedTransfers,
     dismissTransfer,
-    resolveConflict,
+    resolveConflict: resolveTransferConflict,
   } = useSftpTransfers({
     getActivePane,
     getPaneByConnectionId,
@@ -332,6 +332,8 @@ export const useSftpState = (
     cancelExternalUpload,
     selectApplication,
     activeFileWatchCountRef,
+    uploadConflicts,
+    resolveUploadConflict,
   } = useSftpExternalOperations({
     getActivePane,
     getPaneByConnectionId,
@@ -345,6 +347,21 @@ export const useSftpState = (
     isTransferCancelled,
     dismissExternalUpload: dismissTransfer,
   });
+
+  const conflicts = useMemo(
+    () => [...transferConflicts, ...uploadConflicts],
+    [transferConflicts, uploadConflicts],
+  );
+  const resolveAnyConflict = useCallback(
+    (...args: Parameters<typeof resolveTransferConflict>) => {
+      const [conflictId] = args;
+      if (uploadConflicts.some((conflict) => conflict.transferId === conflictId)) {
+        return resolveUploadConflict(...args);
+      }
+      return resolveTransferConflict(...args);
+    },
+    [resolveTransferConflict, resolveUploadConflict, uploadConflicts],
+  );
 
   // Store methods in a ref to create stable wrapper functions
   // This prevents callback reference changes from causing re-renders in consumers
@@ -399,7 +416,7 @@ export const useSftpState = (
     retryTransfer,
     clearCompletedTransfers,
     dismissTransfer,
-    resolveConflict,
+    resolveConflict: resolveAnyConflict,
     getSftpIdForConnection,
     reportSessionError: handleSessionError,
   });
@@ -454,7 +471,7 @@ export const useSftpState = (
     retryTransfer,
     clearCompletedTransfers,
     dismissTransfer,
-    resolveConflict,
+    resolveConflict: resolveAnyConflict,
     getSftpIdForConnection,
     reportSessionError: handleSessionError,
   };
@@ -520,7 +537,7 @@ export const useSftpState = (
     retryTransfer: (...args: Parameters<typeof retryTransfer>) => methodsRef.current.retryTransfer(...args),
     clearCompletedTransfers: () => methodsRef.current.clearCompletedTransfers(),
     dismissTransfer: (...args: Parameters<typeof dismissTransfer>) => methodsRef.current.dismissTransfer(...args),
-    resolveConflict: (...args: Parameters<typeof resolveConflict>) => methodsRef.current.resolveConflict(...args),
+    resolveConflict: (...args: Parameters<typeof resolveAnyConflict>) => methodsRef.current.resolveConflict(...args),
     getSftpIdForConnection: (...args: Parameters<typeof getSftpIdForConnection>) => methodsRef.current.getSftpIdForConnection(...args),
     reportSessionError: (...args: Parameters<typeof handleSessionError>) => methodsRef.current.reportSessionError(...args),
     activeFileWatchCountRef,

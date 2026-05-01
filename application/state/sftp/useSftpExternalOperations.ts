@@ -1,5 +1,5 @@
-import React, { useCallback, useRef, useMemo } from "react";
-import { TransferTask, TransferStatus, SftpFilenameEncoding } from "../../../domain/models";
+import React, { useCallback, useRef, useMemo, useState } from "react";
+import { FileConflict, FileConflictAction, TransferTask, TransferStatus, SftpFilenameEncoding } from "../../../domain/models";
 import { netcattyBridge } from "../../../infrastructure/services/netcattyBridge";
 import { logger } from "../../../lib/logger";
 import { SftpPane } from "./types";
@@ -63,6 +63,8 @@ interface SftpExternalOperationsResult {
   ) => Promise<UploadResult[]>;
   cancelExternalUpload: () => Promise<void>;
   selectApplication: () => Promise<{ path: string; name: string } | null>;
+  uploadConflicts: FileConflict[];
+  resolveUploadConflict: (conflictId: string, action: FileConflictAction, applyToAll?: boolean) => void;
 }
 
 export const useSftpExternalOperations = (
@@ -88,6 +90,11 @@ export const useSftpExternalOperations = (
   // Track active file watches so the side panel can block host-switching.
   // Reset to 0 when the SFTP session disconnects (handled in SftpSidePanel).
   const activeFileWatchCountRef = useRef(0);
+  const [uploadConflicts, setUploadConflicts] = useState<FileConflict[]>([]);
+  const uploadConflictResolversRef = useRef(new Map<string, {
+    resolve: (action: FileConflictAction) => void;
+    setDefault: (action: FileConflictAction) => void;
+  }>());
 
   const readTextFile = useCallback(
     async (side: "left" | "right", filePath: string): Promise<string> => {
@@ -496,16 +503,97 @@ export const useSftpExternalOperations = (
     };
   }, [addExternalUpload, updateExternalUpload, dismissExternalUpload]);
 
+  const resolveUploadConflict = useCallback((conflictId: string, action: FileConflictAction, applyToAll = false) => {
+    const conflict = uploadConflicts.find((item) => item.transferId === conflictId);
+    setUploadConflicts((prev) => prev.filter((item) => item.transferId !== conflictId));
+    const resolver = uploadConflictResolversRef.current.get(conflictId);
+    if (!resolver) return;
+    uploadConflictResolversRef.current.delete(conflictId);
+    if (conflict && applyToAll) {
+      resolver.setDefault(action);
+    }
+    resolver.resolve(action);
+  }, [uploadConflicts]);
+
+  const cancelPendingUploadConflicts = useCallback(() => {
+    const resolvers = Array.from(uploadConflictResolversRef.current.values());
+    if (resolvers.length === 0) return;
+
+    uploadConflictResolversRef.current.clear();
+    setUploadConflicts([]);
+    for (const resolver of resolvers) {
+      resolver.resolve("stop");
+    }
+  }, []);
+
+  const createUploadConflictResolver = useCallback(() => {
+    const conflictDefaults = new Map<string, FileConflictAction>();
+
+    return async (conflict: {
+      fileName: string;
+      targetPath: string;
+      isDirectory: boolean;
+      existingType?: 'file' | 'directory' | 'symlink';
+      existingSize: number;
+      newSize: number;
+      existingModified: number;
+      newModified: number;
+      applyToAllCount: number;
+    }): Promise<FileConflictAction> => {
+      const conflictType = conflict.isDirectory ? "directory" : "file";
+      const defaultAction = conflictDefaults.get(conflictType);
+      if (defaultAction) return defaultAction;
+
+      const conflictId = `upload-conflict-${crypto.randomUUID()}`;
+      const fileConflict: FileConflict = {
+        transferId: conflictId,
+        fileName: conflict.fileName,
+        sourcePath: "local",
+        targetPath: conflict.targetPath,
+        isDirectory: conflict.isDirectory,
+        existingType: conflict.existingType,
+        applyToAllCount: conflict.applyToAllCount,
+        existingSize: conflict.existingSize,
+        newSize: conflict.newSize,
+        existingModified: conflict.existingModified,
+        newModified: conflict.newModified,
+      };
+
+      setUploadConflicts((prev) => [...prev, fileConflict]);
+      return new Promise<FileConflictAction>((resolve) => {
+        uploadConflictResolversRef.current.set(conflictId, {
+          resolve,
+          setDefault: (action) => {
+            conflictDefaults.set(conflictType, action);
+          },
+        });
+      });
+    };
+  }, []);
+
   // Create upload bridge that wraps netcattyBridge
   const createUploadBridge = useMemo((): UploadBridge => {
     const bridge = netcattyBridge.get();
     return {
       writeLocalFile: bridge?.writeLocalFile,
       mkdirLocal: bridge?.mkdirLocal,
+      statLocal: bridge?.statLocal,
+      deleteLocalFile: bridge?.deleteLocalFile,
       mkdirSftp: async (sftpId: string, path: string) => {
         const b = netcattyBridge.get();
         if (b?.mkdirSftp) {
           await b.mkdirSftp(sftpId, path);
+        }
+      },
+      statSftp: async (sftpId: string, path: string) => {
+        const b = netcattyBridge.get();
+        if (!b?.statSftp) return null;
+        return b.statSftp(sftpId, path);
+      },
+      deleteSftp: async (sftpId: string, path: string) => {
+        const b = netcattyBridge.get();
+        if (b?.deleteSftp) {
+          await b.deleteSftp(sftpId, path);
         }
       },
       writeSftpBinary: bridge?.writeSftpBinary,
@@ -596,6 +684,7 @@ export const useSftpExternalOperations = (
             joinPath,
             callbacks,
             useCompressedUpload,
+            resolveConflict: createUploadConflictResolver(),
           },
           controller
         );
@@ -624,6 +713,7 @@ export const useSftpExternalOperations = (
       sftpSessionsRef,
       createUploadCallbacks,
       createUploadBridge,
+      createUploadConflictResolver,
       useCompressedUpload,
     ],
   );
@@ -680,6 +770,7 @@ export const useSftpExternalOperations = (
             joinPath,
             callbacks,
             useCompressedUpload,
+            resolveConflict: createUploadConflictResolver(),
           },
           controller,
         );
@@ -707,6 +798,7 @@ export const useSftpExternalOperations = (
       connectionCacheKeyMapRef,
       createUploadCallbacks,
       createUploadBridge,
+      createUploadConflictResolver,
       getActivePane,
       refresh,
       sftpSessionsRef,
@@ -716,11 +808,14 @@ export const useSftpExternalOperations = (
 
   const cancelExternalUpload = useCallback(async () => {
     const controller = uploadControllerRef.current;
+    let cancelPromise: Promise<void> | undefined;
     if (controller) {
       logger.info("[SFTP] Cancelling external upload");
-      await controller.cancel();
+      cancelPromise = controller.cancel();
     }
-  }, []);
+    cancelPendingUploadConflicts();
+    await cancelPromise;
+  }, [cancelPendingUploadConflicts]);
 
   const selectApplication = useCallback(
     async (): Promise<{ path: string; name: string } | null> => {
@@ -744,5 +839,7 @@ export const useSftpExternalOperations = (
     cancelExternalUpload,
     selectApplication,
     activeFileWatchCountRef,
+    uploadConflicts,
+    resolveUploadConflict,
   };
 };

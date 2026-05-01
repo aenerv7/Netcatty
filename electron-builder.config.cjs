@@ -1,3 +1,5 @@
+const { moshExtraResources } = require('./scripts/mosh-extra-resources.cjs');
+
 /**
  * @type {import('electron-builder').Configuration}
  */
@@ -79,7 +81,8 @@ module.exports = {
             NSCameraUsageDescription: 'Netcatty may use the camera for video calls',
             NSMicrophoneUsageDescription: 'Netcatty may use the microphone for audio',
             NSLocalNetworkUsageDescription: 'Netcatty needs local network access for SSH connections'
-        }
+        },
+        extraResources: moshExtraResources('darwin')
     },
     dmg: {
         title: '${productName}',
@@ -101,7 +104,8 @@ module.exports = {
                 target: 'nsis',
                 arch: ['x64', 'arm64']
             }
-        ]
+        ],
+        extraResources: moshExtraResources('win32')
     },
     nsis: {
         oneClick: false,
@@ -118,7 +122,8 @@ module.exports = {
         // GNOME launchers or AppImage integrations.
         icon: 'public/icon-win.png',
         target: ['AppImage', 'deb', 'rpm'],
-        category: 'Development'
+        category: 'Development',
+        extraResources: moshExtraResources('linux')
     },
     deb: {
         // Use gzip instead of default xz(lzma) for better compatibility with

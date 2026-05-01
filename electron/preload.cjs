@@ -541,12 +541,6 @@ const api = {
     const result = await ipcRenderer.invoke("netcatty:mosh:start", options);
     return result.sessionId;
   },
-  detectMoshClient: async () => {
-    return ipcRenderer.invoke("netcatty:mosh:detectClient");
-  },
-  pickMoshClient: async () => {
-    return ipcRenderer.invoke("netcatty:mosh:pickClient");
-  },
   startLocalSession: async (options) => {
     const result = await ipcRenderer.invoke("netcatty:local:start", options || {});
     return result.sessionId;
@@ -856,6 +850,7 @@ const api = {
   windowClose: () => ipcRenderer.invoke("netcatty:window:close"),
   windowIsMaximized: () => ipcRenderer.invoke("netcatty:window:isMaximized"),
   windowIsFullscreen: () => ipcRenderer.invoke("netcatty:window:isFullscreen"),
+  windowFocus: () => ipcRenderer.invoke("netcatty:window:focus"),
   onWindowFullScreenChanged: (cb) => {
     fullscreenChangeListeners.add(cb);
     return () => fullscreenChangeListeners.delete(cb);

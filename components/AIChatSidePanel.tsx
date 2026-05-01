@@ -24,6 +24,7 @@ import type {
   AIPanelView,
   AIPermissionMode,
   AIToolIntegrationMode,
+  AgentModelPreset,
   AISession,
   AISessionScope,
   ChatMessage,
@@ -66,9 +67,21 @@ import {
   type DefaultTargetSessionHint,
 } from './ai/hooks/useAIChatStreaming';
 import { buildAcpHistoryMessagesForBridge } from './ai/acpHistory';
+import { canSendWithAgent, findEnabledExternalAgent } from './ai/agentSendEligibility';
 import { clearAllPendingApprovals } from '../infrastructure/ai/shared/approvalGate';
 import { useConversationExport } from './ai/hooks/useConversationExport';
 import type { ExecutorContext } from '../infrastructure/ai/cattyAgent/executor';
+
+function modelPresetMatchesId(preset: AgentModelPreset, modelId: string): boolean {
+  if (preset.thinkingLevels?.length) {
+    return preset.thinkingLevels.some((level) => `${preset.id}/${level}` === modelId);
+  }
+  return preset.id === modelId;
+}
+
+function modelPresetsContainId(presets: AgentModelPreset[], modelId: string): boolean {
+  return presets.some((preset) => modelPresetMatchesId(preset, modelId));
+}
 
 function isCopilotAgentConfig(agent?: ExternalAgentConfig): boolean {
   if (!agent) return false;
@@ -231,7 +244,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   const scopeKey = `${scopeType}:${scopeTargetId ?? ''}`;
 
   const [showHistory, setShowHistory] = useState(false);
-  const [runtimeAgentModelPresets, setRuntimeAgentModelPresets] = useState<Record<string, ReturnType<typeof getAgentModelPresets>>>({});
+  const [runtimeAgentModelPresets, setRuntimeAgentModelPresets] = useState<Record<string, AgentModelPreset[]>>({});
   const [userSkillOptions, setUserSkillOptions] = useState<UserSkillOption[]>([]);
   const { openSettingsWindow } = useWindowControls();
   const terminalSessionsRef = useRef(terminalSessions);
@@ -608,12 +621,10 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
 
   useEffect(() => {
     if (!currentAgentConfig?.acpCommand) return;
-    // Codex has its own path via aiCodexGetIntegration (reads config.toml).
-    // Everyone else that speaks ACP can be asked for their available models
-    // directly — in particular, Claude Code through claude-agent-acp
-    // advertises the real catalog (including Bedrock/Vertex model ids when
-    // the user configured those) instead of the hardcoded CLAUDE_MODEL_PRESETS.
-    if (!isCopilotExternalAgent && !isClaudeManagedAgent) return;
+    // ACP agents can expose their runtime model catalog during session setup.
+    // Codex also exposes model/reasoning selectors through ACP config options,
+    // which keeps the picker aligned with the user's installed CLI version.
+    if (!isCopilotExternalAgent && !isClaudeManagedAgent && !isCodexManagedAgent) return;
 
     const bridge = getNetcattyBridge();
     if (!bridge?.aiAcpListModels) return;
@@ -640,13 +651,13 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
         });
         return;
       }
-      const knownModelIds = new Set(result.models.map((model) => model.id));
+      const runtimePresets = result.models ?? [];
       setRuntimeAgentModelPresets((prev) => ({
         ...prev,
-        [currentAgentId]: result.models ?? [],
+        [currentAgentId]: runtimePresets,
       }));
       const storedModelId = agentModelMapRef.current[currentAgentId];
-      if (result.currentModelId && (!storedModelId || !knownModelIds.has(storedModelId))) {
+      if (result.currentModelId && (!storedModelId || !modelPresetsContainId(runtimePresets, storedModelId))) {
         setAgentModel(currentAgentId, result.currentModelId);
       }
     }).catch((err) => {
@@ -658,7 +669,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentAgentConfig, currentAgentId, isCopilotExternalAgent, isClaudeManagedAgent, setAgentModel]);
+  }, [currentAgentConfig, currentAgentId, isCopilotExternalAgent, isClaudeManagedAgent, isCodexManagedAgent, setAgentModel]);
 
   // When Codex is backed by a ~/.codex/config.toml custom provider, the
   // stock CODEX_MODEL_PRESETS catalog is invalid for that endpoint.
@@ -668,7 +679,11 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
   const hasCodexCustomConfig = codexCustomConfigResolved && isCodexManagedAgent;
 
   const agentModelPresets = useMemo(() => {
+    const runtimePresets = runtimeAgentModelPresets[currentAgentId];
     if (hasCodexCustomConfig) {
+      if (runtimePresets) {
+        return runtimePresets;
+      }
       // Config.toml with a pinned model → show just that model.
       if (codexConfigModel) {
         return [{ id: codexConfigModel, name: codexConfigModel }];
@@ -678,13 +693,13 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
       // wouldn't work. Empty list disables the picker.
       return [];
     }
-    return runtimeAgentModelPresets[currentAgentId] ?? getAgentModelPresets(currentAgentConfig?.command);
+    return runtimePresets ?? getAgentModelPresets(currentAgentConfig?.command);
   }, [currentAgentConfig?.command, currentAgentId, runtimeAgentModelPresets, hasCodexCustomConfig, codexConfigModel]);
 
   // Per-agent model: recall last selection or use first preset as default
   const selectedAgentModel = useMemo(() => {
     const stored = agentModelMap[currentAgentId];
-    if (stored && agentModelPresets.some(p => stored === p.id || stored.startsWith(p.id + '/'))) {
+    if (stored && modelPresetsContainId(agentModelPresets, stored)) {
       return stored;
     }
     // Default to first preset; for models with thinking levels, use the default level
@@ -697,6 +712,12 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     }
     return undefined;
   }, [currentAgentId, agentModelMap, agentModelPresets]);
+
+  const inputAgentId = activeSession?.agentId ?? currentDraft?.agentId ?? currentAgentId;
+  const canSendCurrentAgent = useMemo(
+    () => canSendWithAgent(inputAgentId, externalAgents),
+    [inputAgentId, externalAgents],
+  );
 
   const handleAgentModelSelect = useCallback((modelId: string) => {
     setAgentModel(currentAgentId, modelId);
@@ -800,6 +821,10 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     // immediately after the first send path starts; `isStreaming` alone does
     // not protect the initial draft->session transition.
     if (!trimmed || isStreaming) return;
+    const sendAgentId = currentSessionView?.agentId ?? draft?.agentId ?? currentAgentId;
+    const agentConfig = sendAgentId !== 'catty' ? findEnabledExternalAgent(externalAgents, sendAgentId) : undefined;
+    if (sendAgentId !== 'catty' && !agentConfig) return;
+
     const selectedSkillSlugs = draft?.selectedUserSkillSlugs ?? [];
     const attachments = (draft?.attachments ?? []).map((file) => ({
       base64Data: file.base64Data,
@@ -816,8 +841,6 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
     try {
       let sessionId = currentSessionView?.id ?? null;
       let currentSession = currentSessionView ?? null;
-      const sendAgentId = currentSessionView?.agentId ?? draft?.agentId ?? currentAgentId;
-
       if (isDraftMode) {
         const scope: AISessionScope = { type: scopeType, targetId: scopeTargetId, hostIds: scopeHostIds };
         const createdSession = createSession(scope, sendAgentId);
@@ -857,7 +880,6 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
       setStreamingForScope(sessionId, true);
 
       // Create assistant message placeholder with a tracked ID
-      const agentConfig = isExternalAgent ? externalAgents.find((agent) => agent.id === sendAgentId) : undefined;
       const assistantMsgId = generateId();
       addMessageToSession(sessionId, {
         id: assistantMsgId, role: 'assistant', content: '', timestamp: Date.now(),
@@ -1088,6 +1110,7 @@ const AIChatSidePanelInner: React.FC<AIChatSidePanelProps> = ({
             onSend={handleSend}
             onStop={handleStop}
             isStreaming={isStreaming}
+            disabled={!canSendCurrentAgent}
             providerName={providerDisplayName}
             modelName={modelDisplayName}
             agentName={currentAgentId === 'catty' ? 'Catty Agent' : externalAgents.find(a => a.id === currentAgentId)?.name}
