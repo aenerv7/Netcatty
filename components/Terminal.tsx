@@ -159,7 +159,8 @@ interface TerminalProps {
     pendingUploadEntries?: DropEntry[],
     sourceSessionId?: string,
   ) => void;
-  onOpenScripts?: () => void;  // kept for TerminalLayer compatibility but no longer shown in toolbar
+  onOpenScripts?: () => void;
+  onOpenSettings?: () => void;
   isBroadcastEnabled?: boolean;
   onToggleBroadcast?: () => void;
   onToggleComposeBar?: () => void;

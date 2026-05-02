@@ -48,6 +48,7 @@ import { useAIState } from '../application/state/useAIState';
 import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 import { TERMINAL_THEMES } from '../infrastructure/config/terminalThemes';
 import { useCustomThemes } from '../application/state/customThemeStore';
+import { useI18n } from '../application/i18n/I18nProvider';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { RippleButton } from './ui/ripple';
@@ -503,6 +504,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 }) => {
   // Subscribe to activeTabId from external store
   const activeTabId = useActiveTabId();
+  const { t } = useI18n();
   const isVaultActive = activeTabId === 'vault';
   const isSftpActive = activeTabId === 'sftp';
   const isScpActive = activeTabId === 'scp';
@@ -2234,7 +2236,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                           : 'var(--terminal-sidepanel-muted)',
                       }}
                       onClick={handleOpenScripts}
-                      title="Scripts"
+                      title={t('terminal.sidePanel.scripts')}
                     >
                       <Zap size={15} />
                     </Button>
@@ -2254,7 +2256,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                           : 'var(--terminal-sidepanel-muted)',
                       }}
                       onClick={handleOpenAI}
-                      title="AI Chat"
+                      title={t('terminal.sidePanel.aiChat')}
                     >
                       <MessageSquare size={15} />
                     </Button>
@@ -2269,7 +2271,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                         color: 'var(--terminal-sidepanel-muted)',
                       }}
                       onClick={() => setSidePanelPosition(p => p === 'left' ? 'right' : 'left')}
-                      title={sidePanelPosition === 'left' ? 'Move panel to right' : 'Move panel to left'}
+                      title={sidePanelPosition === 'left' ? t('terminal.sidePanel.movePanelToRight') : t('terminal.sidePanel.movePanelToLeft')}
                     >
                       {sidePanelPosition === 'left' ? <PanelRight size={15} /> : <PanelLeft size={15} />}
                     </Button>
@@ -2281,7 +2283,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                         color: 'var(--terminal-sidepanel-muted)',
                       }}
                       onClick={handleCloseSidePanel}
-                      title="Close panel"
+                      title={t('terminal.sidePanel.closePanel')}
                     >
                       <X size={15} />
                     </Button>

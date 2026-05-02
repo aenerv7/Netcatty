@@ -2,7 +2,7 @@
  * Terminal Toolbar
  * Displays high-frequency terminal actions and close button in the terminal status bar.
  */
-import { Check, ChevronRight, FolderInput, Languages, MoreVertical, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, ChevronRight, Languages, MoreVertical, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -28,9 +28,8 @@ export interface TerminalToolbarProps {
     terminalEncoding?: 'utf-8' | 'gb18030';
     onSetTerminalEncoding?: (encoding: 'utf-8' | 'gb18030') => void;
     // Overflow menu actions
-    onOpenSFTP?: () => void;
     onOpenScripts?: () => void;
-    onOpenTheme?: () => void;
+    onOpenSettings?: () => void;
 }
 
 export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
@@ -45,9 +44,8 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onToggleComposeBar,
     terminalEncoding,
     onSetTerminalEncoding,
-    onOpenSFTP,
     onOpenScripts,
-    onOpenTheme,
+    onOpenSettings,
 }) => {
     const { t } = useI18n();
     const [highlightPopoverOpen, setHighlightPopoverOpen] = useState(false);
@@ -69,7 +67,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     // (test daemons, forwarded endpoints) still have a real backend
     // decoder we can drive.
     const encodingSwitchSupported = !isLocalTerminal && !isMoshSession;
-    const hidesSftp = isLocalTerminal || isSerialTerminal;
 
     const menuItemClass = "w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-secondary transition-colors";
     const activeButtonStyle: React.CSSProperties = {
@@ -85,26 +82,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 setIsOpen={setHighlightPopoverOpen}
                 buttonClassName={buttonBase}
             />
-
-            {!hidesSftp && (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="secondary"
-                            size="icon"
-                            className={cn(buttonBase, status !== 'connected' && "opacity-50")}
-                            aria-label={status === 'connected' ? t("terminal.toolbar.openSftp") : t("terminal.toolbar.availableAfterConnect")}
-                            onClick={onOpenSFTP}
-                            disabled={status !== 'connected'}
-                        >
-                            <FolderInput size={12} />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        {status === 'connected' ? t("terminal.toolbar.openSftp") : t("terminal.toolbar.availableAfterConnect")}
-                    </TooltipContent>
-                </Tooltip>
-            )}
 
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -187,7 +164,7 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                         </button>
                     </PopoverClose>
                     <PopoverClose asChild>
-                        <button type="button" className={menuItemClass} onClick={onOpenTheme}>
+                        <button type="button" className={menuItemClass} onClick={onOpenSettings}>
                             <Palette size={12} className="shrink-0" />
                             <span className="flex-1 text-left truncate">{t("terminal.toolbar.terminalSettings")}</span>
                         </button>
