@@ -30,7 +30,7 @@ const renderToolbar = (
         status,
         host,
         onOpenScripts: () => {},
-        onOpenTheme: () => {},
+        onOpenSettings: () => {},
         ...props,
       }),
     ),

@@ -1473,6 +1473,13 @@ function App({ settings }: { settings: SettingsState }) {
     })();
   }, [openSettingsWindow, t]);
 
+  const handleOpenTerminalSettings = useCallback(() => {
+    void (async () => {
+      const opened = await openSettingsWindow({ tab: 'terminal' });
+      if (!opened) toast.error(t('toast.settingsUnavailable'), t('common.settings'));
+    })();
+  }, [openSettingsWindow, t]);
+
   const hasShownCredentialProtectionWarningRef = useRef(false);
 
   useEffect(() => {
@@ -1771,6 +1778,7 @@ function App({ settings }: { settings: SettingsState }) {
           closeSidePanelRef={closeSidePanelRef}
           toggleScriptsSidePanelRef={toggleScriptsSidePanelRef}
           activeSidePanelTabRef={activeSidePanelTabRef}
+          onOpenSettings={handleOpenTerminalSettings}
         />
 
         {/* Log Views - readonly terminal replays */}

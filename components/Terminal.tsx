@@ -249,6 +249,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onSplitHorizontal,
   onSplitVertical,
   onOpenSftp,
+  onOpenScripts,
+  onOpenSettings,
   isBroadcastEnabled,
   onToggleBroadcast,
   onToggleComposeBar,
@@ -1602,6 +1604,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onToggleComposeBar={inWorkspace ? onToggleComposeBar : () => setIsComposeBarOpen(prev => !prev)}
       terminalEncoding={terminalEncoding}
       onSetTerminalEncoding={handleSetTerminalEncoding}
+      onOpenScripts={onOpenScripts}
+      onOpenSettings={onOpenSettings}
     />
   );
 

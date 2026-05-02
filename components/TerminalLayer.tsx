@@ -442,6 +442,7 @@ interface TerminalLayerProps {
   closeSidePanelRef?: React.MutableRefObject<(() => void) | null>;
   toggleScriptsSidePanelRef?: React.MutableRefObject<(() => void) | null>;
   activeSidePanelTabRef?: React.MutableRefObject<string | null>;
+  onOpenSettings?: () => void;
 }
 
 const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
@@ -501,6 +502,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   closeSidePanelRef,
   toggleScriptsSidePanelRef,
   activeSidePanelTabRef,
+  onOpenSettings,
 }) => {
   // Subscribe to activeTabId from external store
   const activeTabId = useActiveTabId();
@@ -2453,6 +2455,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   keyBindings={keyBindings}
                   onHotkeyAction={onHotkeyAction}
                   onOpenScripts={handleOpenScripts}
+                  onOpenSettings={onOpenSettings}
                   onCloseSession={handleCloseSession}
                   onStatusChange={handleStatusChange}
                   onSessionExit={handleSessionExit}
@@ -2578,7 +2581,8 @@ const terminalLayerAreEqual = (prev: TerminalLayerProps, next: TerminalLayerProp
     prev.onSetWorkspaceFocusedSession === next.onSetWorkspaceFocusedSession &&
     prev.onSplitSession === next.onSplitSession &&
     prev.toggleScriptsSidePanelRef === next.toggleScriptsSidePanelRef &&
-    prev.identities === next.identities
+    prev.identities === next.identities &&
+    prev.onOpenSettings === next.onOpenSettings
   );
 };
 
