@@ -2454,7 +2454,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   hotkeyScheme={hotkeyScheme}
                   keyBindings={keyBindings}
                   onHotkeyAction={onHotkeyAction}
-                  onOpenScripts={handleOpenScripts}
                   onOpenSettings={onOpenSettings}
                   onCloseSession={handleCloseSession}
                   onStatusChange={handleStatusChange}

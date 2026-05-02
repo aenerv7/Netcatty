@@ -29,7 +29,6 @@ const renderToolbar = (
       React.createElement(TerminalToolbar, {
         status,
         host,
-        onOpenScripts: () => {},
         onOpenSettings: () => {},
         ...props,
       }),

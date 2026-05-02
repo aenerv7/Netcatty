@@ -159,7 +159,6 @@ interface TerminalProps {
     pendingUploadEntries?: DropEntry[],
     sourceSessionId?: string,
   ) => void;
-  onOpenScripts?: () => void;
   onOpenSettings?: () => void;
   isBroadcastEnabled?: boolean;
   onToggleBroadcast?: () => void;
@@ -249,7 +248,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onSplitHorizontal,
   onSplitVertical,
   onOpenSftp,
-  onOpenScripts,
   onOpenSettings,
   isBroadcastEnabled,
   onToggleBroadcast,
@@ -1604,7 +1602,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onToggleComposeBar={inWorkspace ? onToggleComposeBar : () => setIsComposeBarOpen(prev => !prev)}
       terminalEncoding={terminalEncoding}
       onSetTerminalEncoding={handleSetTerminalEncoding}
-      onOpenScripts={onOpenScripts}
       onOpenSettings={onOpenSettings}
     />
   );

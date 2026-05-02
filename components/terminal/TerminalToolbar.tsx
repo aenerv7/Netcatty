@@ -2,7 +2,7 @@
  * Terminal Toolbar
  * Displays high-frequency terminal actions and close button in the terminal status bar.
  */
-import { Check, ChevronRight, Languages, MoreVertical, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, ChevronRight, Languages, MoreVertical, X, Palette, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -28,7 +28,6 @@ export interface TerminalToolbarProps {
     terminalEncoding?: 'utf-8' | 'gb18030';
     onSetTerminalEncoding?: (encoding: 'utf-8' | 'gb18030') => void;
     // Overflow menu actions
-    onOpenScripts?: () => void;
     onOpenSettings?: () => void;
 }
 
@@ -44,7 +43,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onToggleComposeBar,
     terminalEncoding,
     onSetTerminalEncoding,
-    onOpenScripts,
     onOpenSettings,
 }) => {
     const { t } = useI18n();
@@ -157,12 +155,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                         }
                     }}
                 >
-                    <PopoverClose asChild>
-                        <button type="button" className={menuItemClass} onClick={onOpenScripts}>
-                            <Zap size={12} className="shrink-0" />
-                            <span className="flex-1 text-left truncate">{t("terminal.toolbar.scripts")}</span>
-                        </button>
-                    </PopoverClose>
                     <PopoverClose asChild>
                         <button type="button" className={menuItemClass} onClick={onOpenSettings}>
                             <Palette size={12} className="shrink-0" />
