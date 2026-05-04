@@ -98,6 +98,13 @@ test("repeated ED2 preserves cleared screens even without ED3", () => {
   );
 });
 
+test("redundant ED2 keeps pending cleared screen when current screen is empty", () => {
+  assert.equal(
+    terminalDataToPlainText("before\n\x1b[2Jfirst\x1b[2J\x1b[2Jsecond\n"),
+    "before\n\nfirst\n\n     second",
+  );
+});
+
 test("home ED2 preserves each cleared shell frame without ED3", () => {
   assert.equal(
     terminalDataToPlainText("before\n\x1b[H\x1b[2Jone\n\x1b[H\x1b[2Jtwo\n"),

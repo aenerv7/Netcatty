@@ -339,12 +339,14 @@ class TerminalTextRenderer {
 
   #clearCurrentLogScreen({ keepPending = false } = {}) {
     const targetRow = this.row;
-    this.pendingClearedScreen = keepPending && this.#currentLogScreenHasContent()
-      ? {
+    if (keepPending && this.#currentLogScreenHasContent()) {
+      this.pendingClearedScreen = {
         lines: cloneLines(this.lines.slice(this.screenBaseRow)),
         baseRow: this.screenBaseRow,
-      }
-      : null;
+      };
+    } else if (!keepPending) {
+      this.pendingClearedScreen = null;
+    }
     for (let i = this.screenBaseRow; i < this.lines.length; i += 1) {
       this.lines[i] = [];
     }
