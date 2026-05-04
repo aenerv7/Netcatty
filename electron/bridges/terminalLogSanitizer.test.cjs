@@ -84,18 +84,51 @@ test("home clear repaint updates current preserved screen instead of appending f
   );
 });
 
-test("home ED2 repaint updates current preserved screen instead of appending frames", () => {
+test("home ED2 preserves cleared screens even without ED3", () => {
   assert.equal(
     terminalDataToPlainText("before tui\n\x1b[H\x1b[2Jframe one\n\x1b[H\x1b[2Jframe two\n"),
-    "before tui\n\nframe two",
+    "before tui\n\nframe one\n\nframe two",
   );
 });
 
-test("repeated ED2 clears current preserved screen instead of appending frames", () => {
+test("repeated ED2 preserves cleared screens even without ED3", () => {
   assert.equal(
     terminalDataToPlainText("before tui\n\x1b[2Jframe one\r\x1b[2Jframe two\n"),
-    "before tui\n\nframe two",
+    "before tui\n\nframe one\n\nframe two",
   );
+});
+
+test("home ED2 preserves each cleared shell frame without ED3", () => {
+  assert.equal(
+    terminalDataToPlainText("before\n\x1b[H\x1b[2Jone\n\x1b[H\x1b[2Jtwo\n"),
+    "before\n\none\n\ntwo",
+  );
+});
+
+test("home ED2 repaint does not accumulate every intermediate frame", () => {
+  assert.equal(
+    terminalDataToPlainText("before tui\n\x1b[H\x1b[2Jframe one\n\x1b[H\x1b[2Jframe two\n\x1b[H\x1b[2Jframe three\n"),
+    "before tui\n\nframe two\n\nframe three",
+  );
+});
+
+test("committing pending ED2 preserves cursor movement before printable output", () => {
+  assert.equal(
+    terminalDataToPlainText("before\n\x1b[H\x1b[2Jone\n\x1b[2J\x1b[10;5Htext\n"),
+    "before\n\none\n\n\n\n\n\n\n\n\n\n\n    text",
+  );
+});
+
+test("pending ED2 snapshot rendering does not mutate repaint state", () => {
+  const renderer = createTerminalTextRenderer();
+  renderer.feed("before tui\n\x1b[H\x1b[2Jframe one\n\x1b[H\x1b[2Jframe two\n");
+  assert.equal(
+    renderer.toString({ includePendingClearedScreen: true }),
+    "before tui\n\nframe one\n\nframe two",
+  );
+
+  renderer.feed("\x1b[H\x1b[2Jframe three\n");
+  assert.equal(renderer.finish(), "before tui\n\nframe two\n\nframe three");
 });
 
 test("later shell clear preserves intervening screen output", () => {

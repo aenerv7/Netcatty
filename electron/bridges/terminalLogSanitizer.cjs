@@ -57,18 +57,21 @@ class TerminalTextRenderer {
   finish() {
     this.state = "normal";
     this.escapeBuffer = "";
+    this.#commitPendingClearedScreen();
     return this.toString();
   }
 
-  toString() {
-    return this.lines
+  toString({ includePendingClearedScreen = false } = {}) {
+    const lines = includePendingClearedScreen ? this.#linesWithPendingClearedScreen() : this.lines;
+    return lines
       .map((line) => line.map((cell) => cell?.ch || " ").join("").replace(/[ \t]+$/g, ""))
       .join("\n")
       .replace(/\n+$/g, "");
   }
 
-  toHtmlContent() {
-    return this.lines
+  toHtmlContent({ includePendingClearedScreen = false } = {}) {
+    const lines = includePendingClearedScreen ? this.#linesWithPendingClearedScreen() : this.lines;
+    return lines
       .map((line) => renderLineHtml(line))
       .join("\n")
       .replace(/\n+$/g, "");
@@ -269,7 +272,6 @@ class TerminalTextRenderer {
   }
 
   #writeText(text) {
-    this.pendingClearedScreen = null;
     this.#ensureLine();
     const line = this.lines[this.row];
     while (line.length < this.col) line.push(createCell(" ", createDefaultStyle()));
@@ -355,15 +357,34 @@ class TerminalTextRenderer {
   #commitPendingClearedScreen() {
     const pending = this.pendingClearedScreen;
     if (!pending) return;
-    const prefix = this.lines.slice(0, pending.baseRow);
-    this.lines = prefix.concat(pending.lines, [[]]);
-    this.screenBaseRow = this.lines.length - 1;
-    this.row = this.screenBaseRow;
-    this.col = 0;
+    const relativeRow = Math.max(0, this.row - pending.baseRow);
+    const col = this.col;
+    const { lines, screenBaseRow } = this.#buildLinesWithPendingClearedScreen(pending);
+    this.lines = lines;
+    this.screenBaseRow = screenBaseRow;
+    this.row = this.screenBaseRow + relativeRow;
+    this.col = col;
+    this.#ensureLine();
     this.cursorMovedHomeByCsi = false;
     this.justStartedLogScreen = true;
     this.hasPreservedScreenHistory = true;
     this.pendingClearedScreen = null;
+  }
+
+  #linesWithPendingClearedScreen() {
+    const pending = this.pendingClearedScreen;
+    if (!pending) return this.lines;
+    return this.#buildLinesWithPendingClearedScreen(pending).lines;
+  }
+
+  #buildLinesWithPendingClearedScreen(pending) {
+    const prefix = this.lines.slice(0, pending.baseRow);
+    const activeLines = this.lines.slice(pending.baseRow);
+    const pendingLines = trimTrailingBlankLines(pending.lines);
+    return {
+      lines: prefix.concat(pendingLines, [[]], activeLines.length > 0 ? activeLines : [[]]),
+      screenBaseRow: prefix.length + pendingLines.length + 1,
+    };
   }
 
   #startNewLogScreen() {
@@ -446,6 +467,14 @@ function createCell(ch, style) {
 
 function cloneLines(lines) {
   return lines.map((line) => line.map((cell) => (cell ? createCell(cell.ch, cell.style) : cell)));
+}
+
+function trimTrailingBlankLines(lines) {
+  let length = lines.length;
+  while (length > 0 && getTrimmedLineLength(lines[length - 1]) === 0) {
+    length -= 1;
+  }
+  return lines.slice(0, length);
 }
 
 function renderLineHtml(line) {
