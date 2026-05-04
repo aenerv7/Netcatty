@@ -856,6 +856,74 @@ function addBundledMoshDllPath(env, bareClient, opts = {}) {
   return dllDir ? prependEnvPath(env, dllDir, opts) : env;
 }
 
+function findBundledMoshTerminfoDir(bareClient, _opts = {}) {
+  if (!bareClient) return null;
+  const terminfoDir = path.join(path.dirname(bareClient), "terminfo");
+  const hasXterm256 =
+    fs.existsSync(path.join(terminfoDir, "x", "xterm-256color")) ||
+    fs.existsSync(path.join(terminfoDir, "78", "xterm-256color"));
+  return hasXterm256 ? terminfoDir : null;
+}
+
+// Standard locations where distros / package managers install the compiled
+// terminfo database. Used as a fallback only — the bundled directory ships
+// with the mosh release and is preferred. See issue #890 for context.
+const LINUX_SYSTEM_TERMINFO_DIRS = [
+  "/etc/terminfo",
+  "/lib/terminfo",
+  "/usr/share/terminfo",
+  "/usr/lib/terminfo",
+];
+
+const DARWIN_SYSTEM_TERMINFO_DIRS = [
+  "/usr/share/terminfo",
+  "/opt/homebrew/share/terminfo",
+  "/usr/local/share/terminfo",
+  "/opt/local/share/terminfo",
+];
+
+function addBundledMoshTerminfoEnv(env, bareClient, opts = {}) {
+  const platform = opts.platform || process.platform;
+  const terminfoDir = findBundledMoshTerminfoDir(bareClient, opts);
+
+  if (platform === "win32") {
+    if (!terminfoDir) return env;
+    env.TERMINFO = terminfoDir;
+    env.TERMINFO_DIRS = terminfoDir;
+    return env;
+  }
+
+  // POSIX. The bundled terminfo is the source of truth — our static
+  // ncurses' compiled-in default points at a build-time temp dir that no
+  // longer exists on the user's machine. Fall back to standard distro
+  // paths when the bundle is absent (e.g. running against an older mosh
+  // binary release that pre-dates the bundle). A caller-supplied
+  // TERMINFO_DIRS is preserved between the bundle and the system defaults.
+  const existing = (typeof env.TERMINFO_DIRS === "string" && env.TERMINFO_DIRS.length > 0)
+    ? env.TERMINFO_DIRS.split(":").filter(Boolean)
+    : [];
+  const systemDirs = platform === "darwin" ? DARWIN_SYSTEM_TERMINFO_DIRS : LINUX_SYSTEM_TERMINFO_DIRS;
+  const dirs = [];
+  if (terminfoDir) dirs.push(terminfoDir);
+  for (const dir of existing) {
+    if (!dirs.includes(dir)) dirs.push(dir);
+  }
+  for (const dir of systemDirs) {
+    if (!dirs.includes(dir)) dirs.push(dir);
+  }
+  if (terminfoDir) {
+    env.TERMINFO = terminfoDir;
+  }
+  env.TERMINFO_DIRS = dirs.join(":");
+  return env;
+}
+
+function addBundledMoshRuntimeEnv(env, bareClient, opts = {}) {
+  addBundledMoshDllPath(env, bareClient, opts);
+  addBundledMoshTerminfoEnv(env, bareClient, opts);
+  return env;
+}
+
 function createMoshSshPasswordResponder(sshPty, password) {
   if (typeof password !== "string" || password.length === 0) {
     return () => {};
@@ -1052,7 +1120,7 @@ function swapToMoshClient(session, options, ctx) {
     key: parsed.key,
     lang,
   });
-  addBundledMoshDllPath(env, bareClient);
+  addBundledMoshRuntimeEnv(env, bareClient);
   if (options.agentForwarding && process.env.SSH_AUTH_SOCK) {
     env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
   }
@@ -1627,6 +1695,8 @@ module.exports = {
   bundledMoshClient,
   resolveBareMoshClient,
   addBundledMoshDllPath,
+  addBundledMoshTerminfoEnv,
+  addBundledMoshRuntimeEnv,
   startSerialSession,
   listSerialPorts,
   writeToSession,

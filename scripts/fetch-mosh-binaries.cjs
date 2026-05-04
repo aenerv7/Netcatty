@@ -40,16 +40,48 @@ const DEFAULT_RES_DIR = path.join(ROOT, "resources", "mosh");
 // Using flat names in the release for SHA256SUMS readability, then
 // fanning out into platform-arch subdirs locally.
 //
-// `extract` indicates a tar.gz archive containing the binary + helper
-// DLLs (Windows). The tarball is unpacked into the platform-arch
-// directory so resources/mosh/win32-x64/ ends up with mosh-client.exe
-// alongside cygwin1.dll, cygcrypto-*.dll, etc.
+// All targets are tar.gz bundles containing the binary plus the runtime
+// helpers each platform needs: ncurses terminfo on every platform, plus
+// the Cygwin DLL set on Windows. Bundling terminfo lets the bundled
+// statically-linked mosh-client work on minimal hosts that don't have a
+// system ncurses-base — see issue #890.
+//
+// `legacy` describes the pre-bundle artifact name some published mosh
+// binary releases still ship (Linux/Darwin used flat files before the
+// bundle layout). When SHA256SUMS lists only the legacy name we fall
+// back to it so existing releases keep working until a new tag is
+// republished with the bundle layout.
 const TARGETS = [
-  { platform: "linux", arch: "x64", file: "mosh-client-linux-x64", local: "linux-x64/mosh-client" },
-  { platform: "linux", arch: "arm64", file: "mosh-client-linux-arm64", local: "linux-arm64/mosh-client" },
-  { platform: "darwin", arch: "universal", file: "mosh-client-darwin-universal", local: "darwin-universal/mosh-client" },
+  {
+    platform: "linux", arch: "x64",
+    file: "mosh-client-linux-x64.tar.gz", localDir: "linux-x64", extract: "tar.gz",
+    legacy: { file: "mosh-client-linux-x64", local: "linux-x64/mosh-client" },
+  },
+  {
+    platform: "linux", arch: "arm64",
+    file: "mosh-client-linux-arm64.tar.gz", localDir: "linux-arm64", extract: "tar.gz",
+    legacy: { file: "mosh-client-linux-arm64", local: "linux-arm64/mosh-client" },
+  },
+  {
+    platform: "darwin", arch: "universal",
+    file: "mosh-client-darwin-universal.tar.gz", localDir: "darwin-universal", extract: "tar.gz",
+    legacy: { file: "mosh-client-darwin-universal", local: "darwin-universal/mosh-client" },
+  },
   { platform: "win32", arch: "x64", file: "mosh-client-win32-x64.tar.gz", localDir: "win32-x64", extract: "tar.gz" },
 ];
+
+function selectReleaseAsset(target, sums) {
+  const primary = { file: target.file, extract: target.extract, local: target.local, localDir: target.localDir };
+  if (!target.legacy) return primary;
+  // SHA256SUMS unavailable (allowUnverified mirror) — keep the primary
+  // and let download / extraction errors surface naturally.
+  if (sums.size === 0) return primary;
+  if (sums.has(target.file)) return primary;
+  if (sums.has(target.legacy.file)) {
+    return { file: target.legacy.file, local: target.legacy.local };
+  }
+  return primary;
+}
 
 function log(msg) { console.log(`[fetch-mosh-binaries] ${msg}`); }
 function warn(msg) { console.warn(`[fetch-mosh-binaries] WARN ${msg}`); }
@@ -183,6 +215,20 @@ function assertExtractedTreeSafe(root) {
   }
 }
 
+function assertBundledTerminfo(extractDir, target) {
+  const terminfoDir = path.join(extractDir, "terminfo");
+  const terminfoEntry = [
+    path.join(terminfoDir, "x", "xterm-256color"),
+    path.join(terminfoDir, "78", "xterm-256color"),
+  ].find((entry) => fs.existsSync(entry));
+  if (terminfoEntry && !fs.lstatSync(terminfoEntry).isFile()) {
+    throw new Error(`${target.file} contained invalid terminfo for xterm-256color`);
+  }
+  if (!terminfoEntry) {
+    warn(`${target.file} did not contain terminfo for xterm-256color; ${target.platform}-${target.arch} mosh packaging will fall back to host system terminfo (issue #890).`);
+  }
+}
+
 function normalizeWindowsBundle(extractDir, target) {
   const genericExe = path.join(extractDir, "mosh-client.exe");
   const legacyExe = path.join(extractDir, `mosh-client-${target.platform}-${target.arch}.exe`);
@@ -196,7 +242,26 @@ function normalizeWindowsBundle(extractDir, target) {
   if (!fs.existsSync(dllDir) || !fs.statSync(dllDir).isDirectory()) {
     throw new Error(`${target.file} did not contain ${path.basename(dllDir)}/`);
   }
+  assertBundledTerminfo(extractDir, target);
   chmodExecutable(genericExe);
+}
+
+function normalizePosixBundle(extractDir, target) {
+  const binary = path.join(extractDir, "mosh-client");
+  const legacyBinary = path.join(extractDir, `mosh-client-${target.platform}-${target.arch}`);
+  if (!fs.existsSync(binary) && fs.existsSync(legacyBinary)) {
+    fs.renameSync(legacyBinary, binary);
+  }
+  if (!fs.existsSync(binary) || !fs.lstatSync(binary).isFile()) {
+    throw new Error(`${target.file} did not contain mosh-client`);
+  }
+  assertBundledTerminfo(extractDir, target);
+  chmodExecutable(binary);
+}
+
+function normalizeBundle(extractDir, target) {
+  if (target.platform === "win32") return normalizeWindowsBundle(extractDir, target);
+  return normalizePosixBundle(extractDir, target);
 }
 
 function replaceDir(srcDir, destDir) {
@@ -226,9 +291,7 @@ function unpackTarGz(buf, target, { resDir }) {
       stdio: "inherit",
     });
     assertExtractedTreeSafe(extractDir);
-    if (target.platform === "win32") {
-      normalizeWindowsBundle(extractDir, target);
-    }
+    normalizeBundle(extractDir, target);
     replaceDir(extractDir, destDir);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -238,33 +301,37 @@ function unpackTarGz(buf, target, { resDir }) {
 
 async function fetchOne(target, sums, opts) {
   const { baseUrl, resDir, allowUnverified = false } = opts;
-  const url = `${baseUrl}/${target.file}`;
+  const asset = selectReleaseAsset(target, sums);
+  if (asset.file !== target.file) {
+    log(`using legacy asset ${asset.file} (release predates the bundled tar.gz layout for ${target.platform}-${target.arch})`);
+  }
+  const url = `${baseUrl}/${asset.file}`;
   let buf;
   try {
     buf = await follow(url);
   } catch (err) {
-    throw new Error(`download failed for ${target.file}: ${err.message}`);
+    throw new Error(`download failed for ${asset.file}: ${err.message}`);
   }
 
-  const expected = sums.get(target.file);
+  const expected = sums.get(asset.file);
   const actual = crypto.createHash("sha256").update(buf).digest("hex");
   if (expected && expected !== actual) {
-    throw new Error(`SHA256 mismatch for ${target.file}: expected ${expected}, got ${actual}`);
+    throw new Error(`SHA256 mismatch for ${asset.file}: expected ${expected}, got ${actual}`);
   }
   if (!expected) {
     if (!allowUnverified) {
-      throw new Error(`no SHA256 entry for ${target.file}`);
+      throw new Error(`no SHA256 entry for ${asset.file}`);
     }
-    warn(`no SHA256 entry for ${target.file} - accepting actual ${actual}`);
+    warn(`no SHA256 entry for ${asset.file} - accepting actual ${actual}`);
   }
 
-  if (target.extract === "tar.gz") {
+  if (asset.extract === "tar.gz") {
     const destDir = unpackTarGz(buf, target, { resDir });
-    log(`unpacked ${target.file} into ${path.relative(ROOT, destDir)}/ (sha256=${actual})`);
+    log(`unpacked ${asset.file} into ${path.relative(ROOT, destDir)}/ (sha256=${actual})`);
     return true;
   }
 
-  const dest = path.join(resDir, target.local);
+  const dest = path.join(resDir, asset.local);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, buf);
   if (target.platform !== "win32") fs.chmodSync(dest, 0o755);
@@ -331,6 +398,7 @@ module.exports = {
   resolveHostTarget,
   resolveTarArchiveInvocation,
   parseSums,
+  selectReleaseAsset,
   validateTarEntries,
   assertExtractedTreeSafe,
   unpackTarGz,

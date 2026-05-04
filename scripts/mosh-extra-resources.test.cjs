@@ -29,7 +29,7 @@ function writeFile(filePath) {
   fs.writeFileSync(filePath, "x");
 }
 
-test("moshExtraResources returns concrete Linux arch paths", (t) => {
+test("moshExtraResources returns concrete Linux arch paths (legacy bundle without terminfo)", (t) => {
   const root = makeTmp(t);
   withCwdAndArch(t, root, "x64");
   writeFile(path.join(root, "resources", "mosh", "linux-x64", "mosh-client"));
@@ -40,7 +40,55 @@ test("moshExtraResources returns concrete Linux arch paths", (t) => {
   ]);
 });
 
+test("moshExtraResources packages bundled terminfo on Linux when present", (t) => {
+  const root = makeTmp(t);
+  withCwdAndArch(t, root, "arm64");
+  writeFile(path.join(root, "resources", "mosh", "linux-arm64", "mosh-client"));
+  writeFile(path.join(root, "resources", "mosh", "linux-arm64", "terminfo", "x", "xterm-256color"));
+
+  const got = moshExtraResources("linux");
+  assert.deepEqual(got, [
+    { from: "resources/mosh/linux-arm64/", to: "mosh/", filter: ["mosh-client"] },
+    { from: "resources/mosh/linux-arm64/terminfo/", to: "mosh/terminfo/", filter: ["**/*"] },
+  ]);
+});
+
+test("moshExtraResources packages bundled terminfo on Darwin when present", (t) => {
+  const root = makeTmp(t);
+  withCwdAndArch(t, root, "x64");
+  writeFile(path.join(root, "resources", "mosh", "darwin-universal", "mosh-client"));
+  writeFile(path.join(root, "resources", "mosh", "darwin-universal", "terminfo", "x", "xterm-256color"));
+
+  const got = moshExtraResources("darwin");
+  assert.deepEqual(got, [
+    { from: "resources/mosh/darwin-universal/", to: "mosh/", filter: ["mosh-client"] },
+    { from: "resources/mosh/darwin-universal/terminfo/", to: "mosh/terminfo/", filter: ["**/*"] },
+  ]);
+});
+
 test("moshExtraResources returns concrete Windows arch paths only when that arch exists", (t) => {
+  const root = makeTmp(t);
+  withCwdAndArch(t, root, "x64");
+  writeFile(path.join(root, "resources", "mosh", "win32-x64", "mosh-client.exe"));
+  writeFile(path.join(root, "resources", "mosh", "win32-x64", "mosh-client-win32-x64-dlls", "cygwin1.dll"));
+  writeFile(path.join(root, "resources", "mosh", "win32-x64", "terminfo", "x", "xterm-256color"));
+
+  const got = moshExtraResources("win32");
+  assert.deepEqual(got, [
+    { from: "resources/mosh/win32-x64/", to: "mosh/", filter: ["mosh-client.exe"] },
+    {
+      from: "resources/mosh/win32-x64/mosh-client-win32-x64-dlls/",
+      to: "mosh/mosh-client-win32-x64-dlls/",
+      filter: ["**/*"],
+    },
+    { from: "resources/mosh/win32-x64/terminfo/", to: "mosh/terminfo/", filter: ["**/*"] },
+  ]);
+
+  process.env.npm_config_arch = "arm64";
+  assert.deepEqual(moshExtraResources("win32"), []);
+});
+
+test("moshExtraResources keeps legacy Windows bundles packageable", (t) => {
   const root = makeTmp(t);
   withCwdAndArch(t, root, "x64");
   writeFile(path.join(root, "resources", "mosh", "win32-x64", "mosh-client.exe"));
@@ -49,9 +97,10 @@ test("moshExtraResources returns concrete Windows arch paths only when that arch
   const got = moshExtraResources("win32");
   assert.deepEqual(got, [
     { from: "resources/mosh/win32-x64/", to: "mosh/", filter: ["mosh-client.exe"] },
-    { from: "resources/mosh/win32-x64/mosh-client-win32-x64-dlls/", to: "mosh/", filter: ["**/*"] },
+    {
+      from: "resources/mosh/win32-x64/mosh-client-win32-x64-dlls/",
+      to: "mosh/mosh-client-win32-x64-dlls/",
+      filter: ["**/*"],
+    },
   ]);
-
-  process.env.npm_config_arch = "arm64";
-  assert.deepEqual(moshExtraResources("win32"), []);
 });

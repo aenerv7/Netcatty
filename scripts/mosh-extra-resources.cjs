@@ -32,30 +32,51 @@ function moshExtraResources(platform) {
   if (platform === "darwin") {
     const file = path.join(moshRoot, "darwin-universal", "mosh-client");
     if (!hasFile(file)) return [];
-    return [
+    const resources = [
       { from: "resources/mosh/darwin-universal/", to: "mosh/", filter: ["mosh-client"] },
     ];
+    const terminfoDir = path.join(moshRoot, "darwin-universal", "terminfo");
+    if (hasDir(terminfoDir)) {
+      resources.push({ from: "resources/mosh/darwin-universal/terminfo/", to: "mosh/terminfo/", filter: ["**/*"] });
+    }
+    return resources;
   }
 
   if (platform === "linux") {
     const arch = requestedArch();
     const file = path.join(moshRoot, `linux-${arch}`, "mosh-client");
     if (!hasFile(file)) return [];
-    return [{ from: `resources/mosh/linux-${arch}/`, to: "mosh/", filter: ["mosh-client"] }];
+    const resources = [
+      { from: `resources/mosh/linux-${arch}/`, to: "mosh/", filter: ["mosh-client"] },
+    ];
+    const terminfoDir = path.join(moshRoot, `linux-${arch}`, "terminfo");
+    if (hasDir(terminfoDir)) {
+      resources.push({ from: `resources/mosh/linux-${arch}/terminfo/`, to: "mosh/terminfo/", filter: ["**/*"] });
+    }
+    return resources;
   }
 
   if (platform === "win32") {
     // Windows ships mosh-client.exe + Cygwin DLL bundle (cygwin1.dll,
-    // cygcrypto-*.dll, etc.) — copy the entire arch directory so the
-    // exe finds its DLLs at runtime via Windows' default search order.
+    // cygcrypto-*.dll, etc.) plus the ncurses terminfo entry used by
+    // TERM=xterm-256color.
     const arch = requestedArch();
     const exe = path.join(moshRoot, `win32-${arch}`, "mosh-client.exe");
     const dllDir = path.join(moshRoot, `win32-${arch}`, `mosh-client-win32-${arch}-dlls`);
     if (!hasFile(exe) || !hasDir(dllDir)) return [];
-    return [
+    const resources = [
       { from: `resources/mosh/win32-${arch}/`, to: "mosh/", filter: ["mosh-client.exe"] },
-      { from: `resources/mosh/win32-${arch}/mosh-client-win32-${arch}-dlls/`, to: "mosh/", filter: ["**/*"] },
+      {
+        from: `resources/mosh/win32-${arch}/mosh-client-win32-${arch}-dlls/`,
+        to: `mosh/mosh-client-win32-${arch}-dlls/`,
+        filter: ["**/*"],
+      },
     ];
+    const terminfoDir = path.join(moshRoot, `win32-${arch}`, "terminfo");
+    if (hasDir(terminfoDir)) {
+      resources.push({ from: `resources/mosh/win32-${arch}/terminfo/`, to: "mosh/terminfo/", filter: ["**/*"] });
+    }
+    return resources;
   }
 
   return [];
