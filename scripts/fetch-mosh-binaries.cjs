@@ -104,10 +104,11 @@ function selectReleaseAsset(target, sums, opts = {}) {
   const primary = { file: target.file, extract: target.extract, local: target.local, localDir: target.localDir };
   if (!target.legacy) return primary;
   if (target.preferLegacy && !opts.forceWindowsCygwin) {
-    if (sums.has(target.legacy.file)) {
-      return { file: target.legacy.file, local: target.legacy.local };
+    const legacy = applyReleaseAssetOverrides(target.legacy, opts);
+    if (sums.get(target.legacy.file) === legacy.sha256) {
+      return { file: target.legacy.file, local: target.legacy.local, sha256: legacy.sha256 };
     }
-    return applyReleaseAssetOverrides(target.legacy, opts);
+    return legacy;
   }
   // SHA256SUMS unavailable (allowUnverified mirror) — keep the primary
   // and let download / extraction errors surface naturally.

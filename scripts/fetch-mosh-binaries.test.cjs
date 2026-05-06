@@ -360,12 +360,33 @@ test("selectReleaseAsset uses the released Windows standalone asset when publish
     },
     preferLegacy: true,
   };
-  const asset = selectReleaseAsset(target, new Map([["mosh-client-win32-x64.exe", "def"]]));
+  const asset = selectReleaseAsset(target, new Map([["mosh-client-win32-x64.exe", "abc"]]));
 
   assert.equal(asset.file, "mosh-client-win32-x64.exe");
   assert.equal(asset.local, "win32-x64/mosh-client.exe");
   assert.equal(asset.url, undefined);
-  assert.equal(asset.sha256, undefined);
+  assert.equal(asset.sha256, "abc");
+});
+
+test("selectReleaseAsset ignores a released Windows asset when its checksum is not the pinned standalone", () => {
+  const target = {
+    platform: "win32", arch: "x64",
+    file: "mosh-client-win32-x64.tar.gz", localDir: "win32-x64", extract: "tar.gz",
+    legacy: {
+      id: "windows-fluentterminal-standalone",
+      file: "mosh-client-win32-x64.exe",
+      local: "win32-x64/mosh-client.exe",
+      url: "https://example.test/mosh-client.exe",
+      sha256: "abc",
+    },
+    preferLegacy: true,
+  };
+  const asset = selectReleaseAsset(target, new Map([["mosh-client-win32-x64.exe", "def"]]));
+
+  assert.equal(asset.file, "mosh-client-win32-x64.exe");
+  assert.equal(asset.local, "win32-x64/mosh-client.exe");
+  assert.equal(asset.url, "https://example.test/mosh-client.exe");
+  assert.equal(asset.sha256, "abc");
 });
 
 test("fetch-mosh-binaries downloads the pinned Windows standalone client", async (t) => {
