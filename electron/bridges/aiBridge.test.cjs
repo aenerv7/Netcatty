@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const Module = require("node:module");
 const os = require("node:os");
 const path = require("node:path");
+const { prepareCommandForSpawn } = require("./ai/shellUtils.cjs");
 
 function createIpcMainStub() {
   const handlers = new Map();
@@ -116,6 +117,10 @@ function loadBridgeWithMocks(options = {}) {
           ? options.normalizeCliPathForPlatform(...args)
           : args[0],
       shouldUseShellForCommand: () => false,
+      prepareCommandForSpawn: (...args) =>
+        typeof options.prepareCommandForSpawn === "function"
+          ? options.prepareCommandForSpawn(...args)
+          : prepareCommandForSpawn(...args),
       isPlausibleCliVersionOutput: (value) =>
         typeof options.isPlausibleCliVersionOutput === "function"
           ? options.isPlausibleCliVersionOutput(value)
@@ -525,6 +530,128 @@ test("resolve-cli accepts stored bundled Codex ACP path", async (t) => {
     assert.deepEqual(result, {
       path: codexAcpPath,
       version: "Bundled ACP",
+      available: true,
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("resolve-cli probes Windows cmd paths with spaces", { skip: process.platform !== "win32" }, async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "netcatty codex resolve "));
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const codexPath = path.join(tempDir, "codex.cmd");
+  fs.writeFileSync(
+    codexPath,
+    "@echo off\r\necho codex-cli 1.2.3\r\n",
+    "utf8",
+  );
+
+  const { bridge, restore } = loadBridgeWithMocks({
+    prepareCommandForSpawn,
+    resolveCliFromPath: (command) => (command === "codex" ? codexPath : null),
+  });
+  const ipcMain = createIpcMainStub();
+
+  bridge.init({
+    sessions: new Map(),
+    sftpClients: new Map(),
+    electronModule: { app: { getPath: () => process.cwd() } },
+  });
+  bridge.registerHandlers(ipcMain);
+
+  try {
+    const resolveHandler = ipcMain.handlers.get("netcatty:ai:resolve-cli");
+    assert.equal(typeof resolveHandler, "function");
+
+    const result = await resolveHandler({ sender: { id: 1 } }, { command: "codex", customPath: "" });
+
+    assert.deepEqual(result, {
+      path: codexPath,
+      version: "codex-cli 1.2.3",
+      available: true,
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("resolve-cli probes Windows Claude cmd paths with spaces", { skip: process.platform !== "win32" }, async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "netcatty claude resolve "));
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const claudePath = path.join(tempDir, "claude.cmd");
+  fs.writeFileSync(
+    claudePath,
+    "@echo off\r\necho 2.1.123 (Claude Code)\r\n",
+    "utf8",
+  );
+
+  const { bridge, restore } = loadBridgeWithMocks({
+    prepareCommandForSpawn,
+    resolveCliFromPath: (command) => (command === "claude" ? claudePath : null),
+  });
+  const ipcMain = createIpcMainStub();
+
+  bridge.init({
+    sessions: new Map(),
+    sftpClients: new Map(),
+    electronModule: { app: { getPath: () => process.cwd() } },
+  });
+  bridge.registerHandlers(ipcMain);
+
+  try {
+    const resolveHandler = ipcMain.handlers.get("netcatty:ai:resolve-cli");
+    assert.equal(typeof resolveHandler, "function");
+
+    const result = await resolveHandler({ sender: { id: 1 } }, { command: "claude", customPath: "" });
+
+    assert.deepEqual(result, {
+      path: claudePath,
+      version: "2.1.123 (Claude Code)",
+      available: true,
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("resolve-cli probes Windows Claude exe paths with spaces", { skip: process.platform !== "win32" }, async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "netcatty claude exe resolve "));
+  t.after(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const claudePath = path.join(tempDir, "claude.exe");
+  fs.copyFileSync(process.execPath, claudePath);
+
+  const { bridge, restore } = loadBridgeWithMocks({
+    prepareCommandForSpawn,
+    resolveCliFromPath: (command) => (command === "claude" ? claudePath : null),
+  });
+  const ipcMain = createIpcMainStub();
+
+  bridge.init({
+    sessions: new Map(),
+    sftpClients: new Map(),
+    electronModule: { app: { getPath: () => process.cwd() } },
+  });
+  bridge.registerHandlers(ipcMain);
+
+  try {
+    const resolveHandler = ipcMain.handlers.get("netcatty:ai:resolve-cli");
+    assert.equal(typeof resolveHandler, "function");
+
+    const result = await resolveHandler({ sender: { id: 1 } }, { command: "claude", customPath: "" });
+
+    assert.deepEqual(result, {
+      path: claudePath,
+      version: process.version,
       available: true,
     });
   } finally {

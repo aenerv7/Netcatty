@@ -2,10 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildWindowsShellCommandLine,
   extractTrailingIdlePrompt,
   getFreshIdlePrompt,
   isDefaultPowerShellPromptLine,
   isPlausibleCliVersionOutput,
+  prepareCommandForSpawn,
   trackSessionIdlePrompt,
 } = require("./shellUtils.cjs");
 
@@ -74,6 +76,30 @@ test("isPlausibleCliVersionOutput rejects stack traces and file URLs", () => {
   assert.equal(isPlausibleCliVersionOutput("    at runCli (cli.js:10:1)"), false);
   assert.equal(isPlausibleCliVersionOutput("permission denied"), false);
   assert.equal(isPlausibleCliVersionOutput("Usage: claude [options]"), false);
+});
+
+test("buildWindowsShellCommandLine quotes command paths and args with spaces", () => {
+  assert.equal(
+    buildWindowsShellCommandLine("C:\\Program Files\\Codex\\codex.cmd", ["login", "status"]),
+    "\"C:\\Program Files\\Codex\\codex.cmd\" \"login\" \"status\"",
+  );
+});
+
+test("prepareCommandForSpawn wraps Windows cmd shims as a single shell command", () => {
+  const result = prepareCommandForSpawn("C:\\Program Files\\Codex\\codex.cmd", ["--version"]);
+  if (process.platform === "win32") {
+    assert.deepEqual(result, {
+      command: "\"C:\\Program Files\\Codex\\codex.cmd\" \"--version\"",
+      args: [],
+      shell: true,
+    });
+  } else {
+    assert.deepEqual(result, {
+      command: "C:\\Program Files\\Codex\\codex.cmd",
+      args: ["--version"],
+      shell: false,
+    });
+  }
 });
 
 test("tracks PowerShell idle prompt after SSH output", () => {
