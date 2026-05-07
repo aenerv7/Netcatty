@@ -68,3 +68,17 @@ test("HostDetailsPanel keeps explicitly cleared telnet credentials empty", () =>
   assert.doesNotMatch(markup, /placeholder="Telnet Username"[^>]*value="root"/);
   assert.doesNotMatch(markup, /placeholder="Telnet Password"[^>]*value="ssh-password"/);
 });
+
+test("HostDetailsPanel gives the telnet port field the same roomy layout as SSH", () => {
+  const markup = renderHostDetails({
+    ...hostWithMissingProxyProfile,
+    protocol: "telnet",
+    telnetEnabled: true,
+    telnetPort: 2325,
+    proxyProfileId: undefined,
+  });
+
+  assert.match(markup, /Telnet on[\s\S]*ml-auto w-1\/2 min-w-0 flex items-center gap-2 justify-end/);
+  assert.match(markup, /class="[^"]*h-8 flex-1 min-w-0 text-center[^"]*"[^>]*value="2325"/);
+  assert.doesNotMatch(markup, /class="[^"]*w-16[^"]*"[^>]*value="2325"/);
+});

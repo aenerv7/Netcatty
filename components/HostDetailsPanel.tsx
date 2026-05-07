@@ -1925,15 +1925,17 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         {form.telnetEnabled || form.protocol === "telnet" ? (
           <Card className="p-3 space-y-3 bg-card border-border/80">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 bg-secondary/70 border border-border/70 rounded-md px-2 py-1">
+              <div className="flex-1 min-w-0 h-10 flex items-center gap-2 bg-secondary/70 border border-border/70 rounded-md px-3">
                 <span className="text-xs text-muted-foreground">{t("hostDetails.telnetOn")}</span>
-                <Input
-                  type="number"
-                  value={form.telnetPort || 23}
-                  onChange={(e) => update("telnetPort", Number(e.target.value))}
-                  className="h-8 w-16 text-center"
-                />
-                <span className="text-xs text-muted-foreground">{t("hostDetails.port")}</span>
+                <div className="ml-auto w-1/2 min-w-0 flex items-center gap-2 justify-end">
+                  <Input
+                    type="number"
+                    value={form.telnetPort || 23}
+                    onChange={(e) => update("telnetPort", Number(e.target.value))}
+                    className="h-8 flex-1 min-w-0 text-center"
+                  />
+                  <span className="text-xs text-muted-foreground">{t("hostDetails.port")}</span>
+                </div>
               </div>
               <Button
                 variant="ghost"
