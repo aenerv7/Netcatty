@@ -24,11 +24,7 @@ import { resolveSnippetsShortcutIntent } from './application/state/resolveSnippe
 import { TERMINAL_THEMES } from './infrastructure/config/terminalThemes';
 import { useCustomThemes } from './application/state/customThemeStore';
 import type { SyncPayload } from './domain/sync';
-import { applySyncPayload, buildLocalVaultPayload, hasMeaningfulSyncData } from './application/syncPayload';
-import {
-  applyProtectedSyncPayload,
-  ensureVersionChangeBackup,
-} from './application/localVaultBackups';
+import { applySyncPayload, buildLocalVaultPayload } from './application/syncPayload';
 import { getCredentialProtectionAvailability } from './infrastructure/services/credentialProtection';
 import { netcattyBridge } from './infrastructure/services/netcattyBridge';
 import { localStorageAdapter } from './infrastructure/persistence/localStorageAdapter';

@@ -1,33 +1,8 @@
 /**
  * Cloud Sync Domain Types & Interfaces
  *
- * Zero-Knowledge Encrypted Multi-Cloud Sync System
- * Supports: GitHub Gist, Google Drive, Microsoft OneDrive, WebDAV, S3 Compatible
+ * WebDAV Encrypted Sync (AES-256-GCM)
  */
-
-// ============================================================================
-// Shrink Finding (previously in syncGuards.ts, inlined for CloudSyncManager)
-// ============================================================================
-
-export type ShrinkFinding =
-  | { suspicious: false }
-  | {
-      suspicious: true;
-      reason: 'bulk-shrink' | 'large-shrink';
-      entityType:
-        | 'hosts'
-        | 'keys'
-        | 'identities'
-        | 'snippets'
-        | 'customGroups'
-        | 'snippetPackages'
-        | 'knownHosts'
-        | 'portForwardingRules'
-        | 'groupConfigs';
-      baseCount: number;
-      outgoingCount: number;
-      lost: number;
-    };
 
 // ============================================================================
 // Security State Machine
@@ -311,8 +286,6 @@ export interface SyncResult {
   mergedPayload?: import('./sync').SyncPayload;
   /** True when a shrink-detection guard blocked the upload */
   shrinkBlocked?: boolean;
-  /** The finding that triggered the shrink block or force-push */
-  finding?: ShrinkFinding;
 }
 
 /**
@@ -380,8 +353,6 @@ export type SyncEvent =
   | { type: 'SYNC_COMPLETED'; provider: CloudProvider; result: SyncResult }
   | { type: 'SYNC_ERROR'; provider: CloudProvider; error: string }
   | { type: 'CONFLICT_DETECTED'; conflict: ConflictInfo }
-  | { type: 'SYNC_BLOCKED_SHRINK'; provider: CloudProvider; finding: ShrinkFinding }
-  | { type: 'SYNC_FORCED'; provider: CloudProvider; finding: ShrinkFinding }
   | { type: 'CONFLICT_RESOLVED'; resolution: ConflictResolution }
   | { type: 'AUTH_REQUIRED'; provider: CloudProvider }
   | { type: 'AUTH_COMPLETED'; provider: CloudProvider; account: ProviderAccount }

@@ -547,7 +547,6 @@ declare global {
     createVaultBackup?(payload: {
       payload: import('./domain/sync').SyncPayload;
       reason: 'app_version_change' | 'before_restore';
-      syncDataVersion?: number;
       sourceAppVersion?: string;
       targetAppVersion?: string;
       maxCount?: number;
