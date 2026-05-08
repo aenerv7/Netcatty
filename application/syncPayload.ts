@@ -13,6 +13,7 @@ import type {
   Identity,
   KnownHost,
   PortForwardingRule,
+  ProxyProfile,
   SftpBookmark,
   Snippet,
   SSHKey,
@@ -62,6 +63,7 @@ export interface SyncableVaultData {
   hosts: Host[];
   keys: SSHKey[];
   identities: Identity[];
+  proxyProfiles?: ProxyProfile[];
   snippets: Snippet[];
   customGroups: string[];
   snippetPackages?: string[];
@@ -80,6 +82,7 @@ export function hasMeaningfulSyncData(payload: SyncPayload): boolean {
     (payload.keys?.length ?? 0) > 0 ||
     (payload.snippets?.length ?? 0) > 0 ||
     (payload.identities?.length ?? 0) > 0 ||
+    (payload.proxyProfiles?.length ?? 0) > 0 ||
     (payload.customGroups?.length ?? 0) > 0 ||
     (payload.snippetPackages?.length ?? 0) > 0 ||
     (payload.portForwardingRules?.length ?? 0) > 0 ||
@@ -103,6 +106,7 @@ export function hasMeaningfulCloudSyncData(payload: SyncPayload): boolean {
     (payload.keys?.length ?? 0) > 0 ||
     (payload.snippets?.length ?? 0) > 0 ||
     (payload.identities?.length ?? 0) > 0 ||
+    (payload.proxyProfiles?.length ?? 0) > 0 ||
     (payload.customGroups?.length ?? 0) > 0 ||
     (payload.snippetPackages?.length ?? 0) > 0 ||
     (payload.portForwardingRules?.length ?? 0) > 0 ||
@@ -118,7 +122,7 @@ export function hasMeaningfulCloudSyncData(payload: SyncPayload): boolean {
 /** Callbacks used by `applySyncPayload` to import data into local state. */
 interface SyncPayloadImporters {
   /** Import vault data. Cloud sync excludes local-only known hosts by default. */
-  importVaultData: (jsonString: string) => void;
+  importVaultData: (jsonString: string) => void | Promise<void>;
   /** Import port-forwarding rules (lives outside the vault hook). */
   importPortForwardingRules?: (rules: PortForwardingRule[]) => void;
   /** Called after synced settings have been written to localStorage. */
@@ -331,6 +335,7 @@ export function buildSyncPayload(
     hosts: vault.hosts,
     keys: vault.keys,
     identities: vault.identities,
+    proxyProfiles: vault.proxyProfiles,
     snippets: vault.snippets,
     customGroups: vault.customGroups,
     snippetPackages: vault.snippetPackages,
@@ -362,13 +367,14 @@ function applyPayload(
   payload: SyncPayload,
   importers: SyncPayloadImporters,
   options: { includeLocalOnlyData: boolean },
-): void {
+): Promise<void> {
   // Build the vault import object. Cloud sync intentionally ignores
   // local-only trust records even if legacy cloud snapshots still carry them.
   const vaultImport: Record<string, unknown> = {
     hosts: payload.hosts,
     keys: payload.keys,
     identities: payload.identities,
+    proxyProfiles: payload.proxyProfiles,
     snippets: payload.snippets,
     customGroups: payload.customGroups,
   };
@@ -382,35 +388,35 @@ function applyPayload(
     vaultImport.groupConfigs = payload.groupConfigs;
   }
 
-  importers.importVaultData(JSON.stringify(vaultImport));
+  return Promise.resolve(importers.importVaultData(JSON.stringify(vaultImport))).then(() => {
+    // Only import port-forwarding rules when the payload explicitly carries
+    // them.  Absent field = "payload was created before this feature existed",
+    // so local rules are preserved.  Explicitly present [] = "remote has no
+    // rules, clear local state".
+    if (payload.portForwardingRules !== undefined && importers.importPortForwardingRules) {
+      importers.importPortForwardingRules(payload.portForwardingRules);
+    }
 
-  // Only import port-forwarding rules when the payload explicitly carries
-  // them.  Absent field = "payload was created before this feature existed",
-  // so local rules are preserved.  Explicitly present [] = "remote has no
-  // rules, clear local state".
-  if (payload.portForwardingRules !== undefined && importers.importPortForwardingRules) {
-    importers.importPortForwardingRules(payload.portForwardingRules);
-  }
-
-  // Apply synced settings
-  if (payload.settings) {
-    applySyncableSettings(payload.settings);
-    // Rehydrate in-memory bookmark snapshot after localStorage was updated
-    if (payload.settings.sftpGlobalBookmarks != null) rehydrateGlobalBookmarks();
-    importers.onSettingsApplied?.();
-  }
+    // Apply synced settings
+    if (payload.settings) {
+      applySyncableSettings(payload.settings);
+      // Rehydrate in-memory bookmark snapshot after localStorage was updated
+      if (payload.settings.sftpGlobalBookmarks != null) rehydrateGlobalBookmarks();
+      importers.onSettingsApplied?.();
+    }
+  });
 }
 
 export function applySyncPayload(
   payload: SyncPayload,
   importers: SyncPayloadImporters,
-): void {
-  applyPayload(payload, importers, { includeLocalOnlyData: false });
+): Promise<void> {
+  return applyPayload(payload, importers, { includeLocalOnlyData: false });
 }
 
 export function applyLocalVaultPayload(
   payload: SyncPayload,
   importers: SyncPayloadImporters,
-): void {
-  applyPayload(payload, importers, { includeLocalOnlyData: true });
+): Promise<void> {
+  return applyPayload(payload, importers, { includeLocalOnlyData: true });
 }

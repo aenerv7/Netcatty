@@ -57,7 +57,7 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
 
     const isLocalTerminal = host?.protocol === 'local' || host?.id?.startsWith('local-');
     const isSerialTerminal = host?.protocol === 'serial' || host?.id?.startsWith('serial-');
-    const isMoshSession = host?.protocol === 'mosh' || host?.moshEnabled;
+    const isMoshSession = host?.moshEnabled;
     // Local PTY inherits the OS locale and mosh always uses its own UTF-8
     // framing, so the quick-switch menu only makes sense for sessions whose
     // backend decoder we actually control (SSH, telnet, serial). Hostname

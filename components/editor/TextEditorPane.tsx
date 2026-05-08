@@ -16,7 +16,7 @@ import type * as Monaco from 'monaco-editor';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Configure Monaco to use local files instead of CDN
-const viteEnv = import.meta.env ?? { BASE_URL: "/" };
+const viteEnv = import.meta.env ?? { BASE_URL: "/", DEV: false };
 const monacoBasePath = viteEnv.DEV
   ? './node_modules/monaco-editor/min/vs'
   : `${viteEnv.BASE_URL}monaco/vs`;

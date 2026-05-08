@@ -41,6 +41,7 @@ import { KeyBinding, HotkeyScheme } from "../domain/models";
 
 interface SftpSidePanelProps {
   hosts: Host[];
+  writableHosts?: Host[];
   keys: SSHKey[];
   identities: Identity[];
   updateHosts: (hosts: Host[]) => void;
@@ -74,6 +75,7 @@ interface SftpSidePanelProps {
 
 const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   hosts,
+  writableHosts,
   keys,
   identities,
   updateHosts,
@@ -98,6 +100,7 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   onRequestTerminalFocus,
 }) => {
   const { t } = useI18n();
+  const hostWriteSource = writableHosts ?? hosts;
 
   const fileWatchHandlers = useMemo(() => ({
     onFileWatchSynced: (payload: { remotePath: string }) => {
@@ -622,6 +625,7 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   return (
     <SftpContextProvider
       hosts={hosts}
+      writableHosts={hostWriteSource}
       updateHosts={updateHosts}
       draggedFiles={draggedFiles}
       dragCallbacks={dragCallbacks}
@@ -740,6 +744,7 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
 
 const sidePanelAreEqual = (prev: SftpSidePanelProps, next: SftpSidePanelProps): boolean =>
   prev.hosts === next.hosts &&
+  prev.writableHosts === next.writableHosts &&
   prev.keys === next.keys &&
   prev.identities === next.identities &&
   prev.updateHosts === next.updateHosts &&

@@ -63,9 +63,9 @@ export const useTerminalBackend = () => {
     return bridge.execCommand(options);
   }, []);
 
-  const writeToSession = useCallback((sessionId: string, data: string) => {
+  const writeToSession = useCallback((sessionId: string, data: string, options?: { automated?: boolean }) => {
     const bridge = netcattyBridge.get();
-    bridge?.writeToSession?.(sessionId, data);
+    bridge?.writeToSession?.(sessionId, data, options);
   }, []);
 
   const resizeSession = useCallback((sessionId: string, cols: number, rows: number) => {
@@ -94,6 +94,16 @@ export const useTerminalBackend = () => {
     const bridge = netcattyBridge.get();
     if (!bridge?.onSessionExit) throw new Error("onSessionExit unavailable");
     return bridge.onSessionExit(sessionId, cb);
+  }, []);
+
+  const onTelnetAutoLoginComplete = useCallback((sessionId: string, cb: (evt: { sessionId: string }) => void) => {
+    const bridge = netcattyBridge.get();
+    return bridge?.onTelnetAutoLoginComplete?.(sessionId, cb);
+  }, []);
+
+  const onTelnetAutoLoginCancelled = useCallback((sessionId: string, cb: (evt: { sessionId: string }) => void) => {
+    const bridge = netcattyBridge.get();
+    return bridge?.onTelnetAutoLoginCancelled?.(sessionId, cb);
   }, []);
 
   const onChainProgress = useCallback((cb: (sessionId: string, hop: number, total: number, label: string, status: string, error?: string) => void) => {
@@ -175,6 +185,8 @@ export const useTerminalBackend = () => {
     setSessionEncoding,
     onSessionData,
     onSessionExit,
+    onTelnetAutoLoginComplete,
+    onTelnetAutoLoginCancelled,
     onChainProgress,
     openExternal,
   };

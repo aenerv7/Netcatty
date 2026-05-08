@@ -12,6 +12,8 @@ const chainProgressListeners = new Map();
 const zmodemListeners = new Map();
 const sftpConnectionProgressListeners = new Set();
 const authFailedListeners = new Map();
+const telnetAutoLoginCompleteListeners = new Map();
+const telnetAutoLoginCancelledListeners = new Map();
 const languageChangeListeners = new Set();
 const fullscreenChangeListeners = new Set();
 const keyboardInteractiveListeners = new Set();
@@ -177,6 +179,8 @@ ipcRenderer.on("netcatty:exit", (_event, payload) => {
   }
   dataListeners.delete(payload.sessionId);
   exitListeners.delete(payload.sessionId);
+  telnetAutoLoginCompleteListeners.delete(payload.sessionId);
+  telnetAutoLoginCancelledListeners.delete(payload.sessionId);
   zmodemListeners.delete(payload.sessionId);
   const pendingTimer = _mcpFlushTimers.get(payload.sessionId);
   if (pendingTimer) {
@@ -244,6 +248,30 @@ ipcRenderer.on("netcatty:auth:failed", (_event, payload) => {
       }
     });
   }
+});
+
+ipcRenderer.on("netcatty:telnet:auto-login-complete", (_event, payload) => {
+  const set = telnetAutoLoginCompleteListeners.get(payload.sessionId);
+  if (!set) return;
+  set.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (err) {
+      console.error("Telnet auto-login callback failed", err);
+    }
+  });
+});
+
+ipcRenderer.on("netcatty:telnet:auto-login-cancelled", (_event, payload) => {
+  const set = telnetAutoLoginCancelledListeners.get(payload.sessionId);
+  if (!set) return;
+  set.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (err) {
+      console.error("Telnet auto-login cancellation callback failed", err);
+    }
+  });
 });
 
 // Keyboard-interactive authentication events (2FA/MFA)
@@ -559,8 +587,12 @@ const api = {
   validatePath: async (path, type) => {
     return ipcRenderer.invoke("netcatty:local:validatePath", { path, type });
   },
-  writeToSession: (sessionId, data) => {
-    ipcRenderer.send("netcatty:write", { sessionId, data });
+  writeToSession: (sessionId, data, options) => {
+    ipcRenderer.send("netcatty:write", {
+      sessionId,
+      data,
+      automated: Boolean(options?.automated),
+    });
   },
   execCommand: async (options) => {
     return ipcRenderer.invoke("netcatty:ssh:exec", options);
@@ -617,6 +649,20 @@ const api = {
     if (!exitListeners.has(sessionId)) exitListeners.set(sessionId, new Set());
     exitListeners.get(sessionId).add(cb);
     return () => exitListeners.get(sessionId)?.delete(cb);
+  },
+  onTelnetAutoLoginComplete: (sessionId, cb) => {
+    if (!telnetAutoLoginCompleteListeners.has(sessionId)) {
+      telnetAutoLoginCompleteListeners.set(sessionId, new Set());
+    }
+    telnetAutoLoginCompleteListeners.get(sessionId).add(cb);
+    return () => telnetAutoLoginCompleteListeners.get(sessionId)?.delete(cb);
+  },
+  onTelnetAutoLoginCancelled: (sessionId, cb) => {
+    if (!telnetAutoLoginCancelledListeners.has(sessionId)) {
+      telnetAutoLoginCancelledListeners.set(sessionId, new Set());
+    }
+    telnetAutoLoginCancelledListeners.get(sessionId).add(cb);
+    return () => telnetAutoLoginCancelledListeners.get(sessionId)?.delete(cb);
   },
   onAuthFailed: (sessionId, cb) => {
     if (!authFailedListeners.has(sessionId)) authFailedListeners.set(sessionId, new Set());

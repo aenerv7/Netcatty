@@ -168,6 +168,29 @@ function shouldUseShellForCommand(command) {
   return normalized.endsWith(".cmd") || normalized.endsWith(".bat");
 }
 
+function quoteWindowsShellArg(value) {
+  const arg = String(value ?? "");
+  if (!arg) return "\"\"";
+  return `"${arg.replace(/"/g, '\\"')}"`;
+}
+
+function buildWindowsShellCommandLine(command, args) {
+  return [command, ...(args || [])].map(quoteWindowsShellArg).join(" ");
+}
+
+function prepareCommandForSpawn(command, args) {
+  const spawnArgs = Array.isArray(args) ? args : [];
+  if (!shouldUseShellForCommand(command)) {
+    return { command, args: spawnArgs, shell: false };
+  }
+
+  return {
+    command: buildWindowsShellCommandLine(command, spawnArgs),
+    args: [],
+    shell: true,
+  };
+}
+
 function resolveCliFromPath(command, shellEnv) {
   // Validate command: only allow valid binary names (alphanumeric, hyphens, underscores, dots)
   if (!command || !/^[a-zA-Z0-9._-]+$/.test(command)) {
@@ -380,6 +403,9 @@ module.exports = {
   extractFirstNonLocalhostUrl,
   normalizeCliPathForPlatform,
   shouldUseShellForCommand,
+  quoteWindowsShellArg,
+  buildWindowsShellCommandLine,
+  prepareCommandForSpawn,
   resolveCliFromPath,
   resolveClaudeAcpBinaryPath,
   toUnpackedAsarPath,

@@ -24,8 +24,9 @@ import { logger } from "../lib/logger";
 import { useRenderTracker } from "../lib/useRenderTracker";
 import { cn } from "../lib/utils";
 import { useInstantThemeSwitch } from "../lib/useInstantThemeSwitch";
-import { Host, Identity, SSHKey } from "../types";
+import { Host, Identity, ProxyProfile, SSHKey } from "../types";
 import { resolveGroupDefaults, applyGroupDefaults } from "../domain/groupConfig";
+import { materializeHostProxyProfile } from "../domain/proxyProfiles";
 import { useSftpFileAssociations } from "../application/state/useSftpFileAssociations";
 import { registerEditorSftpWriterScoped } from "../application/state/editorSftpBridge";
 import { toast } from "./ui/toast";
@@ -54,6 +55,7 @@ interface SftpViewProps {
   keys: SSHKey[];
   identities: Identity[];
   groupConfigs?: import('../domain/models').GroupConfig[];
+  proxyProfiles?: ProxyProfile[];
   updateHosts: (hosts: Host[]) => void;
   sftpDefaultViewMode: "list" | "tree";
   sftpDoubleClickBehavior: "open" | "transfer";
@@ -73,6 +75,7 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
   keys,
   identities,
   groupConfigs = [],
+  proxyProfiles = [],
   updateHosts,
   sftpDefaultViewMode,
   sftpDoubleClickBehavior,
@@ -115,14 +118,15 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
   }), [fileWatchHandlers, sftpUseCompressedUpload, sftpShowHiddenFiles, scpMode]);
 
   // Pre-resolve group defaults so SFTP connections inherit group config
-  const effectiveHosts = useMemo(() =>
-    hosts.map(h => {
-      if (!h.group) return h;
-      const defaults = resolveGroupDefaults(h.group, groupConfigs);
-      return applyGroupDefaults(h, defaults);
-    }),
-    [hosts, groupConfigs],
-  );
+  const effectiveHosts = useMemo(() => {
+    const validProxyProfileIds = new Set(proxyProfiles.map((profile) => profile.id));
+    return hosts.map(h => {
+      const withGroupDefaults = h.group
+        ? applyGroupDefaults(h, resolveGroupDefaults(h.group, groupConfigs, { validProxyProfileIds }), { validProxyProfileIds })
+        : applyGroupDefaults(h, {}, { validProxyProfileIds });
+      return materializeHostProxyProfile(withGroupDefaults, proxyProfiles);
+    });
+  }, [hosts, groupConfigs, proxyProfiles]);
 
   const sftp = useSftpState(effectiveHosts, keys, identities, sftpOptions);
 
@@ -337,7 +341,8 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
 
   const renderTree = (
     <SftpContextProvider
-      hosts={hosts}
+      hosts={effectiveHosts}
+      writableHosts={hosts}
       updateHosts={updateHosts}
       draggedFiles={draggedFiles}
       dragCallbacks={dragCallbacks}
@@ -476,7 +481,7 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
         </div>
 
         <SftpOverlays
-          hosts={hosts}
+          hosts={effectiveHosts}
           sftp={sftp}
           visibleTransfers={visibleTransfers}
           showHostPickerLeft={showHostPickerLeft}
@@ -531,6 +536,7 @@ const sftpViewAreEqual = (prev: SftpViewProps, next: SftpViewProps): boolean =>
   prev.keys === next.keys &&
   prev.identities === next.identities &&
   prev.groupConfigs === next.groupConfigs &&
+  prev.proxyProfiles === next.proxyProfiles &&
   prev.sftpDefaultViewMode === next.sftpDefaultViewMode &&
   prev.sftpDoubleClickBehavior === next.sftpDoubleClickBehavior &&
   prev.sftpAutoSync === next.sftpAutoSync &&

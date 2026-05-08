@@ -380,6 +380,10 @@ export const startPortForward = async (
     // Generate a unique tunnel ID
     const tunnelId = `pf-${rule.id}-${Date.now()}`;
 
+    if (host.proxyProfileId && !host.proxyConfig) {
+      throw new Error(`Saved proxy for host "${host.label || host.hostname}" is missing. Open host settings and select a valid proxy.`);
+    }
+
     const resolved = resolveHostAuth({ host, keys, identities });
     const key = resolved.key;
     const proxy = host.proxyConfig
@@ -403,6 +407,9 @@ export const startPortForward = async (
       jumpHosts = resolvedJumpHosts
         .filter((jumpHost): jumpHost is Host => Boolean(jumpHost))
         .map((jumpHost, index) => {
+          if (jumpHost.proxyProfileId && !jumpHost.proxyConfig) {
+            throw new Error(`Saved proxy for jump host "${jumpHost.label || jumpHost.hostname}" is missing. Open host settings and select a valid proxy.`);
+          }
           const hasConfiguredJumpProxyEndpoint =
             index === 0 &&
             !!(jumpHost.proxyConfig?.host && jumpHost.proxyConfig?.port);

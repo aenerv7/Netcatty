@@ -8,7 +8,7 @@ import {
 import React, { useMemo, useState } from "react";
 import { cn } from "../lib/utils";
 import { useI18n } from "../application/i18n/I18nProvider";
-import { Host, SSHKey } from "../types";
+import { Host, ProxyProfile, SSHKey } from "../types";
 import { ManagedSource } from "../domain/models";
 import { DistroAvatar } from "./DistroAvatar";
 import HostDetailsPanel from "./HostDetailsPanel";
@@ -37,6 +37,7 @@ interface SelectHostPanelProps {
   // Props for inline host creation
   availableKeys?: SSHKey[];
   identities?: import('../domain/models').Identity[];
+  proxyProfiles?: ProxyProfile[];
   managedSources?: ManagedSource[];
   onSaveHost?: (host: Host) => void;
   onCreateGroup?: (groupPath: string) => void;
@@ -57,6 +58,7 @@ const SelectHostPanel: React.FC<SelectHostPanelProps> = ({
   onNewHost,
   availableKeys = [],
   identities = [],
+  proxyProfiles = [],
   managedSources = [],
   onSaveHost,
   onCreateGroup,
@@ -411,6 +413,7 @@ const SelectHostPanel: React.FC<SelectHostPanelProps> = ({
           initialData={null}
           availableKeys={availableKeys}
           identities={identities}
+          proxyProfiles={proxyProfiles}
           groups={customGroups}
           managedSources={managedSources}
           allHosts={hosts}

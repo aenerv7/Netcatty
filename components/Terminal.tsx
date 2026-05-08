@@ -519,8 +519,14 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     pendingAuthRef,
     termRef,
     onUpdateHost,
-    onStartSsh: (term) => {
-      sessionStartersRef.current?.startSSH(term);
+    onStartSession: (term) => {
+      const starters = sessionStartersRef.current;
+      if (!starters) return;
+      if (host.moshEnabled) {
+        starters.startMosh(term);
+        return;
+      }
+      starters.startSSH(term);
     },
     setStatus: (next) => setStatus(next),
     setProgressLogs,
@@ -680,7 +686,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       const isLocal = host.protocol === 'local' || host.id?.startsWith('local-');
       const isSerial = host.protocol === 'serial' || host.id?.startsWith('serial-');
       const isTelnet = host.protocol === 'telnet';
-      const isMosh = host.protocol === 'mosh' || host.moshEnabled;
+      const isMosh = host.moshEnabled;
       const isSSH = !isLocal && !isSerial && !isTelnet && !isMosh;
       if (isSSH) {
         setSessionEncoding(id, terminalEncodingRef.current);

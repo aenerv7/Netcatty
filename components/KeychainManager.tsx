@@ -22,7 +22,7 @@ import { resolveHostAuth } from "../domain/sshAuth";
 import { STORAGE_KEY_VAULT_KEYS_VIEW_MODE } from "../infrastructure/config/storageKeys";
 import { logger } from "../lib/logger";
 import { cn } from "../lib/utils";
-import { Host, Identity, KeyType, SSHKey } from "../types";
+import { Host, Identity, KeyType, ProxyProfile, SSHKey } from "../types";
 import { ManagedSource } from "../domain/models";
 import { useKeychainBackend } from "../application/state/useKeychainBackend";
 import SelectHostPanel from "./SelectHostPanel";
@@ -68,6 +68,7 @@ interface KeychainManagerProps {
   keys: SSHKey[];
   identities?: Identity[];
   hosts?: Host[];
+  proxyProfiles?: ProxyProfile[];
   customGroups?: string[];
   managedSources?: ManagedSource[];
   onSave: (key: SSHKey) => void;
@@ -84,6 +85,7 @@ const KeychainManager: React.FC<KeychainManagerProps> = ({
   keys,
   identities = [],
   hosts = [],
+  proxyProfiles = [],
   customGroups = [],
   managedSources = [],
   onSave,
@@ -1234,6 +1236,7 @@ echo $3 >> "$FILE"`);
               onBack={() => setShowHostSelector(false)}
               onContinue={() => setShowHostSelector(false)}
               availableKeys={keys}
+              proxyProfiles={proxyProfiles}
               managedSources={managedSources}
               onSaveHost={onSaveHost}
               onCreateGroup={onCreateGroup}

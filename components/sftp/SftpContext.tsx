@@ -123,6 +123,8 @@ export const useIsPaneActive = (side: "left" | "right", paneId: string): boolean
 export interface SftpContextValue {
     // Hosts list for connection picker
     hosts: Host[];
+    // Raw hosts list for bookmark persistence and other host writes.
+    writableHosts: Host[];
     // Host updater for bookmark persistence
     updateHosts: (hosts: Host[]) => void;
 
@@ -174,6 +176,12 @@ export const useSftpHosts = () => {
     return context.hosts;
 };
 
+// Hook to get raw hosts for writeback
+export const useSftpWritableHosts = () => {
+    const context = useSftpContext();
+    return context.writableHosts;
+};
+
 // Hook to get host updater
 export const useSftpUpdateHosts = () => {
     const context = useSftpContext();
@@ -182,6 +190,7 @@ export const useSftpUpdateHosts = () => {
 
 interface SftpContextProviderProps {
     hosts: Host[];
+    writableHosts?: Host[];
     updateHosts: (hosts: Host[]) => void;
     draggedFiles: (SftpTransferSource & { side: "left" | "right" })[] | null;
     dragCallbacks: SftpDragCallbacks;
@@ -192,6 +201,7 @@ interface SftpContextProviderProps {
 
 export const SftpContextProvider: React.FC<SftpContextProviderProps> = ({
     hosts,
+    writableHosts,
     updateHosts,
     draggedFiles,
     dragCallbacks,
@@ -203,11 +213,12 @@ export const SftpContextProvider: React.FC<SftpContextProviderProps> = ({
     const value = useMemo<SftpContextValue>(
         () => ({
             hosts,
+            writableHosts: writableHosts ?? hosts,
             updateHosts,
             leftCallbacks,
             rightCallbacks,
         }),
-        [hosts, updateHosts, leftCallbacks, rightCallbacks],
+        [hosts, writableHosts, updateHosts, leftCallbacks, rightCallbacks],
     );
 
     // Memoize drag context separately so only drag consumers re-render on drag state changes

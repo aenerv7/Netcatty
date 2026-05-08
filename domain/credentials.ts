@@ -88,6 +88,12 @@ export const findSyncPayloadEncryptedCredentialPaths = (
     }
   });
 
+  payload.proxyProfiles?.forEach((profile, index) => {
+    if (isEncryptedCredentialPlaceholder(profile.config.password)) {
+      issues.push(`proxyProfiles[${index}].config.password`);
+    }
+  });
+
   payload.groupConfigs?.forEach((config, index) => {
     if (isEncryptedCredentialPlaceholder(config.password)) {
       issues.push(`groupConfigs[${index}].password`);

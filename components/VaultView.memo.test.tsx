@@ -8,6 +8,7 @@ test("VaultView re-renders when an external section navigation request changes",
     hosts: [],
     keys: [],
     identities: [],
+    proxyProfiles: [],
     snippets: [],
     snippetPackages: [],
     customGroups: [],
@@ -26,6 +27,45 @@ test("VaultView re-renders when an external section navigation request changes",
     vaultViewAreEqual(
       baseProps as never,
       { ...baseProps, navigateToSection: "snippets" } as never,
+    ),
+    false,
+  );
+});
+
+test("VaultView re-renders when proxy profiles change", () => {
+  const baseProps = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    proxyProfiles: [],
+    snippets: [],
+    snippetPackages: [],
+    customGroups: [],
+    knownHosts: [],
+    shellHistory: [],
+    connectionLogs: [],
+    sessions: [],
+    managedSources: [],
+    groupConfigs: {},
+    terminalThemeId: "default",
+    terminalFontSize: 14,
+    navigateToSection: null,
+  };
+
+  assert.equal(
+    vaultViewAreEqual(
+      baseProps as never,
+      {
+        ...baseProps,
+        proxyProfiles: [
+          {
+            id: "proxy-1",
+            label: "Proxy",
+            config: { type: "http", host: "proxy.example.com", port: 3128 },
+            createdAt: 1,
+          },
+        ],
+      } as never,
     ),
     false,
   );

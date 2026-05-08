@@ -9,7 +9,7 @@
  * function degrades to a no-op — values pass through unmodified.
  */
 
-import type { GroupConfig, Host, Identity, SSHKey } from "../../domain/models";
+import type { GroupConfig, Host, Identity, ProxyProfile, SSHKey } from "../../domain/models";
 import type { ProviderConnection, S3Config, WebDAVConfig } from "../../domain/sync";
 import { netcattyBridge } from "../services/netcattyBridge";
 
@@ -121,6 +121,30 @@ export function encryptGroupConfigs(configs: GroupConfig[]): Promise<GroupConfig
 
 export function decryptGroupConfigs(configs: GroupConfig[]): Promise<GroupConfig[]> {
   return Promise.all(configs.map(decryptGroupConfigSecrets));
+}
+
+// ---------------------------------------------------------------------------
+// ProxyProfile
+// ---------------------------------------------------------------------------
+
+export async function encryptProxyProfileSecrets(profile: ProxyProfile): Promise<ProxyProfile> {
+  const out = { ...profile, config: { ...profile.config } };
+  out.config.password = await encryptField(out.config.password);
+  return out;
+}
+
+export async function decryptProxyProfileSecrets(profile: ProxyProfile): Promise<ProxyProfile> {
+  const out = { ...profile, config: { ...profile.config } };
+  out.config.password = await decryptField(out.config.password);
+  return out;
+}
+
+export function encryptProxyProfiles(profiles: ProxyProfile[]): Promise<ProxyProfile[]> {
+  return Promise.all(profiles.map(encryptProxyProfileSecrets));
+}
+
+export function decryptProxyProfiles(profiles: ProxyProfile[]): Promise<ProxyProfile[]> {
+  return Promise.all(profiles.map(decryptProxyProfileSecrets));
 }
 
 // ---------------------------------------------------------------------------

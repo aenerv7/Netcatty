@@ -35,8 +35,10 @@ import { resolveGroupDefaults, resolveGroupTerminalThemeId } from "../domain/gro
 import {
   getEffectiveHostDistro,
   LINUX_DISTRO_OPTIONS,
+  normalizePrimaryTelnetState,
   NETWORK_DEVICE_OPTIONS,
 } from "../domain/host";
+import { isCompleteProxyConfig, normalizeManualProxyConfig } from "../domain/proxyProfiles";
 import { customThemeStore } from "../application/state/customThemeStore";
 import {
   clearHostFontSizeOverride,
@@ -48,7 +50,7 @@ import {
 } from "../domain/terminalAppearance";
 import { MIN_FONT_SIZE, MAX_FONT_SIZE } from "../infrastructure/config/fonts";
 import { cn } from "../lib/utils";
-import { EnvVar, GroupConfig, Host, Identity, ManagedSource, ProxyConfig, SSHKey } from "../types";
+import { EnvVar, GroupConfig, Host, Identity, ManagedSource, ProxyConfig, ProxyProfile, SSHKey } from "../types";
 import { DISTRO_COLORS, DISTRO_LOGOS } from "./DistroAvatar";
 import { DistroAvatar } from "./DistroAvatar";
 import ThemeSelectPanel from "./ThemeSelectPanel";
@@ -69,6 +71,7 @@ import { Textarea } from "./ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { ScrollArea } from "./ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { toast } from "./ui/toast";
 
 // Import host-details sub-panels
 import {
@@ -88,6 +91,44 @@ type SubPanel =
   | "theme-select"
   | "telnet-theme-select";
 
+export const parseOptionalPortInput = (value: string): number | undefined =>
+  value ? Number(value) : undefined;
+
+const resolveDetailsTelnetPort = (
+  host: Host,
+  groupDefaults?: Partial<GroupConfig>,
+): number => {
+  if (host.telnetPort !== undefined && host.telnetPort !== null) return host.telnetPort;
+  if (groupDefaults?.telnetPort !== undefined && groupDefaults.telnetPort !== null) {
+    return groupDefaults.telnetPort;
+  }
+  if (host.protocol === "telnet") {
+    if (host.port !== undefined && host.port !== null) return host.port;
+    if (groupDefaults?.port !== undefined && groupDefaults.port !== null) return groupDefaults.port;
+  }
+  return 23;
+};
+
+const resolveDetailsTelnetUsername = (
+  host: Host,
+  groupDefaults?: Partial<GroupConfig>,
+): string =>
+  host.telnetUsername !== undefined
+    ? host.telnetUsername
+    : groupDefaults?.telnetUsername !== undefined
+      ? groupDefaults.telnetUsername
+      : host.username ?? groupDefaults?.username ?? "";
+
+const resolveDetailsTelnetPassword = (
+  host: Host,
+  groupDefaults?: Partial<GroupConfig>,
+): string =>
+  host.telnetPassword !== undefined
+    ? host.telnetPassword
+    : groupDefaults?.telnetPassword !== undefined
+      ? groupDefaults.telnetPassword
+      : host.password ?? groupDefaults?.password ?? "";
+
 const LINUX_DISTRO_OPTION_IDS = [
   ...LINUX_DISTRO_OPTIONS,
   ...NETWORK_DEVICE_OPTIONS,
@@ -97,6 +138,7 @@ interface HostDetailsPanelProps {
   initialData?: Host | null;
   availableKeys: SSHKey[];
   identities: Identity[];
+  proxyProfiles?: ProxyProfile[];
   groups: string[];
   managedSources?: ManagedSource[];
   allTags?: string[]; // All available tags for autocomplete
@@ -117,6 +159,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   initialData,
   availableKeys,
   identities,
+  proxyProfiles = [],
   groups,
   managedSources = [],
   allTags = [],
@@ -136,7 +179,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   const { checkSshAgent } = useApplicationBackend();
   const [form, setForm] = useState<Host>(
     () =>
-      initialData ||
+      (initialData ? normalizePrimaryTelnetState(initialData) : null) ||
       ({
         id: crypto.randomUUID(),
         label: "",
@@ -196,14 +239,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
 
   useEffect(() => {
     if (initialData) {
-      // Ensure telnetEnabled is set when protocol is telnet
-      const updatedData = { ...initialData };
-      if (initialData.protocol === "telnet" && !initialData.telnetEnabled) {
-        updatedData.telnetEnabled = true;
-        updatedData.telnetPort =
-          initialData.telnetPort || initialData.port || 23;
-      }
-      setForm(updatedData);
+      setForm(normalizePrimaryTelnetState(initialData));
       setGroupInputValue(initialData.group || "");
       // Reset password visibility when host changes for privacy
       setShowPassword(false);
@@ -240,6 +276,9 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   );
   const effectiveTelnetThemeId =
     form.protocols?.find((p) => p.protocol === "telnet")?.theme || effectiveThemeId;
+  const effectiveTelnetPort = resolveDetailsTelnetPort(form, effectiveGroupDefaults);
+  const effectiveTelnetUsername = resolveDetailsTelnetUsername(form, effectiveGroupDefaults);
+  const effectiveTelnetPassword = resolveDetailsTelnetPassword(form, effectiveGroupDefaults);
   const distroOptions = useMemo(
     () =>
       LINUX_DISTRO_OPTION_IDS.map((value) => ({
@@ -260,6 +299,24 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   );
 
   const effectiveFormDistro = getEffectiveHostDistro(form);
+  const selectedProxyProfile = useMemo(
+    () => proxyProfiles.find((profile) => profile.id === form.proxyProfileId),
+    [form.proxyProfileId, proxyProfiles],
+  );
+  const hasMissingProxyProfile = Boolean(form.proxyProfileId && !selectedProxyProfile);
+  const proxySummaryType = hasMissingProxyProfile
+    ? t("hostDetails.proxyPanel.missing")
+    : (selectedProxyProfile?.config.type || form.proxyConfig?.type || "http").toUpperCase();
+  const proxySummaryLabel = hasMissingProxyProfile
+    ? t("hostDetails.proxyPanel.missingSaved")
+    : selectedProxyProfile
+      ? selectedProxyProfile.label
+      : `${form.proxyConfig?.host}:${form.proxyConfig?.port}`;
+  const proxySummaryTooltip = hasMissingProxyProfile
+    ? t("hostDetails.proxyPanel.missingSaved")
+    : selectedProxyProfile
+      ? `${selectedProxyProfile.label} - ${selectedProxyProfile.config.host}:${selectedProxyProfile.config.port}`
+      : `${form.proxyConfig?.type?.toUpperCase()} ${form.proxyConfig?.host}:${form.proxyConfig?.port}`;
 
   const handleDistroModeChange = useCallback((mode: "auto" | "manual") => {
     setForm((prev) => ({
@@ -274,24 +331,35 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
 
   const updateProxyConfig = useCallback(
     (field: keyof ProxyConfig, value: string | number) => {
-      setForm((prev) => ({
-        ...prev,
-        proxyConfig: {
-          type: prev.proxyConfig?.type || "http",
-          host: prev.proxyConfig?.host || "",
-          port: prev.proxyConfig?.port || 8080,
-          ...prev.proxyConfig,
-          [field]: value,
-        },
-      }));
+      setForm((prev) => {
+        const { proxyProfileId: _proxyProfileId, ...rest } = prev;
+        return {
+          ...rest,
+          proxyConfig: {
+            type: prev.proxyConfig?.type || "http",
+            host: prev.proxyConfig?.host || "",
+            port: prev.proxyConfig?.port || 8080,
+            ...prev.proxyConfig,
+            [field]: value,
+          },
+        } as Host;
+      });
     },
     [],
   );
 
   const clearProxyConfig = useCallback(() => {
     setForm((prev) => {
-      const { proxyConfig: _proxyConfig, ...rest } = prev;
+      const { proxyConfig: _proxyConfig, proxyProfileId: _proxyProfileId, ...rest } = prev;
       return rest as Host;
+    });
+  }, []);
+
+  const selectProxyProfile = useCallback((profileId: string | undefined) => {
+    setForm((prev) => {
+      const { proxyConfig: _proxyConfig, proxyProfileId: _proxyProfileId, ...rest } = prev;
+      if (!profileId) return rest as Host;
+      return { ...rest, proxyProfileId: profileId } as Host;
     });
   }, []);
 
@@ -342,6 +410,19 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
 
   const handleSubmit = () => {
     if (!form.hostname) return;
+    const normalizedProxyConfig = normalizeManualProxyConfig(form.proxyConfig);
+    if (normalizedProxyConfig && !isCompleteProxyConfig(normalizedProxyConfig)) {
+      toast.error(
+        normalizedProxyConfig.host ? t("proxyProfiles.error.port") : t("hostDetails.proxyPanel.error.required"),
+      );
+      setActiveSubPanel("proxy");
+      return;
+    }
+    if (hasMissingProxyProfile) {
+      toast.error(t("hostDetails.proxyPanel.missingSaved"));
+      setActiveSubPanel("proxy");
+      return;
+    }
     // If label is empty, use hostname as label
     let finalLabel = form.label?.trim() || form.hostname;
     const finalGroup = groupInputValue.trim() || form.group || "";
@@ -377,16 +458,23 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
       finalManagedSourceId = undefined;
     }
 
-    const cleaned: Host = {
-      ...form,
+    const { proxyConfig: _draftProxyConfig, ...formWithoutProxyDraft } = form;
+    const finalPort =
+      form.protocol === "telnet"
+        ? form.port
+        : form.port ?? (groupDefaults?.port ? undefined : 22);
+    let cleaned: Host = {
+      ...formWithoutProxyDraft,
+      ...(normalizedProxyConfig && { proxyConfig: normalizedProxyConfig }),
       label: finalLabel,
       group: finalGroup,
       tags: form.tags || [],
-      port: form.port ?? (groupDefaults?.port ? undefined : 22),
+      port: finalPort,
       // Clear password if savePassword is explicitly set to false
       password: form.savePassword === false ? undefined : form.password,
       managedSourceId: finalManagedSourceId,
     };
+    cleaned = normalizePrimaryTelnetState(cleaned);
     const preserveLegacyTheme = initialData?.theme != null && cleaned.themeOverride !== false;
     const preserveLegacyFontFamily = initialData?.fontFamily != null && cleaned.fontFamilyOverride !== false;
     const preserveLegacyFontSize = initialData?.fontSize != null && cleaned.fontSizeOverride !== false;
@@ -536,7 +624,10 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
     return (
       <ProxyPanel
         proxyConfig={form.proxyConfig}
+        proxyProfiles={proxyProfiles}
+        selectedProxyProfileId={form.proxyProfileId}
         onUpdateProxy={updateProxyConfig}
+        onSelectProxyProfile={selectProxyProfile}
         onClearProxy={clearProxyConfig}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
@@ -636,7 +727,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
               ...(form.protocols || []),
               {
                 protocol: "telnet" as const,
-                port: form.telnetPort || 23,
+                port: effectiveTelnetPort,
                 enabled: true,
                 theme: themeId,
               },
@@ -1758,35 +1849,40 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
             <Globe size={14} className="text-muted-foreground" />
             <p className="text-xs font-semibold">{t("hostDetails.proxy")}</p>
           </div>
-          {form.proxyConfig?.host ? (
-            <button
-              className="w-full min-w-0 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer overflow-hidden"
-              onClick={() => setActiveSubPanel("proxy")}
-            >
-              <Badge variant="secondary" className="text-xs shrink-0">
-                {form.proxyConfig.type?.toUpperCase()}
-              </Badge>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm">
-                      {form.proxyConfig.host}:{form.proxyConfig.port}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" align="start" className="max-w-xs break-all">
-                    {form.proxyConfig.type?.toUpperCase()} {form.proxyConfig.host}:{form.proxyConfig.port}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <X
-                size={14}
-                className="text-muted-foreground hover:text-destructive flex-shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearProxyConfig();
-                }}
-              />
-            </button>
+          {form.proxyConfig?.host || form.proxyProfileId ? (
+            <div className="w-full min-w-0 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
+              <button
+                type="button"
+                className="min-w-0 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer overflow-hidden"
+                onClick={() => setActiveSubPanel("proxy")}
+              >
+                <Badge variant="secondary" className="text-xs shrink-0">
+                  {proxySummaryType}
+                </Badge>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+                        {proxySummaryLabel}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="start" className="max-w-xs break-all">
+                      {proxySummaryTooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-destructive shrink-0"
+                aria-label={t("hostDetails.proxyPanel.remove")}
+                onClick={clearProxyConfig}
+              >
+                <X size={14} />
+              </Button>
+            </div>
           ) : (
             <Button
               variant="ghost"
@@ -1869,42 +1965,46 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         {form.telnetEnabled || form.protocol === "telnet" ? (
           <Card className="p-3 space-y-3 bg-card border-border/80">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 bg-secondary/70 border border-border/70 rounded-md px-2 py-1">
+              <div className="flex-1 min-w-0 h-10 flex items-center gap-2 bg-secondary/70 border border-border/70 rounded-md px-3">
                 <span className="text-xs text-muted-foreground">{t("hostDetails.telnetOn")}</span>
-                <Input
-                  type="number"
-                  value={form.telnetPort || 23}
-                  onChange={(e) => update("telnetPort", Number(e.target.value))}
-                  className="h-8 w-16 text-center"
-                />
-                <span className="text-xs text-muted-foreground">{t("hostDetails.port")}</span>
+                <div className="ml-auto w-1/2 min-w-0 flex items-center gap-2 justify-end">
+	                  <Input
+	                    type="number"
+	                    value={effectiveTelnetPort}
+	                    onChange={(e) => update("telnetPort", parseOptionalPortInput(e.target.value))}
+	                    className="h-8 flex-1 min-w-0 text-center"
+	                  />
+                  <span className="text-xs text-muted-foreground">{t("hostDetails.port")}</span>
+                </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={() => update("telnetEnabled", false)}
-              >
-                <X size={14} />
-              </Button>
+              {form.protocol !== "telnet" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  onClick={() => update("telnetEnabled", false)}
+                >
+                  <X size={14} />
+                </Button>
+              )}
             </div>
 
             {/* Telnet Credentials */}
             <p className="text-xs font-semibold">{t("hostDetails.telnet.credentials")}</p>
-            <Input
-              placeholder={t("hostDetails.telnet.username")}
-              value={form.telnetUsername || form.username || ""}
-              onChange={(e) =>
-                update("telnetUsername" as keyof Host, e.target.value)
-              }
+	            <Input
+	              placeholder={t("hostDetails.telnet.username")}
+	              value={effectiveTelnetUsername}
+	              onChange={(e) =>
+	                update("telnetUsername" as keyof Host, e.target.value)
+	              }
               className="h-10"
             />
             <Input
-              placeholder={t("hostDetails.telnet.password")}
-              type="password"
-              value={form.telnetPassword || form.password || ""}
-              onChange={(e) =>
-                update("telnetPassword" as keyof Host, e.target.value)
+	              placeholder={t("hostDetails.telnet.password")}
+	              type="password"
+	              value={effectiveTelnetPassword}
+	              onChange={(e) =>
+	                update("telnetPassword" as keyof Host, e.target.value)
               }
               className="h-10"
             />
@@ -1953,7 +2053,6 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
             className="w-full h-10 justify-start gap-2 border border-dashed border-border/60"
             onClick={() => {
               update("telnetEnabled", true);
-              update("telnetPort", 23);
             }}
           >
             <Plus size={14} />

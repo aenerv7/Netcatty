@@ -4,7 +4,7 @@ import { useI18n } from '../application/i18n/I18nProvider';
 import { useStoredViewMode } from '../application/state/useStoredViewMode';
 import { STORAGE_KEY_VAULT_SNIPPETS_VIEW_MODE } from '../infrastructure/config/storageKeys';
 import { cn, isMacPlatform } from '../lib/utils';
-import { Host, ShellHistoryEntry, Snippet, SSHKey } from '../types';
+import { Host, ProxyProfile, ShellHistoryEntry, Snippet, SSHKey } from '../types';
 import { HotkeyScheme, KeyBinding, keyEventToString, ManagedSource, matchesKeyBinding, parseKeyCombo } from '../domain/models';
 import { DistroAvatar } from './DistroAvatar';
 import SelectHostPanel from './SelectHostPanel';
@@ -35,6 +35,7 @@ interface SnippetsManagerProps {
   onRunSnippet?: (snippet: Snippet, targetHosts: Host[]) => void;
   // Props for inline host creation
   availableKeys?: SSHKey[];
+  proxyProfiles?: ProxyProfile[];
   managedSources?: ManagedSource[];
   onSaveHost?: (host: Host) => void;
   onCreateGroup?: (groupPath: string) => void;
@@ -58,6 +59,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   onPackagesChange,
   onRunSnippet,
   availableKeys = [],
+  proxyProfiles = [],
   managedSources = [],
   onSaveHost,
   onCreateGroup,
@@ -723,6 +725,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
           onBack={handleTargetPickerBack}
           onContinue={handleTargetPickerBack}
           availableKeys={availableKeys}
+          proxyProfiles={proxyProfiles}
           managedSources={managedSources}
           onSaveHost={onSaveHost}
           onCreateGroup={onCreateGroup}

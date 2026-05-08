@@ -153,6 +153,35 @@ export const formatHostPort = (hostname: string, port?: number | null): string =
   return `${display}:${port}`;
 };
 
+export const resolveTelnetUsername = (
+  host: Pick<Host, 'telnetUsername' | 'username'>,
+): string | undefined =>
+  host.telnetUsername !== undefined
+    ? host.telnetUsername.trim()
+    : host.username?.trim();
+
+export const resolveTelnetPassword = (
+  host: Pick<Host, 'telnetPassword' | 'password'>,
+): string | undefined =>
+  host.telnetPassword !== undefined
+    ? host.telnetPassword
+    : host.password;
+
+export const resolveTelnetPort = (
+  host: Pick<Host, 'protocol' | 'telnetPort' | 'port'>,
+): number => {
+  if (host.telnetPort !== undefined && host.telnetPort !== null) return host.telnetPort;
+  if (host.protocol === 'telnet' && host.port !== undefined && host.port !== null) {
+    return host.port;
+  }
+  return 23;
+};
+
+export const normalizePrimaryTelnetState = (host: Host): Host =>
+  host.protocol === 'telnet' && !host.telnetEnabled
+    ? { ...host, telnetEnabled: true }
+    : host;
+
 export const upsertHostById = (hosts: Host[], host: Host): Host[] => {
   const hostExists = hosts.some((entry) => entry.id === host.id);
   return hostExists

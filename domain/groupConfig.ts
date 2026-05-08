@@ -1,5 +1,17 @@
 import type { GroupConfig, Host } from './models';
 
+export interface ApplyGroupDefaultsOptions {
+  validProxyProfileIds?: ReadonlySet<string>;
+}
+
+const hasUsableProxyProfileId = (
+  proxyProfileId: string | undefined,
+  options?: ApplyGroupDefaultsOptions,
+): boolean => {
+  if (!proxyProfileId) return false;
+  return !options?.validProxyProfileIds || options.validProxyProfileIds.has(proxyProfileId);
+};
+
 /**
  * Resolve merged group defaults by walking the ancestor chain.
  * For group "A/B/C", merges configs from A, A/B, A/B/C (child overrides parent).
@@ -7,6 +19,7 @@ import type { GroupConfig, Host } from './models';
 export function resolveGroupDefaults(
   groupPath: string,
   groupConfigs: GroupConfig[],
+  options?: ApplyGroupDefaultsOptions,
 ): Partial<GroupConfig> {
   const configMap = new Map(groupConfigs.map((c) => [c.path, c]));
   const parts = groupPath.split('/').filter(Boolean);
@@ -18,6 +31,14 @@ export function resolveGroupDefaults(
     if (config) {
       for (const [key, value] of Object.entries(config)) {
         if (
+          key === 'proxyProfileId' &&
+          typeof value === 'string' &&
+          options?.validProxyProfileIds &&
+          !options.validProxyProfileIds.has(value)
+        ) {
+          delete merged.proxyConfig;
+        }
+        if (
           (key === 'theme' && config.themeOverride === false) ||
           (key === 'fontFamily' && config.fontFamilyOverride === false) ||
           (key === 'fontSize' && config.fontSizeOverride === false) ||
@@ -26,6 +47,12 @@ export function resolveGroupDefaults(
           continue;
         }
         if (key !== 'path' && value !== undefined) {
+          if (key === 'proxyProfileId') {
+            delete merged.proxyConfig;
+          }
+          if (key === 'proxyConfig') {
+            delete merged.proxyProfileId;
+          }
           merged[key] = value;
         }
       }
@@ -48,23 +75,43 @@ export function resolveGroupDefaults(
 
 const INHERITABLE_KEYS: (keyof GroupConfig)[] = [
   'username', 'password', 'savePassword', 'authMethod', 'identityId', 'identityFileId', 'identityFilePaths',
-  'port', 'protocol', 'agentForwarding', 'proxyConfig', 'hostChain', 'startupCommand',
+  'port', 'protocol', 'agentForwarding', 'proxyProfileId', 'proxyConfig', 'hostChain', 'startupCommand',
   'legacyAlgorithms', 'environmentVariables', 'charset', 'moshEnabled', 'moshServerPath',
   'telnetEnabled', 'telnetPort', 'telnetUsername', 'telnetPassword',
   'theme', 'themeOverride', 'fontFamily', 'fontFamilyOverride', 'fontSize', 'fontSizeOverride', 'fontWeight', 'fontWeightOverride',
   'backspaceBehavior',
 ];
 
+const EMPTY_STRING_OVERRIDES_GROUP_DEFAULT = new Set<keyof GroupConfig>([
+  'telnetUsername',
+  'telnetPassword',
+]);
+
 /**
  * Apply group defaults to a host. Only fills in fields the host doesn't already have.
  * Returns a new host object — does NOT mutate the original.
  */
-export function applyGroupDefaults(host: Host, groupDefaults: Partial<GroupConfig>): Host {
+export function applyGroupDefaults(
+  host: Host,
+  groupDefaults: Partial<GroupConfig>,
+  options?: ApplyGroupDefaultsOptions,
+): Host {
   const effective = { ...host };
+  const hostHasUsableProxyProfile = hasUsableProxyProfileId(host.proxyProfileId, options);
+
   for (const key of INHERITABLE_KEYS) {
-    const hostValue = (host as unknown as Record<string, unknown>)[key];
+    if (key === 'proxyProfileId') {
+      if (host.proxyConfig !== undefined || !groupDefaults.proxyProfileId) continue;
+    }
+    if (key === 'proxyConfig' && (host.proxyProfileId !== undefined || hostHasUsableProxyProfile)) continue;
+    const hostValue = (effective as unknown as Record<string, unknown>)[key];
     const groupValue = (groupDefaults as unknown as Record<string, unknown>)[key];
-    if ((hostValue === undefined || hostValue === '' || hostValue === null) && groupValue !== undefined) {
+    const emptyStringIsOverride = EMPTY_STRING_OVERRIDES_GROUP_DEFAULT.has(key);
+    const shouldInherit =
+      hostValue === undefined ||
+      hostValue === null ||
+      (hostValue === '' && !emptyStringIsOverride);
+    if (shouldInherit && groupValue !== undefined) {
       (effective as unknown as Record<string, unknown>)[key] = groupValue;
     }
   }

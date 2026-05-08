@@ -26,7 +26,7 @@ const {
 const {
   stripAnsi,
   normalizeCliPathForPlatform,
-  shouldUseShellForCommand,
+  prepareCommandForSpawn,
   resolveCliFromPath,
   resolveClaudeAcpBinaryPath,
   isPlausibleCliVersionOutput,
@@ -1392,11 +1392,12 @@ function registerHandlers(ipcMain) {
 
   async function runCommand(command, args, options) {
     return await new Promise((resolve, reject) => {
-      const child = spawn(command, args || [], {
+      const spawnSpec = prepareCommandForSpawn(command, args || []);
+      const child = spawn(spawnSpec.command, spawnSpec.args, {
         stdio: ["ignore", "pipe", "pipe"],
         cwd: options?.cwd || undefined,
         env: options?.env || process.env,
-        shell: shouldUseShellForCommand(command),
+        shell: spawnSpec.shell,
         windowsHide: true,
       });
 
@@ -2006,10 +2007,11 @@ function registerHandlers(ipcMain) {
       const shellEnv = await getShellEnv();
       const codexCliPath = resolveCliFromPath("codex", shellEnv) || "codex";
       const sessionId = `codex_login_${randomUUID()}`;
-      const child = spawn(codexCliPath, ["login"], {
+      const spawnSpec = prepareCommandForSpawn(codexCliPath, ["login"]);
+      const child = spawn(spawnSpec.command, spawnSpec.args, {
         stdio: ["ignore", "pipe", "pipe"],
         env: shellEnv,
-        shell: shouldUseShellForCommand(codexCliPath),
+        shell: spawnSpec.shell,
         windowsHide: true,
       });
 

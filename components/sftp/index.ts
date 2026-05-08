@@ -18,6 +18,7 @@ export {
   useSftpPaneCallbacks,
   useSftpDrag,
   useSftpHosts,
+  useSftpWritableHosts,
   useSftpUpdateHosts,
   useActiveTabId,
   useIsPaneActive,

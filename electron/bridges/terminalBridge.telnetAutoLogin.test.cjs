@@ -1,0 +1,238 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const net = require("node:net");
+
+const terminalBridge = require("./terminalBridge.cjs");
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve(server.address().port);
+    });
+  });
+}
+
+function waitFor(predicate, timeoutMs = 1000) {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (predicate()) {
+        resolve();
+        return;
+      }
+      if (Date.now() - startedAt > timeoutMs) {
+        reject(new Error("Timed out waiting for telnet auto-login"));
+        return;
+      }
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
+}
+
+test("startTelnetSession answers login prompts with saved credentials", async () => {
+  const received = [];
+  const sockets = new Set();
+  const serverErrors = [];
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.setEncoding("utf8");
+    let promptedForUsername = false;
+    socket.on("error", (err) => {
+      if (err.code !== "ECONNRESET") serverErrors.push(err);
+    });
+    socket.on("close", () => {
+      sockets.delete(socket);
+    });
+    socket.write("Device bannerPress RETURN to get started.");
+    socket.on("data", (chunk) => {
+      received.push(chunk);
+      const joined = received.join("");
+      if (!promptedForUsername && joined.includes("\r")) {
+        promptedForUsername = true;
+        socket.write("Username: ");
+      }
+      if (joined.includes("admin\r") && !joined.includes("secret\r")) {
+        socket.write("\r\nPassword: ");
+      }
+      if (joined.includes("secret\r")) {
+        socket.end("\r\nWelcome\r\nrouter# ");
+      }
+    });
+  });
+
+  const port = await listen(server);
+  const sessions = new Map();
+  const sentEvents = [];
+  terminalBridge.init({
+    sessions,
+    electronModule: {
+      webContents: {
+        fromId: () => ({
+          send(channel, payload) {
+            sentEvents.push({ channel, payload });
+          },
+        }),
+      },
+    },
+  });
+
+  try {
+    const result = await terminalBridge.startTelnetSession(
+      { sender: { id: 1 } },
+      {
+        sessionId: "telnet-auto-login-test",
+        hostname: "127.0.0.1",
+        port,
+        username: "admin",
+        password: "secret",
+      },
+    );
+
+    assert.equal(result.sessionId, "telnet-auto-login-test");
+    await waitFor(() => received.join("").includes("\radmin\rsecret\r"));
+    assert.equal(received.join(""), "\radmin\rsecret\r");
+    assert.ok(sentEvents.some((evt) =>
+      evt.channel === "netcatty:telnet:auto-login-complete" &&
+      evt.payload?.sessionId === "telnet-auto-login-test",
+    ));
+    assert.deepEqual(serverErrors, []);
+  } finally {
+    terminalBridge.cleanupAllSessions();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("automated Telnet writes do not cancel auto-login", async () => {
+  const received = [];
+  const sockets = new Set();
+  let clientSocket = null;
+  const server = net.createServer((socket) => {
+    clientSocket = socket;
+    sockets.add(socket);
+    socket.setEncoding("utf8");
+    socket.on("error", () => {});
+    socket.on("close", () => {
+      sockets.delete(socket);
+    });
+    socket.on("data", (chunk) => {
+      received.push(chunk);
+      const joined = received.join("");
+      if (joined.includes("admin\r") && !joined.includes("secret\r")) {
+        socket.write("\r\nPassword: ");
+      }
+      if (joined.includes("secret\r")) {
+        socket.end("\r\nWelcome\r\n");
+      }
+    });
+  });
+
+  const port = await listen(server);
+  const sessions = new Map();
+  terminalBridge.init({
+    sessions,
+    electronModule: {
+      webContents: {
+        fromId: () => ({
+          send() {},
+        }),
+      },
+    },
+  });
+
+  try {
+    await terminalBridge.startTelnetSession(
+      { sender: { id: 1 } },
+      {
+        sessionId: "telnet-automated-write-test",
+        hostname: "127.0.0.1",
+        port,
+        username: "admin",
+        password: "secret",
+      },
+    );
+    await waitFor(() => clientSocket);
+
+    terminalBridge.writeToSession(
+      {},
+      {
+        sessionId: "telnet-automated-write-test",
+        data: "show version\r",
+        automated: true,
+      },
+    );
+
+    clientSocket.write("Username: ");
+
+    await waitFor(() => received.join("").includes("admin\rsecret\r"));
+    assert.equal(received.join(""), "show version\radmin\rsecret\r");
+  } finally {
+    terminalBridge.cleanupAllSessions();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("manual Telnet writes cancel auto-login", async () => {
+  const sockets = new Set();
+  let clientSocket = null;
+  const server = net.createServer((socket) => {
+    clientSocket = socket;
+    sockets.add(socket);
+    socket.setEncoding("utf8");
+    socket.on("error", () => {});
+    socket.on("close", () => {
+      sockets.delete(socket);
+    });
+  });
+
+  const port = await listen(server);
+  const sessions = new Map();
+  const sentEvents = [];
+  terminalBridge.init({
+    sessions,
+    electronModule: {
+      webContents: {
+        fromId: () => ({
+          send(channel, payload) {
+            sentEvents.push({ channel, payload });
+          },
+        }),
+      },
+    },
+  });
+
+  try {
+    await terminalBridge.startTelnetSession(
+      { sender: { id: 1 } },
+      {
+        sessionId: "telnet-manual-write-test",
+        hostname: "127.0.0.1",
+        port,
+        username: "admin",
+        password: "secret",
+      },
+    );
+    await waitFor(() => clientSocket);
+
+    terminalBridge.writeToSession(
+      {},
+      {
+        sessionId: "telnet-manual-write-test",
+        data: "a",
+      },
+    );
+
+    await waitFor(() => sentEvents.some((evt) =>
+      evt.channel === "netcatty:telnet:auto-login-cancelled" &&
+      evt.payload?.sessionId === "telnet-manual-write-test",
+    ));
+  } finally {
+    terminalBridge.cleanupAllSessions();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

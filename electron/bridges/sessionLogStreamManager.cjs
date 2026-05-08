@@ -124,10 +124,12 @@ function flushBuffer(entry) {
   }
 }
 
-function renderSnapshotContent(entry) {
+function renderSnapshotContent(entry, { finalize = false } = {}) {
+  if (finalize) entry.renderer.finish();
+  const renderOptions = finalize ? undefined : { includePendingClearedScreen: true };
   return entry.isHtml
-    ? wrapTerminalHtmlContent(entry.renderer.toHtmlContent(), entry.hostLabel, entry.startTime)
-    : entry.renderer.toString();
+    ? wrapTerminalHtmlContent(entry.renderer.toHtmlContent(renderOptions), entry.hostLabel, entry.startTime)
+    : entry.renderer.toString(renderOptions);
 }
 
 function scheduleSnapshot(entry) {
@@ -217,9 +219,9 @@ async function stopStream(sessionId) {
         resolve();
       }
     });
-  } else if (!entry.disabled && entry.snapshotDirty) {
+  } else if (!entry.disabled) {
     try {
-      await fs.promises.writeFile(entry.filePath, renderSnapshotContent(entry), "utf8");
+      await fs.promises.writeFile(entry.filePath, renderSnapshotContent(entry, { finalize: true }), "utf8");
       entry.snapshotDirty = false;
     } catch (err) {
       console.error(`[SessionLogStream] Final snapshot write failed for ${sessionId}:`, err.message);

@@ -14,6 +14,7 @@ import {
   useSftpHosts,
   useSftpPaneCallbacks,
   useSftpUpdateHosts,
+  useSftpWritableHosts,
 } from "./index";
 import type { SftpPane } from "../../application/state/sftp/types";
 import { joinPath } from "../../application/state/sftp/utils";
@@ -96,6 +97,7 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
   const callbacks = useSftpPaneCallbacks(side);
   const { draggedFiles, onDragStart, onDragEnd } = useSftpDrag();
   const hosts = useSftpHosts();
+  const writableHosts = useSftpWritableHosts();
 
   const { t } = useI18n();
   const hostId = pane.connection?.hostId;
@@ -141,12 +143,12 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
   // Bookmark support
   const updateHosts = useSftpUpdateHosts();
   const currentHost = useMemo(
-    () => hosts.find((h) => h.id === pane.connection?.hostId),
-    [hosts, pane.connection?.hostId],
+    () => writableHosts.find((h) => h.id === pane.connection?.hostId),
+    [writableHosts, pane.connection?.hostId],
   );
   const onUpdateHost = useCallback(
-    (updated: Host) => updateHosts(hosts.map((h) => (h.id === updated.id ? updated : h))),
-    [hosts, updateHosts],
+    (updated: Host) => updateHosts(writableHosts.map((h) => (h.id === updated.id ? updated : h))),
+    [updateHosts, writableHosts],
   );
   const remoteBookmarks = useSftpBookmarks({
     host: currentHost,

@@ -11,6 +11,14 @@ export interface ProxyConfig {
   password?: string;
 }
 
+export interface ProxyProfile {
+  id: string;
+  label: string;
+  config: ProxyConfig;
+  createdAt: number;
+  updatedAt?: number;
+}
+
 // Host chain configuration for jump host / bastion connections
 export interface HostChainConfig {
   hostIds: string[]; // Array of host IDs in order (first = closest to client)
@@ -83,6 +91,7 @@ export interface Host {
   startupCommand?: string;
   hostChaining?: string; // Deprecated: use hostChain instead
   proxy?: string; // Deprecated: use proxyConfig instead
+  proxyProfileId?: string; // Reference to reusable proxy profile
   proxyConfig?: ProxyConfig; // New structured proxy configuration
   hostChain?: HostChainConfig; // New structured host chain configuration
   envVars?: string; // Deprecated: use environmentVariables instead
@@ -205,6 +214,7 @@ export interface GroupConfig {
   port?: number;
   protocol?: 'ssh' | 'telnet';
   agentForwarding?: boolean;
+  proxyProfileId?: string;
   proxyConfig?: ProxyConfig;
   hostChain?: HostChainConfig;
   startupCommand?: string;

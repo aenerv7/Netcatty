@@ -36,9 +36,10 @@ import {
 } from '../infrastructure/config/storageKeys';
 import { buildCacheKey } from '../application/state/sftp/sharedRemoteHostCache';
 import type { DropEntry } from '../lib/sftpFileUtils';
-import { GroupConfig, Host, Identity, KnownHost, SSHKey, Snippet, TerminalSession, TerminalTheme, Workspace, WorkspaceNode } from '../types';
+import { GroupConfig, Host, Identity, KnownHost, ProxyProfile, SSHKey, Snippet, TerminalSession, TerminalTheme, Workspace, WorkspaceNode } from '../types';
 import type { ExecutorContext } from '../infrastructure/ai/cattyAgent/executor';
 import { resolveGroupDefaults, applyGroupDefaults } from '../domain/groupConfig';
+import { materializeHostProxyProfile } from '../domain/proxyProfiles';
 import { DistroAvatar } from './DistroAvatar';
 import Terminal from './Terminal';
 import { ScriptsSidePanel } from './ScriptsSidePanel';
@@ -55,8 +56,9 @@ import { RippleButton } from './ui/ripple';
 import { ScrollArea } from './ui/scroll-area';
 import { setupMcpApprovalBridge } from '../infrastructure/ai/shared/approvalGate';
 import { resolveScriptsSidePanelShortcutIntent } from '../application/state/resolveSnippetsShortcutIntent';
+import { terminalLayerAreEqual } from './terminalLayerMemo';
 
-type SidePanelTab = 'scripts' | 'ai';
+type SidePanelTab = 'scripts' | 'ai' | 'sftp' | 'theme';
 
 type WorkspaceRect = { x: number; y: number; w: number; h: number };
 
@@ -385,6 +387,7 @@ AIChatPanelsHost.displayName = 'AIChatPanelsHost';
 interface TerminalLayerProps {
   hosts: Host[];
   groupConfigs: GroupConfig[];
+  proxyProfiles: ProxyProfile[];
   keys: SSHKey[];
   identities: Identity[];
   snippets: Snippet[];
@@ -448,6 +451,7 @@ interface TerminalLayerProps {
 const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   hosts,
   groupConfigs,
+  proxyProfiles,
   keys,
   identities,
   snippets,
@@ -529,7 +533,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       if (!session) return;
       // Only auto-open for SSH/Mosh (SFTP requires SSH); skip local/unset protocol
       const proto = session.protocol;
-      if (proto !== 'ssh' && proto !== 'mosh') return;
+      if (proto !== 'ssh' && !session.moshEnabled) return;
 
       const host = hostsRef.current.find(h => h.id === session.hostId);
 
@@ -553,7 +557,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             username: session.username,
             port: session.port ?? 22,
             protocol: proto,
-            label: session.label || session.hostname,
+            label: session.hostLabel || session.hostname,
           } as Host;
 
       setSidePanelOpenTabs(prev => {
@@ -882,6 +886,22 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     for (const h of hosts) map.set(h.id, h);
     return map;
   }, [hosts]);
+  const proxyProfileIdSet = useMemo(
+    () => new Set(proxyProfiles.map((profile) => profile.id)),
+    [proxyProfiles],
+  );
+  const effectiveHosts = useMemo(
+    () => hosts.map((host) => {
+      const groupDefaults = host.group
+        ? resolveGroupDefaults(host.group, groupConfigs, { validProxyProfileIds: proxyProfileIdSet })
+        : {};
+      return materializeHostProxyProfile(
+        applyGroupDefaults(host, groupDefaults, { validProxyProfileIds: proxyProfileIdSet }),
+        proxyProfiles,
+      );
+    }),
+    [groupConfigs, hosts, proxyProfileIdSet, proxyProfiles],
+  );
 
   // Pre-compute fallback hosts to avoid creating new objects on every render
   const sessionHostsMap = useMemo(() => {
@@ -891,9 +911,12 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       if (rawHost) {
         // Apply group config defaults so Terminal sees the merged host
         const groupDefaults = rawHost.group
-          ? resolveGroupDefaults(rawHost.group, groupConfigs)
+          ? resolveGroupDefaults(rawHost.group, groupConfigs, { validProxyProfileIds: proxyProfileIdSet })
           : {};
-        const existingHost = applyGroupDefaults(rawHost, groupDefaults);
+        const existingHost = materializeHostProxyProfile(
+          applyGroupDefaults(rawHost, groupDefaults, { validProxyProfileIds: proxyProfileIdSet }),
+          proxyProfiles,
+        );
 
         const protocol = session.protocol ?? existingHost.protocol;
         const port = session.port ?? existingHost.port;
@@ -935,7 +958,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       }
     }
     return map;
-  }, [sessions, hostMap, groupConfigs]);
+  }, [sessions, hostMap, groupConfigs, proxyProfileIdSet, proxyProfiles]);
   const sessionChainHostsMap = useMemo(() => {
     const map = new Map<string, Host[]>();
     for (const session of sessions) {
@@ -948,15 +971,18 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             const rawChainHost = hostMap.get(hostId);
             if (!rawChainHost) return undefined;
             const chainGroupDefaults = rawChainHost.group
-              ? resolveGroupDefaults(rawChainHost.group, groupConfigs)
+              ? resolveGroupDefaults(rawChainHost.group, groupConfigs, { validProxyProfileIds: proxyProfileIdSet })
               : {};
-            return applyGroupDefaults(rawChainHost, chainGroupDefaults);
+            return materializeHostProxyProfile(
+              applyGroupDefaults(rawChainHost, chainGroupDefaults, { validProxyProfileIds: proxyProfileIdSet }),
+              proxyProfiles,
+            );
           })
           .filter((value): value is Host => Boolean(value)),
       );
     }
     return map;
-  }, [sessions, sessionHostsMap, hostMap, groupConfigs]);
+  }, [sessions, sessionHostsMap, hostMap, groupConfigs, proxyProfileIdSet, proxyProfiles]);
 
   const validAIScopeTargetIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1285,9 +1311,11 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     if (activeWorkspace && focusedSessionId) {
       return sessionHostsMap.get(focusedSessionId) ?? sftpHostForTab.get(activeTabId) ?? null;
     }
-    // For solo session: use stored host (from when SFTP was opened)
+    if (activeSession) {
+      return sessionHostsMap.get(activeSession.id) ?? sftpHostForTab.get(activeTabId) ?? null;
+    }
     return sftpHostForTab.get(activeTabId) ?? null;
-  }, [isSftpOpenForCurrentTab, activeTabId, activeWorkspace, focusedSessionId, sessionHostsMap, sftpHostForTab]);
+  }, [isSftpOpenForCurrentTab, activeTabId, activeWorkspace, activeSession, focusedSessionId, sessionHostsMap, sftpHostForTab]);
 
   // Keep sftpHostForTab in sync with focus changes in workspace mode
   // so that the toggle check uses the currently displayed host.
@@ -2546,42 +2574,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
         )}
       </div>
     </AIStateProvider>
-  );
-};
-
-// Only re-render when data props change - activeTabId/isVisible are now managed internally via store subscription
-const terminalLayerAreEqual = (prev: TerminalLayerProps, next: TerminalLayerProps): boolean => {
-  return (
-    prev.hosts === next.hosts &&
-    prev.keys === next.keys &&
-    prev.snippets === next.snippets &&
-    prev.snippetPackages === next.snippetPackages &&
-    prev.sessions === next.sessions &&
-    prev.workspaces === next.workspaces &&
-    prev.draggingSessionId === next.draggingSessionId &&
-    prev.terminalTheme === next.terminalTheme &&
-    prev.accentMode === next.accentMode &&
-    prev.customAccent === next.customAccent &&
-    prev.terminalSettings === next.terminalSettings &&
-    prev.fontSize === next.fontSize &&
-    prev.hotkeyScheme === next.hotkeyScheme &&
-    prev.keyBindings === next.keyBindings &&
-    prev.sftpDefaultViewMode === next.sftpDefaultViewMode &&
-    prev.sftpDoubleClickBehavior === next.sftpDoubleClickBehavior &&
-    prev.sftpAutoSync === next.sftpAutoSync &&
-    prev.sftpShowHiddenFiles === next.sftpShowHiddenFiles &&
-    prev.sftpUseCompressedUpload === next.sftpUseCompressedUpload &&
-    prev.sftpAutoOpenSidebar === next.sftpAutoOpenSidebar &&
-    prev.editorWordWrap === next.editorWordWrap &&
-    prev.setEditorWordWrap === next.setEditorWordWrap &&
-    prev.onHotkeyAction === next.onHotkeyAction &&
-    prev.onUpdateHost === next.onUpdateHost &&
-    prev.onToggleWorkspaceViewMode === next.onToggleWorkspaceViewMode &&
-    prev.onSetWorkspaceFocusedSession === next.onSetWorkspaceFocusedSession &&
-    prev.onSplitSession === next.onSplitSession &&
-    prev.toggleScriptsSidePanelRef === next.toggleScriptsSidePanelRef &&
-    prev.identities === next.identities &&
-    prev.onOpenSettings === next.onOpenSettings
   );
 };
 

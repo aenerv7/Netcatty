@@ -53,7 +53,7 @@ const detectSuspiciousShrink = (..._args: any[]): ShrinkFinding => ({ suspicious
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createSyncedFileSignatureImpl = async (..._args: any[]): Promise<string | null> => null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const decideRemoteChanged = (..._args: any[]): boolean => true;
+const decideRemoteChanged = (..._args: any[]): { remoteChanged: boolean } => ({ remoteChanged: true });
 
 const SYNC_HISTORY_STORAGE_KEY = 'netcatty_sync_history_v1';
 const SYNC_REMOTE_ANCHOR_STORAGE_KEY = 'netcatty_sync_remote_anchor_v1';
@@ -1422,6 +1422,7 @@ export class CloudSyncManager {
   buildPayload(data: {
     hosts: SyncPayload['hosts'];
     keys: SyncPayload['keys'];
+    proxyProfiles?: SyncPayload['proxyProfiles'];
     snippets: SyncPayload['snippets'];
     customGroups: SyncPayload['customGroups'];
     snippetPackages?: SyncPayload['snippetPackages'];

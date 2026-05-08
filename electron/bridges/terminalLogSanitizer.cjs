@@ -36,9 +36,14 @@ class TerminalTextRenderer {
     this.lines = [[]];
     this.row = 0;
     this.col = 0;
+    this.screenBaseRow = 0;
     this.state = "normal";
     this.escapeBuffer = "";
     this.style = createDefaultStyle();
+    this.cursorMovedHomeByCsi = false;
+    this.justStartedLogScreen = false;
+    this.hasPreservedScreenHistory = false;
+    this.pendingClearedScreen = null;
   }
 
   feed(input) {
@@ -52,18 +57,21 @@ class TerminalTextRenderer {
   finish() {
     this.state = "normal";
     this.escapeBuffer = "";
+    this.#commitPendingClearedScreen();
     return this.toString();
   }
 
-  toString() {
-    return this.lines
+  toString({ includePendingClearedScreen = false } = {}) {
+    const lines = includePendingClearedScreen ? this.#linesWithPendingClearedScreen() : this.lines;
+    return lines
       .map((line) => line.map((cell) => cell?.ch || " ").join("").replace(/[ \t]+$/g, ""))
       .join("\n")
       .replace(/\n+$/g, "");
   }
 
-  toHtmlContent() {
-    return this.lines
+  toHtmlContent({ includePendingClearedScreen = false } = {}) {
+    const lines = includePendingClearedScreen ? this.#linesWithPendingClearedScreen() : this.lines;
+    return lines
       .map((line) => renderLineHtml(line))
       .join("\n")
       .replace(/\n+$/g, "");
@@ -109,10 +117,12 @@ class TerminalTextRenderer {
         break;
       case "\r":
         this.col = 0;
+        this.cursorMovedHomeByCsi = false;
         break;
       case "\n":
         this.row += 1;
         this.col = 0;
+        this.cursorMovedHomeByCsi = false;
         this.#ensureLine();
         break;
       case "\t":
@@ -156,33 +166,40 @@ class TerminalTextRenderer {
 
     switch (final) {
       case "A":
-        this.row = Math.max(0, this.row - n);
+        this.row = Math.max(this.screenBaseRow, this.row - n);
+        this.cursorMovedHomeByCsi = false;
         this.#ensureLine();
         break;
       case "B":
       case "E":
         this.row += n;
         if (final === "E") this.col = 0;
+        this.cursorMovedHomeByCsi = false;
         this.#ensureLine();
         break;
       case "C":
         this.col += n;
+        this.cursorMovedHomeByCsi = false;
         break;
       case "D":
         this.col = Math.max(0, this.col - n);
+        this.cursorMovedHomeByCsi = false;
         break;
       case "F":
-        this.row = Math.max(0, this.row - n);
+        this.row = Math.max(this.screenBaseRow, this.row - n);
         this.col = 0;
+        this.cursorMovedHomeByCsi = false;
         this.#ensureLine();
         break;
       case "G":
         this.col = Math.max(0, n - 1);
+        this.cursorMovedHomeByCsi = false;
         break;
       case "H":
       case "f":
-        this.row = Math.max(0, (values[0] || 1) - 1);
+        this.row = this.screenBaseRow + Math.max(0, (values[0] || 1) - 1);
         this.col = Math.max(0, (values[1] || 1) - 1);
+        this.cursorMovedHomeByCsi = this.row === this.screenBaseRow && this.col === 0;
         this.#ensureLine();
         break;
       case "J":
@@ -262,6 +279,8 @@ class TerminalTextRenderer {
       line[this.col] = createCell(ch, this.style);
       this.col += 1;
     }
+    this.cursorMovedHomeByCsi = false;
+    this.justStartedLogScreen = false;
   }
 
   #eraseLine(mode) {
@@ -282,20 +301,117 @@ class TerminalTextRenderer {
 
   #eraseDisplay(mode) {
     this.#ensureLine();
-    if (mode === 2 || mode === 3) {
-      this.lines = [[]];
-      this.row = 0;
-      this.col = 0;
+    if (mode === 3 && this.pendingClearedScreen) {
+      this.#commitPendingClearedScreen();
+      return;
+    }
+    if (mode === 3) {
+      this.pendingClearedScreen = null;
+      return;
+    }
+    if (mode === 2) {
+      if (this.hasPreservedScreenHistory) {
+        this.#clearCurrentLogScreen({ keepPending: true });
+        return;
+      }
+      this.#startNewLogScreen();
       return;
     }
     if (mode === 1) {
-      this.lines = this.lines.slice(this.row);
-      this.row = 0;
+      for (let i = this.screenBaseRow; i < this.row; i += 1) {
+        this.lines[i] = [];
+      }
       this.#eraseLine(1);
+      return;
+    }
+    if (
+      this.row === this.screenBaseRow &&
+      this.col === 0 &&
+      this.cursorMovedHomeByCsi &&
+      !this.hasPreservedScreenHistory
+    ) {
+      this.#startNewLogScreen();
       return;
     }
     this.#eraseLine(0);
     this.lines.length = this.row + 1;
+  }
+
+  #clearCurrentLogScreen({ keepPending = false } = {}) {
+    const targetRow = this.row;
+    if (keepPending && this.#currentLogScreenHasContent()) {
+      this.pendingClearedScreen = {
+        lines: cloneLines(this.lines.slice(this.screenBaseRow)),
+        baseRow: this.screenBaseRow,
+      };
+    } else if (!keepPending) {
+      this.pendingClearedScreen = null;
+    }
+    for (let i = this.screenBaseRow; i < this.lines.length; i += 1) {
+      this.lines[i] = [];
+    }
+    this.row = Math.max(this.screenBaseRow, targetRow);
+    this.#ensureLine();
+    this.cursorMovedHomeByCsi = false;
+    this.justStartedLogScreen = true;
+  }
+
+  #commitPendingClearedScreen() {
+    const pending = this.pendingClearedScreen;
+    if (!pending) return;
+    const relativeRow = Math.max(0, this.row - pending.baseRow);
+    const col = this.col;
+    const { lines, screenBaseRow } = this.#buildLinesWithPendingClearedScreen(pending);
+    this.lines = lines;
+    this.screenBaseRow = screenBaseRow;
+    this.row = this.screenBaseRow + relativeRow;
+    this.col = col;
+    this.#ensureLine();
+    this.cursorMovedHomeByCsi = false;
+    this.justStartedLogScreen = true;
+    this.hasPreservedScreenHistory = true;
+    this.pendingClearedScreen = null;
+  }
+
+  #linesWithPendingClearedScreen() {
+    const pending = this.pendingClearedScreen;
+    if (!pending) return this.lines;
+    return this.#buildLinesWithPendingClearedScreen(pending).lines;
+  }
+
+  #buildLinesWithPendingClearedScreen(pending) {
+    const prefix = this.lines.slice(0, pending.baseRow);
+    const activeLines = this.lines.slice(pending.baseRow);
+    const pendingLines = trimTrailingBlankLines(pending.lines);
+    return {
+      lines: prefix.concat(pendingLines, [[]], activeLines.length > 0 ? activeLines : [[]]),
+      screenBaseRow: prefix.length + pendingLines.length + 1,
+    };
+  }
+
+  #startNewLogScreen() {
+    if (this.justStartedLogScreen) return;
+    const hasContent = this.lines.some((line) => getTrimmedLineLength(line) > 0);
+    if (hasContent) {
+      this.lines.push([]);
+      this.row = this.lines.length - 1;
+    } else {
+      this.lines = [[]];
+      this.row = 0;
+    }
+    this.screenBaseRow = this.row;
+    this.col = 0;
+    this.cursorMovedHomeByCsi = false;
+    this.justStartedLogScreen = true;
+    this.hasPreservedScreenHistory = hasContent;
+    this.pendingClearedScreen = null;
+  }
+
+  #currentLogScreenHasContent() {
+    for (let i = this.screenBaseRow; i < this.lines.length; i += 1) {
+      if (getTrimmedLineLength(this.lines[i]) > 0) return true;
+    }
+    return false;
   }
 
   #ensureLine() {
@@ -349,6 +465,18 @@ function createCell(ch, style) {
     ch,
     style: { ...style },
   };
+}
+
+function cloneLines(lines) {
+  return lines.map((line) => line.map((cell) => (cell ? createCell(cell.ch, cell.style) : cell)));
+}
+
+function trimTrailingBlankLines(lines) {
+  let length = lines.length;
+  while (length > 0 && getTrimmedLineLength(lines[length - 1]) === 0) {
+    length -= 1;
+  }
+  return lines.slice(0, length);
 }
 
 function renderLineHtml(line) {

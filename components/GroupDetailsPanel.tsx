@@ -22,6 +22,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { useI18n } from "../application/i18n/I18nProvider";
 import { customThemeStore } from "../application/state/customThemeStore";
 import { resolveGroupDefaults, resolveGroupTerminalThemeId } from "../domain/groupConfig";
+import { isCompleteProxyConfig, normalizeManualProxyConfig } from "../domain/proxyProfiles";
 import { cn } from "../lib/utils";
 import {
   EnvVar,
@@ -29,6 +30,7 @@ import {
   Host,
   Identity,
   ProxyConfig,
+  ProxyProfile,
   SSHKey,
 } from "../types";
 import ThemeSelectPanel from "./ThemeSelectPanel";
@@ -51,6 +53,7 @@ import { Input } from "./ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { TerminalFontSelect } from "./settings/TerminalFontSelect";
 import { useAvailableFonts } from "../application/state/fontStore";
+import { toast } from "./ui/toast";
 
 type SubPanel = "none" | "proxy" | "chain" | "env-vars" | "theme-select";
 
@@ -59,6 +62,7 @@ interface GroupDetailsPanelProps {
   config: GroupConfig | undefined;
   availableKeys: SSHKey[];
   identities: Identity[];
+  proxyProfiles?: ProxyProfile[];
   allHosts: Host[];
   groups: string[];
   terminalThemeId: string;
@@ -74,6 +78,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
   config,
   availableKeys,
   identities: _identities,
+  proxyProfiles = [],
   allHosts,
   groups,
   terminalThemeId,
@@ -105,7 +110,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
     c.protocol === 'ssh' ||
     c.port !== undefined || !!c.username || !!c.password || !!c.identityFileId ||
     c.agentForwarding !== undefined || c.authMethod !== undefined || !!c.identityId ||
-    !!c.proxyConfig || !!c.hostChain || !!c.startupCommand || c.legacyAlgorithms !== undefined || c.backspaceBehavior !== undefined ||
+    !!c.proxyProfileId || !!c.proxyConfig || !!c.hostChain || !!c.startupCommand || c.legacyAlgorithms !== undefined || c.backspaceBehavior !== undefined ||
     (c.environmentVariables && c.environmentVariables.length > 0) ||
     c.moshEnabled !== undefined || !!c.moshServerPath ||
     (c.identityFilePaths && c.identityFilePaths.length > 0);
@@ -132,6 +137,16 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
   // Environment variables state
   const [newEnvName, setNewEnvName] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
+  const selectedProxyProfile = useMemo(
+    () => proxyProfiles.find((profile) => profile.id === form.proxyProfileId),
+    [form.proxyProfileId, proxyProfiles],
+  );
+  const hasMissingProxyProfile = Boolean(form.proxyProfileId && !selectedProxyProfile);
+  const proxySummaryLabel = hasMissingProxyProfile
+    ? t("hostDetails.proxyPanel.missingSaved")
+    : selectedProxyProfile
+      ? selectedProxyProfile.label
+      : `${form.proxyConfig?.type?.toUpperCase()} ${form.proxyConfig?.host}:${form.proxyConfig?.port}`;
 
   const update = <K extends keyof GroupConfig>(key: K, value: GroupConfig[K] | undefined) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -156,6 +171,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
       delete next.startupCommand;
       delete next.legacyAlgorithms;
       delete next.backspaceBehavior;
+      delete next.proxyProfileId;
       delete next.proxyConfig;
       delete next.hostChain;
       delete next.environmentVariables;
@@ -182,24 +198,35 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
   // Proxy helpers
   const updateProxyConfig = useCallback(
     (field: keyof ProxyConfig, value: string | number) => {
-      setForm((prev) => ({
-        ...prev,
-        proxyConfig: {
-          type: prev.proxyConfig?.type || "http",
-          host: prev.proxyConfig?.host || "",
-          port: prev.proxyConfig?.port || 8080,
-          ...prev.proxyConfig,
-          [field]: value,
-        },
-      }));
+      setForm((prev) => {
+        const { proxyProfileId: _proxyProfileId, ...rest } = prev;
+        return {
+          ...rest,
+          proxyConfig: {
+            type: prev.proxyConfig?.type || "http",
+            host: prev.proxyConfig?.host || "",
+            port: prev.proxyConfig?.port || 8080,
+            ...prev.proxyConfig,
+            [field]: value,
+          },
+        };
+      });
     },
     [],
   );
 
   const clearProxyConfig = useCallback(() => {
     setForm((prev) => {
-      const { proxyConfig: _proxyConfig, ...rest } = prev;
+      const { proxyConfig: _proxyConfig, proxyProfileId: _proxyProfileId, ...rest } = prev;
       return rest;
+    });
+  }, []);
+
+  const selectProxyProfile = useCallback((profileId: string | undefined) => {
+    setForm((prev) => {
+      const { proxyConfig: _proxyConfig, proxyProfileId: _proxyProfileId, ...rest } = prev;
+      if (!profileId) return rest;
+      return { ...rest, proxyProfileId: profileId };
     });
   }, []);
 
@@ -297,6 +324,19 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
       setNameError(t("vault.groups.errors.invalidChars"));
       return;
     }
+    const normalizedProxyConfig = normalizeManualProxyConfig(form.proxyConfig);
+    if (normalizedProxyConfig && !isCompleteProxyConfig(normalizedProxyConfig)) {
+      toast.error(
+        normalizedProxyConfig.host ? t("proxyProfiles.error.port") : t("hostDetails.proxyPanel.error.required"),
+      );
+      setActiveSubPanel("proxy");
+      return;
+    }
+    if (sshEnabled && hasMissingProxyProfile) {
+      toast.error(t("hostDetails.proxyPanel.missingSaved"));
+      setActiveSubPanel("proxy");
+      return;
+    }
     setNameError(null);
 
     const newPath = parentGroup
@@ -320,7 +360,8 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         ...(form.startupCommand !== undefined && { startupCommand: form.startupCommand }),
         ...(form.legacyAlgorithms !== undefined && { legacyAlgorithms: form.legacyAlgorithms }),
         ...(form.backspaceBehavior !== undefined && { backspaceBehavior: form.backspaceBehavior }),
-        ...(form.proxyConfig !== undefined && { proxyConfig: form.proxyConfig }),
+        ...(form.proxyProfileId !== undefined && { proxyProfileId: form.proxyProfileId }),
+        ...(normalizedProxyConfig !== undefined && { proxyConfig: normalizedProxyConfig }),
         ...(form.hostChain !== undefined && { hostChain: form.hostChain }),
         ...(form.environmentVariables !== undefined && { environmentVariables: form.environmentVariables }),
         ...(form.moshEnabled !== undefined && { moshEnabled: form.moshEnabled }),
@@ -360,7 +401,10 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
     return (
       <ProxyPanel
         proxyConfig={form.proxyConfig}
+        proxyProfiles={proxyProfiles}
+        selectedProxyProfileId={form.proxyProfileId}
         onUpdateProxy={updateProxyConfig}
+        onSelectProxyProfile={selectProxyProfile}
         onClearProxy={clearProxyConfig}
         onBack={() => setActiveSubPanel("none")}
         onCancel={onCancel}
@@ -849,11 +893,16 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
                 <Globe size={14} className="text-muted-foreground" />
                 <span className="text-sm">{t("hostDetails.proxy")}</span>
               </div>
-              <div className="flex items-center gap-2">
-                {form.proxyConfig?.host && (
-                  <Badge variant="secondary" className="text-xs">
-                    {form.proxyConfig.type?.toUpperCase()} {form.proxyConfig.host}:{form.proxyConfig.port}
-                  </Badge>
+              <div className="flex min-w-0 items-center gap-2">
+                {(form.proxyConfig?.host || form.proxyProfileId) && (
+                  <div title={proxySummaryLabel} className="min-w-0">
+                    <Badge
+                      variant="secondary"
+                      className="max-w-[160px] truncate text-xs"
+                    >
+                      {proxySummaryLabel}
+                    </Badge>
+                  </div>
                 )}
                 <ChevronRight size={14} className="text-muted-foreground" />
               </div>

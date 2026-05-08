@@ -12,6 +12,7 @@ import {
   FileSymlink,
   FolderPlus,
   FolderTree,
+  Globe,
   Key,
   LayoutGrid,
   List,
@@ -34,8 +35,16 @@ import { useI18n } from "../application/i18n/I18nProvider";
 import { useStoredViewMode } from "../application/state/useStoredViewMode";
 import { useStoredBoolean } from "../application/state/useStoredBoolean";
 import { useTreeExpandedState } from "../application/state/useTreeExpandedState";
+import { sanitizeCredentialValue } from "../domain/credentials";
 import { resolveGroupDefaults, applyGroupDefaults } from "../domain/groupConfig";
-import { getEffectiveHostDistro, sanitizeHost, upsertHostById } from "../domain/host";
+import {
+  getEffectiveHostDistro,
+  resolveTelnetPassword,
+  resolveTelnetPort,
+  resolveTelnetUsername,
+  sanitizeHost,
+  upsertHostById,
+} from "../domain/host";
 import { importVaultHostsFromText, exportHostsToCsvWithStats } from "../domain/vaultImport";
 import type { VaultImportFormat } from "../domain/vaultImport";
 import {
@@ -54,6 +63,7 @@ import {
   Identity,
   KnownHost,
   ManagedSource,
+  ProxyProfile,
   SerialConfig,
   SSHKey,
   ShellHistoryEntry,
@@ -68,6 +78,7 @@ import { HostTreeView } from "./HostTreeView";
 import KeychainManager from "./KeychainManager";
 import KnownHostsManager from "./KnownHostsManager";
 import PortForwarding from "./PortForwardingNew";
+import ProxyProfilesManager from "./ProxyProfilesManager";
 import QuickConnectWizard from "./QuickConnectWizard";
 import { isQuickConnectInput, parseQuickConnectInputWithWarnings } from "../domain/quickConnect";
 import SerialConnectModal from "./SerialConnectModal";
@@ -103,7 +114,7 @@ import { HotkeyScheme, KeyBinding } from "../domain/models";
 const LazyProtocolSelectDialog = lazy(() => import("./ProtocolSelectDialog"));
 const LazyConnectionLogsManager = lazy(() => import("./ConnectionLogsManager"));
 
-export type VaultSection = "hosts" | "keys" | "snippets" | "port" | "knownhosts" | "logs";
+export type VaultSection = "hosts" | "keys" | "proxies" | "snippets" | "port" | "knownhosts" | "logs";
 
 type DropTarget =
   | { kind: "root" }
@@ -114,6 +125,7 @@ interface VaultViewProps {
   hosts: Host[];
   keys: SSHKey[];
   identities: Identity[];
+  proxyProfiles: ProxyProfile[];
   snippets: Snippet[];
   snippetPackages: string[];
   customGroups: string[];
@@ -134,6 +146,7 @@ interface VaultViewProps {
   onUpdateHosts: (hosts: Host[]) => void;
   onUpdateKeys: (keys: SSHKey[]) => void;
   onUpdateIdentities: (identities: Identity[]) => void;
+  onUpdateProxyProfiles: (profiles: ProxyProfile[]) => void;
   onUpdateSnippets: (snippets: Snippet[]) => void;
   onUpdateSnippetPackages: (pkgs: string[]) => void;
   onUpdateCustomGroups: (groups: string[]) => void;
@@ -161,6 +174,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   hosts,
   keys,
   identities,
+  proxyProfiles,
   snippets,
   snippetPackages,
   customGroups,
@@ -181,6 +195,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   onUpdateHosts,
   onUpdateKeys,
   onUpdateIdentities,
+  onUpdateProxyProfiles,
   onUpdateSnippets,
   onUpdateSnippetPackages,
   onUpdateCustomGroups,
@@ -293,6 +308,10 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     if (!group) return undefined;
     return resolveGroupDefaults(group, groupConfigs);
   }, [editingHost, newHostGroupPath, selectedGroupPath, groupConfigs]);
+  const proxyProfileIdSet = useMemo(
+    () => new Set(proxyProfiles.map((profile) => profile.id)),
+    [proxyProfiles],
+  );
   // Quick connect state
   const [quickConnectTarget, setQuickConnectTarget] = useState<{
     hostname: string;
@@ -340,8 +359,8 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   // Check if host has multiple protocols enabled (using effective/resolved host)
   const hasMultipleProtocols = useCallback((host: Host) => {
     const effective = host.group
-      ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs))
-      : host;
+      ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs, { validProxyProfileIds: proxyProfileIdSet }), { validProxyProfileIds: proxyProfileIdSet })
+      : applyGroupDefaults(host, {}, { validProxyProfileIds: proxyProfileIdSet });
     let count = 0;
     // SSH is always available as base protocol (unless explicitly set to something else)
     if (effective.protocol === "ssh" || !effective.protocol) count++;
@@ -352,7 +371,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     // If protocol is explicitly telnet (not ssh), count it
     if (effective.protocol === "telnet" && !effective.telnetEnabled) count++;
     return count > 1;
-  }, [groupConfigs]);
+  }, [groupConfigs, proxyProfileIdSet]);
 
   // Handle host connect with protocol selection
   const handleHostConnect = useCallback(
@@ -360,14 +379,14 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       if (hasMultipleProtocols(host)) {
         // Pass effective host to protocol dialog so it shows correct ports/protocols
         const effective = host.group
-          ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs))
-          : host;
+          ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs, { validProxyProfileIds: proxyProfileIdSet }), { validProxyProfileIds: proxyProfileIdSet })
+          : applyGroupDefaults(host, {}, { validProxyProfileIds: proxyProfileIdSet });
         setProtocolSelectHost(effective);
       } else {
         onConnect(host);
       }
     },
-    [hasMultipleProtocols, onConnect, groupConfigs],
+    [hasMultipleProtocols, onConnect, groupConfigs, proxyProfileIdSet],
   );
 
   // Handle protocol selection
@@ -472,16 +491,14 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   const handleCopyCredentials = useCallback((host: Host) => {
     // Apply group defaults so inherited credentials are included
     const effective = host.group
-      ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs))
-      : host;
+      ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs, { validProxyProfileIds: proxyProfileIdSet }), { validProxyProfileIds: proxyProfileIdSet })
+      : applyGroupDefaults(host, {}, { validProxyProfileIds: proxyProfileIdSet });
     // Only use telnet-specific port and credentials when protocol is explicitly telnet
     // Don't treat telnetEnabled as primary - that's just an optional protocol
     const isTelnet = effective.protocol === "telnet";
 
     const defaultPort = isTelnet ? 23 : 22;
-    const effectivePort = isTelnet
-      ? (effective.telnetPort ?? effective.port ?? 23)
-      : (effective.port ?? 22);
+    const effectivePort = isTelnet ? resolveTelnetPort(effective) : (effective.port ?? 22);
 
     // Bracket IPv6 addresses when appending non-default port
     let address: string;
@@ -500,12 +517,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       : undefined;
 
     const username = isTelnet
-      ? (effective.telnetUsername?.trim() || effective.username?.trim())
+      ? resolveTelnetUsername(effective)
       : (identity?.username?.trim() || effective.username?.trim());
 
-    const password = isTelnet
-      ? (effective.telnetPassword || effective.password)
+    const rawPassword = isTelnet
+      ? resolveTelnetPassword(effective)
       : (identity?.password || effective.password);
+    const password = sanitizeCredentialValue(rawPassword);
 
     if (!password) {
       toast.warning(t('vault.hosts.copyCredentials.toast.noPassword'));
@@ -516,7 +534,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     navigator.clipboard.writeText(text).then(() => {
       toast.success(t('vault.hosts.copyCredentials.toast.success'));
     });
-  }, [identities, groupConfigs, t]);
+  }, [identities, groupConfigs, proxyProfileIdSet, t]);
 
   const [lastPinnedId, setLastPinnedId] = useState<string | null>(null);
   const toggleHostPinned = useCallback((hostId: string) => {
@@ -631,22 +649,14 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
 
         if (isManaged && !filePath) {
           // Cannot proceed with managed import without a valid file path
-          toast({
-            title: t("vault.import.sshConfig.noFilePath"),
-            description: t("vault.import.sshConfig.noFilePathDesc"),
-            variant: "destructive",
-          });
+          toast.error(t("vault.import.sshConfig.noFilePath"), t("vault.import.sshConfig.noFilePathDesc"));
           return;
         }
 
         if (isManaged) {
           const existingSource = managedSources.find(s => s.filePath === filePath);
           if (existingSource) {
-            toast({
-              title: t("vault.import.sshConfig.alreadyManaged"),
-              description: t("vault.import.sshConfig.alreadyManagedDesc", { group: existingSource.groupName }),
-              variant: "destructive",
-            });
+            toast.error(t("vault.import.sshConfig.alreadyManaged"), t("vault.import.sshConfig.alreadyManagedDesc", { group: existingSource.groupName }));
             return;
           }
         }
@@ -1493,7 +1503,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     if (!a || !b) return a === b;
     if (a.kind !== b.kind) return false;
     if (a.kind === "root") return true;
-    return a.path === b.path;
+    return (a as { kind: "group"; path: string }).path === (b as { kind: "group"; path: string }).path;
   }, []);
 
   const pulseDropTarget = useCallback((target: DropTarget) => {
@@ -1665,6 +1675,26 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.keychain")}</TooltipContent>}
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <RippleButton
+                  variant={currentSection === "proxies" ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full h-10",
+                    sidebarCollapsed ? "justify-center p-0" : "justify-start gap-3",
+                    currentSection === "proxies" &&
+                    "bg-foreground/10 text-foreground hover:bg-foreground/15 border-border/40",
+                  )}
+                  onClick={() => {
+                    setCurrentSection("proxies");
+                  }}
+                >
+                  <Globe size={16} className="flex-shrink-0" />
+                  {!sidebarCollapsed && t("vault.nav.proxies")}
+                </RippleButton>
+              </TooltipTrigger>
+              {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.proxies")}</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2482,11 +2512,12 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                       isMultiSelectMode={isMultiSelectMode}
                       selectedHostIds={selectedHostIds}
                       toggleHostSelection={toggleHostSelection}
-                      getDropTargetClasses={(path) =>
-                        getDropTargetClasses({ kind: "group", path })
-                      }
-                      setDragOverDropTarget={setGroupDragOverDropTarget}
-                    />
+	                      getDropTargetClasses={(path) =>
+	                        getDropTargetClasses({ kind: "group", path })
+	                      }
+	                      setDragOverDropTarget={setGroupDragOverDropTarget}
+	                      groupConfigs={groupConfigs}
+	                    />
                   ) : sortMode === "group" && groupedDisplayHosts ? (
                     <div className="space-y-6">
                         {groupedDisplayHosts.map((group) => (
@@ -2814,6 +2845,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
             }
             onRunSnippet={onRunSnippet}
             availableKeys={keys}
+            proxyProfiles={proxyProfiles}
             managedSources={managedSources}
             onSaveHost={(host) => onUpdateHosts([...hosts, host])}
             onCreateGroup={(groupPath) =>
@@ -2828,6 +2860,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
             keys={keys}
             identities={identities}
             hosts={hosts}
+            proxyProfiles={proxyProfiles}
             customGroups={customGroups}
             managedSources={managedSources}
             onSave={(k) => onUpdateKeys([...keys, k])}
@@ -2865,11 +2898,22 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
             }
           />
         )}
+        {currentSection === "proxies" && (
+          <ProxyProfilesManager
+            proxyProfiles={proxyProfiles}
+            hosts={hosts}
+            groupConfigs={groupConfigs}
+            onUpdateProxyProfiles={onUpdateProxyProfiles}
+            onUpdateHosts={onUpdateHosts}
+            onUpdateGroupConfigs={onUpdateGroupConfigs}
+          />
+        )}
         {currentSection === "port" && (
           <PortForwarding
             hosts={hosts}
             keys={keys}
             identities={identities}
+            proxyProfiles={proxyProfiles}
             customGroups={customGroups}
             managedSources={managedSources}
             groupConfigs={groupConfigs}
@@ -2912,6 +2956,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           config={groupConfigs.find(c => c.path === editingGroupPath)}
           availableKeys={keys}
           identities={identities}
+          proxyProfiles={proxyProfiles}
           allHosts={hosts}
           groups={allGroupPaths}
           terminalThemeId={terminalThemeId}
@@ -2932,6 +2977,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           initialData={editingHost}
           availableKeys={keys}
           identities={identities}
+          proxyProfiles={proxyProfiles}
           groups={allGroupPaths}
           managedSources={managedSources}
           allTags={allTags}
@@ -3195,6 +3241,7 @@ export const vaultViewAreEqual = (
     prev.hosts === next.hosts &&
     prev.keys === next.keys &&
     prev.identities === next.identities &&
+    prev.proxyProfiles === next.proxyProfiles &&
     prev.snippets === next.snippets &&
     prev.snippetPackages === next.snippetPackages &&
     prev.customGroups === next.customGroups &&

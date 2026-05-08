@@ -2,10 +2,11 @@ import { CheckSquare, ChevronRight, Edit2, FileSymlink, Folder, FolderOpen, Moni
 import React, { useMemo } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { useTreeExpandedState } from '../application/state/useTreeExpandedState';
-import { sanitizeHost } from '../domain/host';
+import { applyGroupDefaults, resolveGroupDefaults } from '../domain/groupConfig';
+import { resolveTelnetPort, resolveTelnetUsername, sanitizeHost } from '../domain/host';
 import { STORAGE_KEY_VAULT_HOSTS_TREE_EXPANDED } from '../infrastructure/config/storageKeys';
 import { cn } from '../lib/utils';
-import { GroupNode, Host } from '../types';
+import { GroupConfig, GroupNode, Host } from '../types';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from './ui/context-menu';
 import { DistroAvatar } from './DistroAvatar';
@@ -38,6 +39,7 @@ interface HostTreeViewProps {
   toggleHostSelection?: (hostId: string) => void;
   getDropTargetClasses?: (target: string) => string;
   setDragOverDropTarget?: (target: string | null) => void;
+  groupConfigs?: GroupConfig[];
 }
 
 interface TreeNodeProps {
@@ -65,6 +67,7 @@ interface TreeNodeProps {
   toggleHostSelection?: (hostId: string) => void;
   getDropTargetClasses?: (target: string) => string;
   setDragOverDropTarget?: (target: string | null) => void;
+  groupConfigs: GroupConfig[];
 }
 
 
@@ -93,6 +96,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   toggleHostSelection,
   getDropTargetClasses,
   setDragOverDropTarget,
+  groupConfigs,
 }) => {
   const { t } = useI18n();
   const isExpanded = expandedPaths.has(node.path);
@@ -255,13 +259,14 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               managedGroupPaths={managedGroupPaths}
               onUnmanageGroup={onUnmanageGroup}
 
-              isMultiSelectMode={isMultiSelectMode}
-              selectedHostIds={selectedHostIds}
-              toggleHostSelection={toggleHostSelection}
-              getDropTargetClasses={getDropTargetClasses}
-              setDragOverDropTarget={setDragOverDropTarget}
-            />
-          ))}
+	              isMultiSelectMode={isMultiSelectMode}
+	              selectedHostIds={selectedHostIds}
+	              toggleHostSelection={toggleHostSelection}
+	              getDropTargetClasses={getDropTargetClasses}
+	              setDragOverDropTarget={setDragOverDropTarget}
+	              groupConfigs={groupConfigs}
+	            />
+	          ))}
 
           {/* Hosts in this group */}
           {sortedHosts.map((host) => (
@@ -276,11 +281,12 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               onCopyCredentials={onCopyCredentials}
               moveHostToGroup={moveHostToGroup}
 
-              isMultiSelectMode={isMultiSelectMode}
-              selectedHostIds={selectedHostIds}
-              toggleHostSelection={toggleHostSelection}
-            />
-          ))}
+	              isMultiSelectMode={isMultiSelectMode}
+	              selectedHostIds={selectedHostIds}
+	              toggleHostSelection={toggleHostSelection}
+	              groupConfigs={groupConfigs}
+	            />
+	          ))}
         </CollapsibleContent>
       </Collapsible>
     </div>
@@ -300,7 +306,27 @@ interface HostTreeItemProps {
   isMultiSelectMode?: boolean;
   selectedHostIds?: Set<string>;
   toggleHostSelection?: (hostId: string) => void;
+  groupConfigs: GroupConfig[];
 }
+
+export const getHostTreeDisplayDetails = (
+  host: Host,
+  groupConfigs: GroupConfig[] = [],
+) => {
+  const displayHost = host.group
+    ? applyGroupDefaults(host, resolveGroupDefaults(host.group, groupConfigs))
+    : host;
+  const isTelnet = displayHost.protocol === 'telnet';
+  return {
+    protocol: displayHost.protocol,
+    username: isTelnet
+      ? (resolveTelnetUsername(displayHost) || '')
+      : (displayHost.username?.trim() || ''),
+    port: isTelnet
+      ? resolveTelnetPort(displayHost)
+      : (displayHost.port ?? 22),
+  };
+};
 
 const HostTreeItem: React.FC<HostTreeItemProps> = ({
   host,
@@ -315,18 +341,19 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
   isMultiSelectMode,
   selectedHostIds,
   toggleHostSelection,
+  groupConfigs,
 }) => {
   const { t } = useI18n();
   const paddingLeft = `${depth * 20 + 12}px`;
   const safeHost = sanitizeHost(host);
   const tags = host.tags || [];
-  const isTelnet = host.protocol === 'telnet';
-  const displayUsername = isTelnet
-    ? (host.telnetUsername?.trim() || host.username?.trim() || '')
-    : (host.username?.trim() || '');
-  const displayPort = isTelnet
-    ? (host.telnetPort ?? host.port ?? 23)
-    : (host.port ?? 22);
+  const displayDetails = useMemo(
+    () => getHostTreeDisplayDetails(host, groupConfigs),
+    [groupConfigs, host],
+  );
+  const displayProtocol = displayDetails.protocol;
+  const displayUsername = displayDetails.username;
+  const displayPort = displayDetails.port;
   const isSelected = isMultiSelectMode && selectedHostIds?.has(host.id);
 
   return (
@@ -371,11 +398,11 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            {host.protocol && host.protocol !== 'ssh' && (
-              <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                {host.protocol.toUpperCase()}
-              </span>
-            )}
+	            {displayProtocol && displayProtocol !== 'ssh' && (
+	              <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+	                {displayProtocol.toUpperCase()}
+	              </span>
+	            )}
             {tags.length > 0 && (
               <span className="text-xs opacity-60">
                 {tags.slice(0, 2).join(', ')}
@@ -445,6 +472,7 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
   toggleHostSelection,
   getDropTargetClasses,
   setDragOverDropTarget,
+  groupConfigs = [],
 }) => {
   const { t } = useI18n();
 
@@ -568,9 +596,10 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
           isMultiSelectMode={isMultiSelectMode}
           selectedHostIds={selectedHostIds}
           toggleHostSelection={toggleHostSelection}
-          getDropTargetClasses={getDropTargetClasses}
-          setDragOverDropTarget={setDragOverDropTarget}
-        />
+	          getDropTargetClasses={getDropTargetClasses}
+	          setDragOverDropTarget={setDragOverDropTarget}
+	          groupConfigs={groupConfigs}
+	        />
       ))}
 
       {/* Ungrouped hosts at root level */}
@@ -586,9 +615,10 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
           onCopyCredentials={onCopyCredentials}
           moveHostToGroup={moveHostToGroup}
           isMultiSelectMode={isMultiSelectMode}
-          selectedHostIds={selectedHostIds}
-          toggleHostSelection={toggleHostSelection}
-        />
+	          selectedHostIds={selectedHostIds}
+	          toggleHostSelection={toggleHostSelection}
+	          groupConfigs={groupConfigs}
+	        />
       ))}
       
       {/* Empty state */}

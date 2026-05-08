@@ -7,7 +7,7 @@ import React from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
 import { Host, SSHKey } from '../../types';
-import { formatHostPort } from '../../domain/host';
+import { formatHostPort, resolveTelnetPort } from '../../domain/host';
 import { DistroAvatar } from '../DistroAvatar';
 import { Button } from '../ui/button';
 import { TerminalAuthDialog, TerminalAuthDialogProps } from './TerminalAuthDialog';
@@ -48,7 +48,7 @@ const getProtocolInfo = (host: Host): { i18nKey: string; showPort: boolean; port
             return { i18nKey: 'terminal.connection.protocol.local', showPort: false, port: 0 };
         case 'telnet':
             // Telnet uses telnetPort, not port (which is SSH port)
-            return { i18nKey: 'terminal.connection.protocol.telnet', showPort: true, port: host.telnetPort ?? host.port ?? 23 };
+            return { i18nKey: 'terminal.connection.protocol.telnet', showPort: true, port: resolveTelnetPort(host) };
         case 'mosh':
             return { i18nKey: 'terminal.connection.protocol.mosh', showPort: true, port: host.port || 22 };
         case 'serial':
