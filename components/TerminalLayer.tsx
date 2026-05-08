@@ -1447,10 +1447,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       });
     }
 
-    // Note: When switching away from SFTP, we keep the SFTP host state
-    // so the SftpSidePanel stays mounted (hidden) and preserves connections.
-    // SFTP state is only cleaned up when the panel is fully closed.
-
     setSidePanelOpenTabs(prev => {
       const next = new Map(prev);
       next.set(activeTabId, tab);
@@ -1589,7 +1585,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     ? themePreview.themeId
     : null;
 
-  // Current theme/font/size for the focused session (for ThemeSidePanel)
+  // Current theme/font/size for the focused session
   const focusedThemeId = resolveHostTerminalThemeId(focusedHost, terminalTheme.id);
   const focusedFontFamilyId = resolveHostTerminalFontFamilyId(focusedHost, terminalFontFamilyId);
   const focusedFontSize = resolveHostTerminalFontSize(focusedHost, fontSize);

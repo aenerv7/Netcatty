@@ -82,7 +82,6 @@ React Hooks，拥有状态和持久化边界。
 
 ### 服务 (`services/`)
 - `netcattyBridge.ts` — Electron IPC 桥接
-- `CloudSyncManager.ts` — 旧版多云同步编排（已废弃，保留文件但不再使用，新系统使用 `useSimpleSync` + `WebDAVAdapter` 直接通信）
 - `portForwardingService.ts` — 端口转发隧道管理
 - `EncryptionService.ts` — AES-256-GCM 加密（云同步数据加解密）
 - `credentialProtection.ts` — OS 密钥链集成
@@ -90,9 +89,7 @@ React Hooks，拥有状态和持久化边界。
 - `compressUploadService.ts` — SFTP 压缩上传
 
 ### 云同步适配器 (`services/adapters/`)
-- `WebDAVAdapter.ts` — WebDAV（同步文件存放在 `/Netcatty/` 子目录，兼容坚果云）— 当前唯一使用的同步适配器
-- `S3Adapter.ts` — AWS S3（代码保留但未使用）
-- `GitHubAdapter.ts` / `GoogleDriveAdapter.ts` / `OneDriveAdapter.ts` — 代码保留但未使用
+- `WebDAVAdapter.ts` — WebDAV（同步文件存放在 `/Netcatty/` 子目录，兼容坚果云）— 唯一的同步适配器
 
 ### AI (`ai/`)
 - `types.ts` — AI 类型定义 (ProviderConfig, ChatMessage, ToolCall, AISession 等)

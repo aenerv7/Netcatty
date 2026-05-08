@@ -285,9 +285,8 @@ export const useSftpViewFileOps = ({
       // Verify the SFTP connection hasn't switched to a different host.
       // We check hostId (not connectionId) because auto-reconnect after a
       // transient disconnect generates a fresh connectionId for the same
-      // endpoint.  The auto-connect effect in SftpSidePanel blocks
-      // host-switching while the editor is open, so a hostId mismatch here
-      // reliably indicates a genuinely different endpoint.
+      // endpoint.  A hostId mismatch here reliably indicates a genuinely
+      // different endpoint.
       const currentPane = target.side === "left"
         ? sftpRef.current.leftPane
         : sftpRef.current.rightPane;

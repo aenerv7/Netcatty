@@ -936,15 +936,6 @@ const api = {
     ipcRenderer.invoke("netcatty:cloudSync:webdav:download", { config }),
   cloudSyncWebdavDelete: (config) =>
     ipcRenderer.invoke("netcatty:cloudSync:webdav:delete", { config }),
-
-  cloudSyncS3Initialize: (config) =>
-    ipcRenderer.invoke("netcatty:cloudSync:s3:initialize", { config }),
-  cloudSyncS3Upload: (config, syncedFile) =>
-    ipcRenderer.invoke("netcatty:cloudSync:s3:upload", { config, syncedFile }),
-  cloudSyncS3Download: (config) =>
-    ipcRenderer.invoke("netcatty:cloudSync:s3:download", { config }),
-  cloudSyncS3Delete: (config) =>
-    ipcRenderer.invoke("netcatty:cloudSync:s3:delete", { config }),
   
   // Open URL in default browser
   openExternal: (url) => ipcRenderer.invoke("netcatty:openExternal", url),
@@ -1052,47 +1043,6 @@ const api = {
   awaitOAuthCallback: (expectedState, sessionId) =>
     ipcRenderer.invoke("oauth:awaitCallback", expectedState, sessionId),
   cancelOAuthCallback: (sessionId) => ipcRenderer.invoke("oauth:cancelCallback", sessionId),
-
-  // GitHub Device Flow (proxied via main process to avoid CORS)
-  githubStartDeviceFlow: (options) => ipcRenderer.invoke("netcatty:github:deviceFlow:start", options),
-  githubPollDeviceFlowToken: (options) => ipcRenderer.invoke("netcatty:github:deviceFlow:poll", options),
-  githubCancelDeviceFlowPoll: (pollId) => ipcRenderer.invoke("netcatty:github:deviceFlow:cancelPoll", pollId),
-
-  // Google OAuth (proxied via main process to avoid CORS)
-  googleExchangeCodeForTokens: (options) =>
-    ipcRenderer.invoke("netcatty:google:oauth:exchange", options),
-  googleRefreshAccessToken: (options) =>
-    ipcRenderer.invoke("netcatty:google:oauth:refresh", options),
-  googleGetUserInfo: (options) =>
-    ipcRenderer.invoke("netcatty:google:oauth:userinfo", options),
-
-  // Google Drive API (proxied via main process to avoid CORS/COEP issues in renderer)
-  googleDriveFindSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:google:drive:findSyncFile", options),
-  googleDriveCreateSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:google:drive:createSyncFile", options),
-  googleDriveUpdateSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:google:drive:updateSyncFile", options),
-  googleDriveDownloadSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:google:drive:downloadSyncFile", options),
-  googleDriveDeleteSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:google:drive:deleteSyncFile", options),
-
-  // OneDrive OAuth + Graph (proxied via main process to avoid CORS)
-  onedriveExchangeCodeForTokens: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:oauth:exchange", options),
-  onedriveRefreshAccessToken: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:oauth:refresh", options),
-  onedriveGetUserInfo: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:oauth:userinfo", options),
-  onedriveFindSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:drive:findSyncFile", options),
-  onedriveUploadSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:drive:uploadSyncFile", options),
-  onedriveDownloadSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:drive:downloadSyncFile", options),
-  onedriveDeleteSyncFile: (options) =>
-    ipcRenderer.invoke("netcatty:onedrive:drive:deleteSyncFile", options),
 
   // File opener helpers (for "Open With" feature)
   selectApplication: () =>

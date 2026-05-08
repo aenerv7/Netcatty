@@ -88,7 +88,6 @@ export const useSftpExternalOperations = (
   const uploadControllerRef = useRef<UploadController | null>(null);
 
   // Track active file watches so the side panel can block host-switching.
-  // Reset to 0 when the SFTP session disconnects (handled in SftpSidePanel).
   const activeFileWatchCountRef = useRef(0);
   const [uploadConflicts, setUploadConflicts] = useState<FileConflict[]>([]);
   const uploadConflictResolversRef = useRef(new Map<string, {

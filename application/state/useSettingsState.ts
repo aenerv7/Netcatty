@@ -1368,7 +1368,7 @@ export const useSettingsState = () => {
     reapplyCurrentTheme,
     workspaceFocusStyle,
     setWorkspaceFocusStyle,
-    // Opaque version that changes when any synced setting changes, used by useAutoSync.
+    // Opaque version that changes when any synced setting changes, used by useSimpleSync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     settingsVersion: useMemo(() => Math.random(), [
       theme, lightUiThemeId, darkUiThemeId, accentMode, customAccent,
