@@ -61,20 +61,18 @@ export const IdentityCard: React.FC<IdentityCardProps> = ({
                         {summary}
                     </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {viewMode === 'list' && (
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onClick();
-                            }}
-                        >
-                            <Pencil size={14} />
-                        </Button>
-                    )}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClick();
+                        }}
+                    >
+                        <Pencil size={14} />
+                    </Button>
                 </div>
             </div>
         </div>
