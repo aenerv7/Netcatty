@@ -1883,12 +1883,18 @@ async function startSSHSessionWrapper(event, options) {
                 _unlockedEncryptedKeys: passphraseResult.keys,
               });
             } catch (retryErr) {
-              // Notify renderer that passphrase-based retry failed,
-              // so it can clear any saved passphrases that didn't work.
-              try {
-                const failedKeyPaths = passphraseResult.keys.map(k => k.keyPath);
-                event.sender.send('netcatty:passphrase-auth-failed', { keyPaths: failedKeyPaths });
-              } catch (_) { /* sender may be destroyed */ }
+              // Only purge cached passphrases if the error is specifically
+              // a passphrase/key-parsing failure, not a generic auth rejection.
+              const retryMsg = (retryErr.message || '').toLowerCase();
+              const isPassphraseError = retryMsg.includes('bad passphrase') ||
+                retryMsg.includes('integrity check failed') ||
+                retryMsg.includes('cannot parse privatekey');
+              if (isPassphraseError) {
+                try {
+                  const failedKeyPaths = passphraseResult.keys.map(k => k.keyPath);
+                  event.sender.send('netcatty:passphrase-auth-failed', { keyPaths: failedKeyPaths });
+                } catch (_) { /* sender may be destroyed */ }
+              }
 
               // Re-wrap retry errors the same way as initial errors
               const isRetryAuthError = retryErr.message?.toLowerCase().includes('authentication') ||

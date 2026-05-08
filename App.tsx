@@ -18,6 +18,7 @@ import { matchesKeyBinding } from './domain/models';
 import { resolveGroupDefaults, applyGroupDefaults } from './domain/groupConfig';
 import { materializeHostProxyProfile } from './domain/proxyProfiles';
 import { resolveHostAuth } from './domain/sshAuth';
+import { isEncryptedCredentialPlaceholder } from './domain/credentials';
 import { applyCustomAccentToTerminalTheme, resolveHostTerminalThemeId } from './domain/terminalAppearance';
 import { collectSessionIds } from './domain/workspace';
 import { resolveCloseIntent } from './application/state/resolveCloseIntent';
@@ -1038,7 +1039,7 @@ function App({ settings }: { settings: SettingsState }) {
         // Check if a reference key exists for this path — use its passphrase
         const currentKeys = keysRef.current;
         const refKey = currentKeys.find((k: SSHKey) => k.source === 'reference' && k.filePath === request.keyPath);
-        if (refKey?.passphrase && refKey.savePassphrase !== false) {
+        if (refKey?.passphrase && refKey.savePassphrase !== false && !isEncryptedCredentialPlaceholder(refKey.passphrase)) {
           console.log('[App] Auto-responding with reference key passphrase for:', request.keyPath);
           void bridge.respondPassphrase?.(request.requestId, refKey.passphrase, false);
           return;
