@@ -18,6 +18,7 @@ import SettingsTerminalTab from "./settings/tabs/SettingsTerminalTab";
 import SettingsSystemTab from "./settings/tabs/SettingsSystemTab";
 const SettingsAITab = React.lazy(() => import("./settings/tabs/SettingsAITab"));
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
+import { ToastProvider } from "./ui/toast";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -318,7 +319,9 @@ export default function SettingsPage() {
 
     return (
         <I18nProvider locale={settings.uiLanguage}>
-            <SettingsPageContent settings={settings} />
+            <ToastProvider>
+                <SettingsPageContent settings={settings} />
+            </ToastProvider>
         </I18nProvider>
     );
 }

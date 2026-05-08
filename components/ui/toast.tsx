@@ -77,6 +77,8 @@ const TOAST_STYLES: Record<ToastType, string> = {
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [toasts, setToasts] = useState<Toast[]>([]);
+    const { resolvedLocale } = useI18n();
+    const prevLocaleRef = useRef(resolvedLocale);
 
     const showToast = useCallback((toast: Omit<Toast, 'id'>) => {
         const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -94,6 +96,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const dismissToast = useCallback((id: string) => {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
+
+    // Clear stale toasts when locale changes so users don't see old-language text
+    useEffect(() => {
+        if (prevLocaleRef.current !== resolvedLocale) {
+            prevLocaleRef.current = resolvedLocale;
+            setToasts([]);
+        }
+    }, [resolvedLocale]);
 
     // Register global toast function
     useEffect(() => {
