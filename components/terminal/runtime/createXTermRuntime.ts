@@ -37,6 +37,16 @@ import {
   isEraseScrollbackSequence,
   preserveTerminalViewportInScrollback,
 } from "../clearTerminalViewport";
+import {
+  buildKittyKeyboardModeQueryResponse,
+  createKittyKeyboardModeState,
+  encodeKittyControlKey,
+  popKittyKeyboardModeFlags,
+  pushKittyKeyboardModeFlags,
+  setKittyKeyboardAlternateScreenActive,
+  setKittyKeyboardModeFlags,
+  type KittyKeyboardModeApplyMode,
+} from "./kittyKeyboardProtocol";
 import { installUserCursorPreferenceGuard } from "./cursorPreference";
 import type {
   Host,
@@ -205,6 +215,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
   const wordSeparator = settings?.wordSeparators ?? " ()[]{}'\"";
   const keywordHighlightRules = settings?.keywordHighlightRules ?? [];
   const keywordHighlightEnabled = settings?.keywordHighlightEnabled ?? false;
+  const kittyKeyboardMode = createKittyKeyboardModeState();
 
   const resolvedFontWeightBold = (() => {
     if (typeof document === "undefined" || !document.fonts?.check) {
@@ -514,6 +525,22 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       }
     }
 
+    const kittyControlSequence = encodeKittyControlKey(kittyKeyboardMode, e);
+    if (kittyControlSequence) {
+      const id = ctx.sessionRef.current;
+      if (id) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.onAutocompleteInput?.(kittyControlSequence);
+        ctx.terminalBackend.writeToSession(id, kittyControlSequence);
+        if (ctx.isBroadcastEnabledRef.current && ctx.onBroadcastInputRef.current) {
+          ctx.onBroadcastInputRef.current(kittyControlSequence, ctx.sessionId);
+        }
+        scrollToBottomAfterInput(kittyControlSequence);
+        return false;
+      }
+    }
+
     const currentBindings = ctx.keyBindingsRef.current;
     if (currentScheme === "disabled" || currentBindings.length === 0) {
       return true;
@@ -733,6 +760,86 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     return !wipeAllowed;
   });
 
+  const readParam = (
+    params: readonly (number | number[])[],
+    index: number,
+    fallback: number,
+  ): number => {
+    const value = params[index];
+    if (Array.isArray(value)) return typeof value[0] === "number" ? value[0] : fallback;
+    return typeof value === "number" && value > 0 ? value : fallback;
+  };
+
+  const writeKittyKeyboardReply = (payload: string) => {
+    const id = ctx.sessionRef.current;
+    if (!id) return;
+    ctx.terminalBackend.writeToSession(id, payload);
+  };
+
+  const kittyKeyboardQueryDisposable = term.parser.registerCsiHandler(
+    { prefix: "?", final: "u" },
+    () => {
+      writeKittyKeyboardReply(buildKittyKeyboardModeQueryResponse(kittyKeyboardMode));
+      return true;
+    },
+  );
+
+  const kittyKeyboardSetDisposable = term.parser.registerCsiHandler(
+    { prefix: "=", final: "u" },
+    (params) => {
+      const flags = readParam(params, 0, 0);
+      const mode = readParam(params, 1, 1) as KittyKeyboardModeApplyMode;
+      setKittyKeyboardModeFlags(kittyKeyboardMode, flags, mode === 2 || mode === 3 ? mode : 1);
+      return true;
+    },
+  );
+
+  const kittyKeyboardPushDisposable = term.parser.registerCsiHandler(
+    { prefix: ">", final: "u" },
+    (params) => {
+      pushKittyKeyboardModeFlags(kittyKeyboardMode, readParam(params, 0, 0));
+      return true;
+    },
+  );
+
+  const kittyKeyboardPopDisposable = term.parser.registerCsiHandler(
+    { prefix: "<", final: "u" },
+    (params) => {
+      popKittyKeyboardModeFlags(kittyKeyboardMode, readParam(params, 0, 1));
+      return true;
+    },
+  );
+
+  const alternateScreenSetDisposable = term.parser.registerCsiHandler(
+    { prefix: "?", final: "h" },
+    (params) => {
+      const switchesToAlternateScreen = params.some((param) =>
+        Array.isArray(param)
+          ? param.includes(47) || param.includes(1047) || param.includes(1049)
+          : param === 47 || param === 1047 || param === 1049,
+      );
+      if (switchesToAlternateScreen) {
+        setKittyKeyboardAlternateScreenActive(kittyKeyboardMode, true);
+      }
+      return false;
+    },
+  );
+
+  const alternateScreenResetDisposable = term.parser.registerCsiHandler(
+    { prefix: "?", final: "l" },
+    (params) => {
+      const switchesToMainScreen = params.some((param) =>
+        Array.isArray(param)
+          ? param.includes(47) || param.includes(1047) || param.includes(1049)
+          : param === 47 || param === 1047 || param === 1049,
+      );
+      if (switchesToMainScreen) {
+        setKittyKeyboardAlternateScreenActive(kittyKeyboardMode, false);
+      }
+      return false;
+    },
+  );
+
   // Register OSC 7 handler using xterm.js parser
   // OSC 7 is the standard way for shells to report the current working directory
   const osc7Disposable = term.parser.registerOscHandler(7, (data) => {
@@ -858,6 +965,12 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       cleanupMiddleClick?.();
       keywordHighlighter.dispose();
       eraseScrollbackDisposable.dispose();
+      kittyKeyboardQueryDisposable.dispose();
+      kittyKeyboardSetDisposable.dispose();
+      kittyKeyboardPushDisposable.dispose();
+      kittyKeyboardPopDisposable.dispose();
+      alternateScreenSetDisposable.dispose();
+      alternateScreenResetDisposable.dispose();
       osc7Disposable.dispose();
       osc52Disposable.dispose();
       cursorPreferenceDisposable?.dispose();
