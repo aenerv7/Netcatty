@@ -1,5 +1,5 @@
 import type { RemoteFile, SftpFilenameEncoding } from "./types";
-import type { S3Config, SyncedFile, WebDAVConfig } from "./domain/sync";
+import type { SyncedFile, WebDAVConfig } from "./domain/sync";
 
 declare module "*.cjs" {
   const value: Record<string, unknown>;
@@ -507,14 +507,6 @@ declare global {
     ): Promise<{ resourceId: string }>;
     cloudSyncWebdavDownload?(config: WebDAVConfig): Promise<{ syncedFile: SyncedFile | null }>;
     cloudSyncWebdavDelete?(config: WebDAVConfig): Promise<{ ok: true }>;
-
-    cloudSyncS3Initialize?(config: S3Config): Promise<{ resourceId: string | null }>;
-    cloudSyncS3Upload?(
-      config: S3Config,
-      syncedFile: SyncedFile
-    ): Promise<{ resourceId: string }>;
-    cloudSyncS3Download?(config: S3Config): Promise<{ syncedFile: SyncedFile | null }>;
-    cloudSyncS3Delete?(config: S3Config): Promise<{ ok: true }>;
 
     // Port Forwarding
     startPortForward?(options: PortForwardOptions): Promise<PortForwardResult>;

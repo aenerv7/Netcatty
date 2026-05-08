@@ -1,5 +1,6 @@
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../application/i18n/I18nProvider';
 import { setNotify } from '../../application/notification';
 import { cn } from '../../lib/utils';
 

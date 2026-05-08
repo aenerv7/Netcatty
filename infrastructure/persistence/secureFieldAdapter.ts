@@ -10,7 +10,6 @@
  */
 
 import type { GroupConfig, Host, Identity, ProxyProfile, SSHKey } from "../../domain/models";
-import type { ProviderConnection, S3Config, WebDAVConfig } from "../../domain/sync";
 import { netcattyBridge } from "../services/netcattyBridge";
 
 // ---------------------------------------------------------------------------
@@ -145,70 +144,6 @@ export function encryptProxyProfiles(profiles: ProxyProfile[]): Promise<ProxyPro
 
 export function decryptProxyProfiles(profiles: ProxyProfile[]): Promise<ProxyProfile[]> {
   return Promise.all(profiles.map(decryptProxyProfileSecrets));
-}
-
-// ---------------------------------------------------------------------------
-// Provider Connection (Cloud Sync)
-// ---------------------------------------------------------------------------
-
-export async function encryptProviderSecrets(conn: ProviderConnection): Promise<ProviderConnection> {
-  const out = { ...conn };
-
-  if (out.tokens) {
-    const t = { ...out.tokens };
-    t.accessToken = (await encryptField(t.accessToken)) ?? "";
-    t.refreshToken = await encryptField(t.refreshToken);
-    out.tokens = t;
-  }
-
-  if (out.config) {
-    // WebDAV — use authType (required field unique to WebDAVConfig) as discriminator
-    // so that token-auth configs (which may lack a password key after JSON round-trip)
-    // still get their token field encrypted.
-    if ("authType" in out.config) {
-      const c = { ...out.config } as WebDAVConfig;
-      c.password = await encryptField(c.password);
-      c.token = await encryptField(c.token);
-      out.config = c;
-    }
-    // S3
-    if ("secretAccessKey" in out.config) {
-      const c = { ...out.config } as S3Config;
-      c.secretAccessKey = (await encryptField(c.secretAccessKey)) ?? "";
-      c.sessionToken = await encryptField(c.sessionToken);
-      out.config = c;
-    }
-  }
-
-  return out;
-}
-
-export async function decryptProviderSecrets(conn: ProviderConnection): Promise<ProviderConnection> {
-  const out = { ...conn };
-
-  if (out.tokens) {
-    const t = { ...out.tokens };
-    t.accessToken = (await decryptField(t.accessToken)) ?? "";
-    t.refreshToken = await decryptField(t.refreshToken);
-    out.tokens = t;
-  }
-
-  if (out.config) {
-    if ("authType" in out.config) {
-      const c = { ...out.config } as WebDAVConfig;
-      c.password = await decryptField(c.password);
-      c.token = await decryptField(c.token);
-      out.config = c;
-    }
-    if ("secretAccessKey" in out.config) {
-      const c = { ...out.config } as S3Config;
-      c.secretAccessKey = (await decryptField(c.secretAccessKey)) ?? "";
-      c.sessionToken = await decryptField(c.sessionToken);
-      out.config = c;
-    }
-  }
-
-  return out;
 }
 
 // ---------------------------------------------------------------------------
