@@ -828,6 +828,9 @@ const api = {
   statLocal: async (path) => {
     return ipcRenderer.invoke("netcatty:local:stat", { path });
   },
+  listLocalTree: async (path) => {
+    return ipcRenderer.invoke("netcatty:local:tree", { path });
+  },
   getHomeDir: async () => {
     return ipcRenderer.invoke("netcatty:local:homedir");
   },

@@ -481,6 +481,13 @@ declare global {
     renameLocalFile?(oldPath: string, newPath: string): Promise<void>;
     mkdirLocal?(path: string): Promise<void>;
     statLocal?(path: string): Promise<SftpStatResult>;
+    listLocalTree?(path: string): Promise<Array<{
+      localPath: string;
+      relativePath: string;
+      type: 'file' | 'directory';
+      size: number;
+      lastModified: number;
+    }>>;
     getHomeDir?(): Promise<string>;
     getSystemInfo?(): Promise<{ username: string; hostname: string }>;
 

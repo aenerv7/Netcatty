@@ -132,6 +132,39 @@ export interface UploadConfig {
 // Helper Functions
 // ============================================================================
 
+const formatUploadError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+export interface UploadScanningTask {
+  taskId: string;
+  complete: () => void;
+  fail: (error: unknown) => void;
+  cancel: () => void;
+  isOpen: () => boolean;
+}
+
+export function startUploadScanningTask(
+  callbacks?: UploadCallbacks,
+  taskId = crypto.randomUUID(),
+): UploadScanningTask {
+  let open = true;
+  callbacks?.onScanningStart?.(taskId);
+
+  const close = (settle: () => void) => {
+    if (!open) return;
+    open = false;
+    settle();
+  };
+
+  return {
+    taskId,
+    complete: () => close(() => callbacks?.onScanningEnd?.(taskId)),
+    fail: (error) => close(() => callbacks?.onTaskFailed?.(taskId, formatUploadError(error))),
+    cancel: () => close(() => callbacks?.onTaskCancelled?.(taskId)),
+    isOpen: () => open,
+  };
+}
+
 /**
  * Detect root folders from drop entries for bundled task creation
  */
@@ -338,24 +371,17 @@ export async function uploadFromDataTransfer(
   }
 
   // Create scanning placeholder
-  const scanningTaskId = crypto.randomUUID();
-  let scanningEnded = false;
-  const endScanning = () => {
-    if (scanningEnded) return;
-    scanningEnded = true;
-    callbacks?.onScanningEnd?.(scanningTaskId);
-  };
-  callbacks?.onScanningStart?.(scanningTaskId);
 
   const scanT0 = performance.now();
+  const scanningTask = startUploadScanningTask(callbacks);
   let entries: DropEntry[];
   try {
     entries = await extractDropEntries(dataTransfer);
   } catch (error) {
-    endScanning();
+    scanningTask.complete();
     throw error;
   }
-  endScanning();
+  scanningTask.complete();
   logger.debug(`[SFTP:perf] extractDropEntries — ${entries.length} entries — ${(performance.now() - scanT0).toFixed(0)}ms`);
 
   if (entries.length === 0) {
@@ -516,6 +542,13 @@ async function uploadEntries(
 ): Promise<UploadResult[]> {
   const results: UploadResult[] = [];
   const createdDirs = new Set<string>();
+  const failedDirs = new Map<string, string>();
+  const reportedDirectoryFailures = new Set<string>();
+  let wasCancelled = false;
+
+  if (controller?.isCancelled()) {
+    return [{ fileName: "", success: false, cancelled: true }];
+  }
 
   const statTarget = async (path: string) => {
     try {
@@ -564,8 +597,10 @@ async function uploadEntries(
     return entry;
   };
 
-  const ensureDirectory = async (dirPath: string) => {
-    if (createdDirs.has(dirPath)) return;
+  const ensureDirectory = async (dirPath: string): Promise<string | null> => {
+    if (createdDirs.has(dirPath)) return null;
+    const previousFailure = failedDirs.get(dirPath);
+    if (previousFailure) return previousFailure;
 
     try {
       if (isLocal) {
@@ -576,8 +611,11 @@ async function uploadEntries(
         await bridge.mkdirSftp(sftpId, dirPath);
       }
       createdDirs.add(dirPath);
-    } catch {
-      createdDirs.add(dirPath);
+      return null;
+    } catch (error) {
+      const errorMessage = formatUploadError(error);
+      failedDirs.set(dirPath, errorMessage);
+      return errorMessage;
     }
   };
 
@@ -654,6 +692,7 @@ async function uploadEntries(
 
   const resolvedRootFolders = detectRootFolders(resolvedEntries);
   const sortedEntries = sortEntries(resolvedEntries);
+  const explicitDirectoryPaths = new Map<string, string>();
 
   // Pre-create all needed directories in batch before file transfers
   const uploadT0 = performance.now();
@@ -661,7 +700,9 @@ async function uploadEntries(
   const allDirPaths = new Set<string>();
   for (const entry of sortedEntries) {
     if (entry.isDirectory) {
-      allDirPaths.add(joinPath(targetPath, entry.relativePath));
+      const dirPath = joinPath(targetPath, entry.relativePath);
+      allDirPaths.add(dirPath);
+      explicitDirectoryPaths.set(dirPath, entry.relativePath);
     } else {
       const pathParts = entry.relativePath.split('/');
       if (pathParts.length > 1) {
@@ -686,11 +727,23 @@ async function uploadEntries(
   const sortedDepths = Array.from(dirsByDepth.keys()).sort((a, b) => a - b);
   for (const depth of sortedDepths) {
     const dirs = dirsByDepth.get(depth)!;
-    await Promise.all(dirs.map(d => ensureDirectory(d)));
+    const directoryResults = await Promise.all(dirs.map(async (dirPath) => ({
+      dirPath,
+      error: await ensureDirectory(dirPath),
+    })));
+    for (const { dirPath, error } of directoryResults) {
+      if (!error) continue;
+      const relativePath = explicitDirectoryPaths.get(dirPath);
+      if (!relativePath || reportedDirectoryFailures.has(relativePath)) continue;
+      reportedDirectoryFailures.add(relativePath);
+      results.push({ fileName: relativePath, success: false, error });
+    }
+    if (controller?.isCancelled()) {
+      wasCancelled = true;
+      break;
+    }
   }
   logger.debug(`[SFTP:perf] batch mkdir done — ${allDirPaths.size} dirs — ${(performance.now() - uploadT0).toFixed(0)}ms`);
-
-  let wasCancelled = false;
 
   // Track bundled task progress
   const bundleProgress = new Map<string, {
@@ -1020,7 +1073,7 @@ async function uploadEntries(
             break;
           }
 
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage = formatUploadError(error);
           results.push({ fileName: entry.relativePath, success: false, error: errorMessage });
 
           if (bundleTaskId) {
@@ -1083,6 +1136,10 @@ export async function uploadEntriesDirect(
   controller?: UploadController
 ): Promise<UploadResult[]> {
   const { targetPath, sftpId, isLocal, bridge, joinPath, callbacks, useCompressedUpload, resolveConflict } = config;
+
+  if (controller?.isCancelled()) {
+    return [{ fileName: "", success: false, cancelled: true }];
+  }
 
   if (controller) {
     controller.reset();
@@ -1335,7 +1392,7 @@ async function uploadFoldersCompressed(
       }
       
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = formatUploadError(error);
       
       // Remove compression ID from controller on error
       if (taskId) {

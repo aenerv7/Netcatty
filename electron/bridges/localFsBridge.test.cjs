@@ -1,7 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { parseAttribOutput, listWindowsHiddenBasenames } = require("./localFsBridge.cjs");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const {
+  collectLocalTreeEntries,
+  parseAttribOutput,
+  listWindowsHiddenBasenames,
+} = require("./localFsBridge.cjs");
 
 test("parseAttribOutput returns an empty set for empty input", () => {
   assert.equal(parseAttribOutput("").size, 0);
@@ -136,4 +144,29 @@ test("listWindowsHiddenBasenames invokes attrib.exe with /d so hidden directorie
     Array.isArray(capturedArgs) && capturedArgs.includes("/d"),
     `expected /d in attrib args so hidden directories are included, got ${JSON.stringify(capturedArgs)}`,
   );
+});
+
+test("collectLocalTreeEntries preserves empty directories in selected folders", async () => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "netcatty-upload-tree-"));
+  const selected = path.join(root, "project");
+  await fs.promises.mkdir(path.join(selected, "empty"), { recursive: true });
+  await fs.promises.mkdir(path.join(selected, "src"), { recursive: true });
+  await fs.promises.writeFile(path.join(selected, "src", "main.txt"), "hello");
+
+  try {
+    const entries = await collectLocalTreeEntries(selected);
+    const summary = entries.map((entry) => ({
+      relativePath: entry.relativePath,
+      type: entry.type,
+    }));
+
+    assert.deepEqual(summary, [
+      { relativePath: "project", type: "directory" },
+      { relativePath: "project/empty", type: "directory" },
+      { relativePath: "project/src", type: "directory" },
+      { relativePath: "project/src/main.txt", type: "file" },
+    ]);
+  } finally {
+    await fs.promises.rm(root, { recursive: true, force: true });
+  }
 });

@@ -247,6 +247,54 @@ async function statLocal(event, payload) {
   };
 }
 
+async function collectLocalTreeEntries(rootPath) {
+  const rootStat = await fs.promises.stat(rootPath);
+  if (!rootStat.isDirectory()) {
+    throw new Error("Selected path is not a directory");
+  }
+
+  const rootName = path.basename(rootPath);
+  const entries = [{
+    localPath: rootPath,
+    relativePath: rootName,
+    type: "directory",
+    size: rootStat.size,
+    lastModified: rootStat.mtime.getTime(),
+  }];
+  const queue = [{ localPath: rootPath, relativePath: rootName }];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const children = await fs.promises.readdir(current.localPath, { withFileTypes: true });
+    children.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const child of children) {
+      const childPath = path.join(current.localPath, child.name);
+      const childRelativePath = `${current.relativePath}/${child.name}`;
+      const stat = await fs.promises.stat(childPath);
+      const isDirectory = stat.isDirectory();
+
+      entries.push({
+        localPath: childPath,
+        relativePath: childRelativePath,
+        type: isDirectory ? "directory" : "file",
+        size: stat.size,
+        lastModified: stat.mtime.getTime(),
+      });
+
+      if (isDirectory) {
+        queue.push({ localPath: childPath, relativePath: childRelativePath });
+      }
+    }
+  }
+
+  return entries;
+}
+
+async function listLocalTree(event, payload) {
+  return collectLocalTreeEntries(payload.path);
+}
+
 /**
  * Get the home directory
  */
@@ -311,6 +359,7 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:local:rename", renameLocalFile);
   ipcMain.handle("netcatty:local:mkdir", mkdirLocal);
   ipcMain.handle("netcatty:local:stat", statLocal);
+  ipcMain.handle("netcatty:local:tree", listLocalTree);
   ipcMain.handle("netcatty:local:homedir", getHomeDir);
   ipcMain.handle("netcatty:system:info", getSystemInfo);
   ipcMain.handle("netcatty:known-hosts:read", readKnownHosts);
@@ -325,6 +374,8 @@ module.exports = {
   renameLocalFile,
   mkdirLocal,
   statLocal,
+  collectLocalTreeEntries,
+  listLocalTree,
   getHomeDir,
   getSystemInfo,
   readKnownHosts,
