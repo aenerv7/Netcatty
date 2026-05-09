@@ -5,7 +5,7 @@
  */
 
 // Passphrase request pending map
-// Map of requestId -> { resolveCallback, rejectCallback, webContentsId, keyPath, createdAt, timeoutId }
+// Map of requestId -> { resolveCallback, webContentsId, keyPath, createdAt, timeoutId, sender, signal, abortHandler }
 const { randomUUID } = require("node:crypto");
 
 const passphraseRequests = new Map();
@@ -28,11 +28,62 @@ function generateRequestId(prefix = 'pp') {
  * @param {string} [hostname] - Optional hostname for context
  * @returns {Promise<{ passphrase?: string, cancelled?: boolean, skipped?: boolean } | null>}
  */
-function requestPassphrase(sender, keyPath, keyName, hostname, passphraseInvalid) {
+function settleRequest(requestId, result, notification) {
+  const pending = passphraseRequests.get(requestId);
+  if (!pending) return false;
+
+  if (pending.timeoutId) {
+    clearTimeout(pending.timeoutId);
+  }
+  if (pending.signal && pending.abortHandler) {
+    pending.signal.removeEventListener("abort", pending.abortHandler);
+  }
+
+  passphraseRequests.delete(requestId);
+
+  if (notification) {
+    try {
+      if (!pending.sender?.isDestroyed?.()) {
+        pending.sender?.send?.(notification.channel, {
+          requestId,
+          ...(notification.payload || {}),
+        });
+      }
+    } catch (err) {
+      console.warn(`[Passphrase] Failed to send ${notification.channel} notification:`, err.message);
+    }
+  }
+
+  pending.resolveCallback(result);
+  return true;
+}
+
+function cancelPassphraseRequest(requestId, reason = "cancelled") {
+  const cancelled = settleRequest(
+    requestId,
+    { cancelled: true },
+    {
+      channel: "netcatty:passphrase-cancelled",
+      payload: { reason },
+    }
+  );
+  if (cancelled) {
+    console.log(`[Passphrase] Request ${requestId} cancelled by ${reason}`);
+  }
+  return cancelled;
+}
+
+function requestPassphrase(sender, keyPath, keyName, hostname, passphraseInvalid, options = {}) {
   return new Promise((resolve) => {
     if (!sender || sender.isDestroyed()) {
       console.warn('[Passphrase] Sender is destroyed, cannot request passphrase');
       resolve(null);
+      return;
+    }
+
+    const signal = options?.signal;
+    if (signal?.aborted) {
+      resolve({ cancelled: true });
       return;
     }
     
@@ -40,32 +91,35 @@ function requestPassphrase(sender, keyPath, keyName, hostname, passphraseInvalid
     
     // Set up TTL timeout to clean up abandoned requests
     const timeoutId = setTimeout(() => {
-      const pending = passphraseRequests.get(requestId);
-      if (pending) {
+      if (passphraseRequests.has(requestId)) {
         console.warn(`[Passphrase] Request ${requestId} timed out after ${REQUEST_TTL_MS / 1000}s`);
-        passphraseRequests.delete(requestId);
-        
-        // Notify renderer to close the modal
-        try {
-          if (!sender.isDestroyed()) {
-            sender.send('netcatty:passphrase-timeout', { requestId });
-          }
-        } catch (err) {
-          console.warn('[Passphrase] Failed to send timeout notification:', err.message);
-        }
-        
-        resolve(null);
+        settleRequest(
+          requestId,
+          null,
+          { channel: "netcatty:passphrase-timeout" }
+        );
       }
     }, REQUEST_TTL_MS);
+
+    const abortHandler = () => {
+      cancelPassphraseRequest(requestId, "external-cancel");
+    };
     
     passphraseRequests.set(requestId, {
       resolveCallback: resolve,
+      sender,
       webContentsId: sender.id,
       keyPath,
       keyName,
       createdAt: Date.now(),
       timeoutId,
+      signal,
+      abortHandler: signal ? abortHandler : null,
     });
+
+    if (signal) {
+      signal.addEventListener("abort", abortHandler, { once: true });
+    }
     
     console.log(`[Passphrase] Requesting passphrase for ${keyName} (${requestId})`);
     
@@ -79,9 +133,7 @@ function requestPassphrase(sender, keyPath, keyName, hostname, passphraseInvalid
       });
     } catch (err) {
       console.error('[Passphrase] Failed to send passphrase request:', err);
-      passphraseRequests.delete(requestId);
-      clearTimeout(timeoutId);
-      resolve(null);
+      settleRequest(requestId, null);
     }
   });
 }
@@ -98,24 +150,17 @@ function handleResponse(_event, payload) {
     return { success: false, error: 'Request not found' };
   }
   
-  // Clear the TTL timeout
-  if (pending.timeoutId) {
-    clearTimeout(pending.timeoutId);
-  }
-  
-  passphraseRequests.delete(requestId);
-  
   if (cancelled) {
     // User clicked Cancel - stop the entire passphrase flow
     console.log(`[Passphrase] Request ${requestId} cancelled by user`);
-    pending.resolveCallback({ cancelled: true });
+    settleRequest(requestId, { cancelled: true });
   } else if (skipped) {
     // User clicked Skip - skip this key but continue with others
     console.log(`[Passphrase] Request ${requestId} skipped by user`);
-    pending.resolveCallback({ skipped: true });
+    settleRequest(requestId, { skipped: true });
   } else {
     console.log(`[Passphrase] Received passphrase for ${requestId}`);
-    pending.resolveCallback({ passphrase: passphrase || null });
+    settleRequest(requestId, { passphrase: passphrase || null });
   }
   
   return { success: true };
@@ -138,6 +183,7 @@ function getRequests() {
 module.exports = {
   generateRequestId,
   requestPassphrase,
+  cancelPassphraseRequest,
   handleResponse,
   registerHandler,
   getRequests,

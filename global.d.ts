@@ -118,6 +118,7 @@ declare global {
 
   // Port Forwarding Types
   interface PortForwardOptions {
+    ruleId?: string;
     tunnelId: string;
     type: 'local' | 'remote' | 'dynamic';
     localPort: number;
@@ -231,6 +232,11 @@ declare global {
       port?: number;
       password?: string;
       privateKey?: string;
+      certificate?: string;
+      publicKey?: string;
+      keyId?: string;
+      keySource?: 'generated' | 'imported' | 'reference';
+      identityFilePaths?: string[];
       passphrase?: string;
       command: string;
       timeout?: number;
@@ -381,8 +387,11 @@ declare global {
     onPassphraseTimeout?(
       cb: (event: { requestId: string }) => void
     ): () => void;
+    onPassphraseCancelled?(
+      cb: (event: { requestId: string; reason?: string }) => void
+    ): () => void;
     onPassphraseAuthFailed?(
-      cb: (event: { keyPaths: string[] }) => void
+      cb: (event: { keyPaths: string[]; keyIds?: string[] }) => void
     ): () => void;
 
     // SFTP operations

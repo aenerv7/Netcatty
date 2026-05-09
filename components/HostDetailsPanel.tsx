@@ -215,6 +215,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
 
   // Local key file path input state
   const [newKeyFilePath, setNewKeyFilePath] = useState("");
+  const [pendingReferenceKeyPath, setPendingReferenceKeyPath] = useState<string | null>(null);
 
   // New group creation state
   const [newGroupName, setNewGroupName] = useState("");
@@ -243,6 +244,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
     if (initialData) {
       setForm(normalizePrimaryTelnetState(initialData));
       setGroupInputValue(initialData.group || "");
+      setPendingReferenceKeyPath(null);
       // Reset password visibility when host changes for privacy
       setShowPassword(false);
     }
@@ -251,6 +253,20 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   const update = <K extends keyof Host>(key: K, value: Host[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  const addLocalKeyFilePath = useCallback((path: string) => {
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    setForm((prev) => ({
+      ...prev,
+      identityFilePaths: onImportKey ? [trimmed] : [...(prev.identityFilePaths || []), trimmed],
+      identityFileId: undefined,
+      authMethod: "key",
+    }));
+    setPendingReferenceKeyPath(onImportKey ? trimmed : null);
+    setNewKeyFilePath("");
+    setSelectedCredentialType(null);
+  }, [onImportKey]);
 
   const effectiveGroupDefaults = useMemo(() => {
     const currentGroupPath = form.group || defaultGroup;
@@ -477,6 +493,26 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
       managedSourceId: finalManagedSourceId,
     };
     cleaned = normalizePrimaryTelnetState(cleaned);
+    if (
+      onImportKey &&
+      pendingReferenceKeyPath &&
+      cleaned.identityFilePaths?.includes(pendingReferenceKeyPath)
+    ) {
+      const fileName = pendingReferenceKeyPath.split('/').pop() || pendingReferenceKeyPath;
+      const key = onImportKey({
+        source: 'reference',
+        filePath: pendingReferenceKeyPath,
+        label: fileName,
+        privateKey: '',
+        category: 'key',
+      });
+      cleaned = {
+        ...cleaned,
+        identityFileId: key.id,
+        identityFilePaths: [pendingReferenceKeyPath],
+        authMethod: "key",
+      };
+    }
     const preserveLegacyTheme = initialData?.theme != null && cleaned.themeOverride !== false;
     const preserveLegacyFontFamily = initialData?.fontFamily != null && cleaned.fontFamilyOverride !== false;
     const preserveLegacyFontSize = initialData?.fontSize != null && cleaned.fontSizeOverride !== false;
@@ -593,6 +629,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         identityFileId: undefined,
         identityFilePaths: undefined,
       }));
+      setPendingReferenceKeyPath(null);
       setSelectedCredentialType(null);
       setCredentialPopoverOpen(false);
       setIdentitySuggestionsOpen(false);
@@ -1125,6 +1162,9 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       onClick={() => {
                         const paths = form.identityFilePaths?.filter((_, i) => i !== idx) || [];
                         update("identityFilePaths", paths.length > 0 ? paths : undefined);
+                        if (keyPath === pendingReferenceKeyPath) {
+                          setPendingReferenceKeyPath(null);
+                        }
                       }}
                     >
                       <Trash2 size={12} />
@@ -1153,6 +1193,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                   onClick={() => {
                     update("identityFileId", undefined);
                     update("authMethod", "password");
+                    setPendingReferenceKeyPath(null);
                     setSelectedCredentialType(null);
                   }}
                 >
@@ -1247,6 +1288,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       update("identityFileId", val);
                       update("authMethod", "key");
                       update("identityFilePaths", undefined);
+                      setPendingReferenceKeyPath(null);
                       setSelectedCredentialType(null);
                     }}
                     placeholder={t("hostDetails.keys.search")}
@@ -1283,6 +1325,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       update("identityFileId", val);
                       update("authMethod", "certificate");
                       update("identityFilePaths", undefined);
+                      setPendingReferenceKeyPath(null);
                       setSelectedCredentialType(null);
                     }}
                     placeholder={t("hostDetails.certs.search")}
@@ -1318,27 +1361,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && newKeyFilePath.trim()) {
                           e.preventDefault();
-                          const path = newKeyFilePath.trim();
-                          if (onImportKey) {
-                            const fileName = path.split('/').pop() || path;
-                            const key = onImportKey({
-                              source: 'reference',
-                              filePath: path,
-                              label: fileName,
-                              privateKey: '',
-                              category: 'key',
-                            });
-                            update("identityFileId", key.id);
-                            update("identityFilePaths", undefined);
-                            update("authMethod", "key");
-                          } else {
-                            const paths = [...(form.identityFilePaths || []), path];
-                            update("identityFilePaths", paths);
-                            update("identityFileId", undefined);
-                            update("authMethod", "key");
-                          }
-                          setNewKeyFilePath("");
-                          setSelectedCredentialType(null);
+                          addLocalKeyFilePath(newKeyFilePath);
                         }
                       }}
                     />
@@ -1356,25 +1379,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                           [{ name: "All Files", extensions: ["*"] }]
                         );
                         if (filePath) {
-                          if (onImportKey) {
-                            const fileName = filePath.split('/').pop() || filePath;
-                            const key = onImportKey({
-                              source: 'reference',
-                              filePath,
-                              label: fileName,
-                              privateKey: '',
-                              category: 'key',
-                            });
-                            update("identityFileId", key.id);
-                            update("identityFilePaths", undefined);
-                            update("authMethod", "key");
-                          } else {
-                            const paths = [...(form.identityFilePaths || []), filePath];
-                            update("identityFilePaths", paths);
-                            update("identityFileId", undefined);
-                            update("authMethod", "key");
-                          }
-                          setSelectedCredentialType(null);
+                          addLocalKeyFilePath(filePath);
                         }
                       }}
                     >

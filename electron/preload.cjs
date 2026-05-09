@@ -19,6 +19,7 @@ const fullscreenChangeListeners = new Set();
 const keyboardInteractiveListeners = new Set();
 const passphraseListeners = new Set();
 const passphraseTimeoutListeners = new Set();
+const passphraseCancelledListeners = new Set();
 const passphraseAuthFailedListeners = new Set();
 const updateDownloadProgressListeners = new Set();
 const updateDownloadedListeners = new Set();
@@ -304,6 +305,17 @@ ipcRenderer.on("netcatty:passphrase-timeout", (_event, payload) => {
       cb(payload);
     } catch (err) {
       console.error("Passphrase timeout callback failed", err);
+    }
+  });
+});
+
+// Passphrase cancelled events (request ended because the owning operation stopped)
+ipcRenderer.on("netcatty:passphrase-cancelled", (_event, payload) => {
+  passphraseCancelledListeners.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (err) {
+      console.error("Passphrase cancelled callback failed", err);
     }
   });
 });
@@ -722,6 +734,10 @@ const api = {
   onPassphraseTimeout: (cb) => {
     passphraseTimeoutListeners.add(cb);
     return () => passphraseTimeoutListeners.delete(cb);
+  },
+  onPassphraseCancelled: (cb) => {
+    passphraseCancelledListeners.add(cb);
+    return () => passphraseCancelledListeners.delete(cb);
   },
   onPassphraseAuthFailed: (cb) => {
     passphraseAuthFailedListeners.add(cb);

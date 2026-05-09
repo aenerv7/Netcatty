@@ -21,7 +21,8 @@ import {
 import React, { useCallback, useMemo, useState } from "react";
 import { useI18n } from "../application/i18n/I18nProvider";
 import { useStoredViewMode } from "../application/state/useStoredViewMode";
-import { resolveHostAuth } from "../domain/sshAuth";
+import { sanitizeCredentialValue } from "../domain/credentials";
+import { resolveBridgeKeyAuth, resolveHostAuth } from "../domain/sshAuth";
 import { STORAGE_KEY_VAULT_KEYS_VIEW_MODE } from "../infrastructure/config/storageKeys";
 import { logger } from "../lib/logger";
 import { cn } from "../lib/utils";
@@ -1032,15 +1033,25 @@ echo $3 >> "$FILE"`);
                         keys,
                         identities,
                       });
+                      const exportKeyAuth = resolveBridgeKeyAuth({
+                        key: exportAuth.key,
+                        fallbackIdentityFilePaths: exportAuth.authMethod === "password" || exportAuth.keyId
+                          ? undefined
+                          : exportHost.identityFilePaths,
+                        passphrase: exportAuth.passphrase,
+                      });
+                      const exportPassword = sanitizeCredentialValue(exportAuth.password);
 
                       // Need either password or a usable key to run remote command.
-                      if (!exportAuth.password && !exportAuth.key?.privateKey) {
+                      if (
+                        !exportPassword &&
+                        !exportKeyAuth.privateKey &&
+                        !exportKeyAuth.identityFilePaths?.length
+                      ) {
                         throw new Error(
                           t("keychain.export.missingCredentials"),
                         );
                       }
-
-                      const hostPrivateKey = exportAuth.key?.privateKey;
 
                       // Escape the public key for shell (single quotes, escape existing quotes)
                       const escapedPublicKey = panel.key.publicKey.replace(
@@ -1062,8 +1073,14 @@ echo $3 >> "$FILE"`);
                         hostname: exportHost.hostname,
                         username: exportAuth.username,
                         port: exportHost.port || 22,
-                        password: exportAuth.password,
-                        privateKey: hostPrivateKey,
+                        password: exportPassword,
+                        privateKey: exportKeyAuth.privateKey,
+                        certificate: exportAuth.key?.certificate,
+                        publicKey: exportAuth.key?.publicKey,
+                        keyId: exportAuth.keyId,
+                        keySource: exportAuth.key?.source,
+                        passphrase: exportKeyAuth.passphrase,
+                        identityFilePaths: exportKeyAuth.identityFilePaths,
                         command,
                         timeout: 30000,
                         enableKeyboardInteractive: true,

@@ -11,6 +11,14 @@ import { useUpdateCheck } from './application/state/useUpdateCheck';
 import { useVaultState } from './application/state/useVaultState';
 import { useWindowControls } from './application/state/useWindowControls';
 import { useEditorTabs, editorTabStore } from './application/state/editorTabStore';
+import {
+  clearReferenceKeyPassphrases,
+  clearKeyPassphrasesByIds,
+  loadDefaultKeyPassphrase,
+  rememberKeyPassphrase,
+  removeDefaultKeyPassphrases,
+  shouldUpdateReferenceKeyPassphrase,
+} from './application/defaultKeyPassphrases';
 import { initializeFonts } from './application/state/fontStore';
 import { initializeUIFonts } from './application/state/uiFontStore';
 import { I18nProvider, useI18n } from './application/i18n/I18nProvider';
@@ -38,9 +46,7 @@ import { AlertTriangle, Download, Trash2 } from 'lucide-react';
 import {
   STORAGE_KEY_DEBUG_HOTKEYS,
   STORAGE_KEY_PORT_FORWARDING,
-  STORAGE_KEY_DEFAULT_KEY_PASSPHRASES,
 } from './infrastructure/config/storageKeys';
-import { encryptField, decryptField } from './infrastructure/persistence/secureFieldAdapter';
 import { getEffectiveKnownHosts } from './infrastructure/syncHelpers';
 import { TopTabs } from './components/TopTabs';
 import { Button } from './components/ui/button';
@@ -182,47 +188,6 @@ const TerminalLayerMount: React.FC<TerminalLayerProps> = (props) => {
     </Suspense>
   );
 };
-
-// Helper functions for default SSH key passphrase persistence
-async function saveDefaultKeyPassphrase(keyPath: string, passphrase: string): Promise<void> {
-  const store = localStorageAdapter.read<Record<string, string>>(STORAGE_KEY_DEFAULT_KEY_PASSPHRASES) ?? {};
-  store[keyPath] = await encryptField(passphrase) ?? passphrase;
-  localStorageAdapter.write(STORAGE_KEY_DEFAULT_KEY_PASSPHRASES, store);
-}
-
-async function loadDefaultKeyPassphrase(keyPath: string): Promise<string | null> {
-  const store = localStorageAdapter.read<Record<string, string>>(STORAGE_KEY_DEFAULT_KEY_PASSPHRASES);
-  const enc = store?.[keyPath];
-  if (!enc) return null;
-  return (await decryptField(enc)) ?? null;
-}
-
-function removeDefaultKeyPassphrases(keyPaths: string[]): void {
-  const store = localStorageAdapter.read<Record<string, string>>(STORAGE_KEY_DEFAULT_KEY_PASSPHRASES);
-  if (!store) return;
-  let changed = false;
-  for (const keyPath of keyPaths) {
-    if (keyPath in store) {
-      delete store[keyPath];
-      changed = true;
-    }
-  }
-  if (changed) {
-    localStorageAdapter.write(STORAGE_KEY_DEFAULT_KEY_PASSPHRASES, store);
-  }
-}
-
-function clearReferenceKeyPassphrases(keys: SSHKey[], keyPaths: string[]): SSHKey[] {
-  let changed = false;
-  const updated = keys.map((key) => {
-    if (key.source === 'reference' && key.filePath && keyPaths.includes(key.filePath) && key.passphrase) {
-      changed = true;
-      return { ...key, passphrase: undefined, savePassphrase: false };
-    }
-    return key;
-  });
-  return changed ? updated : keys;
-}
 
 function App({ settings }: { settings: SettingsState }) {
   const { t } = useI18n();
@@ -1049,12 +1014,23 @@ function App({ settings }: { settings: SettingsState }) {
         const saved = await loadDefaultKeyPassphrase(request.keyPath);
         if (saved) {
           console.log('[App] Auto-responding with saved passphrase for:', request.keyPath);
-          void bridge.respondPassphrase?.(request.requestId, saved, false);
           // Migrate to reference key if one exists
-          if (refKey && !refKey.passphrase) {
-            const updated = currentKeys.map((k: SSHKey) => k.id === refKey.id ? { ...k, passphrase: saved, savePassphrase: true } : k);
-            void updateKeys(updated);
+          if (shouldUpdateReferenceKeyPassphrase(refKey)) {
+            try {
+              await rememberKeyPassphrase({
+                keyPath: request.keyPath,
+                passphrase: saved,
+                keys: currentKeys,
+                updateKeys,
+                setCurrentKeys: (updated) => {
+                  keysRef.current = updated;
+                },
+              });
+            } catch (err) {
+              console.warn('[App] Failed to migrate passphrase to reference key:', err);
+            }
           }
+          void bridge.respondPassphrase?.(request.requestId, saved, false);
           return;
         }
       }
@@ -1071,28 +1047,33 @@ function App({ settings }: { settings: SettingsState }) {
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [updateKeys]);
 
   // Handle passphrase submit
   const handlePassphraseSubmit = useCallback(async (requestId: string, passphrase: string, remember: boolean) => {
     const bridge = netcattyBridge.get();
-    if (bridge?.respondPassphrase) {
-      void bridge.respondPassphrase(requestId, passphrase, false);
-    }
-
     const request = passphraseQueue.find((r: PassphraseRequest) => r.requestId === requestId);
 
     // Save passphrase if requested
     if (remember && request?.keyPath) {
       console.log('[App] Saving passphrase for:', request.keyPath);
-      void saveDefaultKeyPassphrase(request.keyPath, passphrase);
-      // Also save to matching reference key
-      const currentKeys = keysRef.current;
-      const refKey = currentKeys.find((k: SSHKey) => k.source === 'reference' && k.filePath === request.keyPath);
-      if (refKey) {
-        const updated = currentKeys.map((k: SSHKey) => k.id === refKey.id ? { ...k, passphrase, savePassphrase: true } : k);
-        void updateKeys(updated);
+      try {
+        await rememberKeyPassphrase({
+          keyPath: request.keyPath,
+          passphrase,
+          keys: keysRef.current,
+          updateKeys,
+          setCurrentKeys: (updated) => {
+            keysRef.current = updated;
+          },
+        });
+      } catch (err) {
+        console.warn('[App] Failed to save passphrase:', err);
       }
+    }
+
+    if (bridge?.respondPassphrase) {
+      void bridge.respondPassphrase(requestId, passphrase, false);
     }
 
     setPassphraseQueue(prev => prev.filter(r => r.requestId !== requestId));
@@ -1139,16 +1120,35 @@ function App({ settings }: { settings: SettingsState }) {
     };
   }, []);
 
+  // Handle passphrase cancellation (owning connection was stopped)
+  useEffect(() => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.onPassphraseCancelled) return;
+
+    const unsubscribe = bridge.onPassphraseCancelled((event) => {
+      console.log('[App] Passphrase request cancelled:', event.requestId);
+      setPassphraseQueue(prev => prev.filter(r => r.requestId !== event.requestId));
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   // Handle passphrase auth failure (saved passphrase was wrong, clear it)
   useEffect(() => {
     const bridge = netcattyBridge.get();
     if (!bridge?.onPassphraseAuthFailed) return;
 
     const unsubscribe = bridge.onPassphraseAuthFailed((event) => {
-      console.log('[App] Passphrase auth failed for keys:', event.keyPaths);
-      removeDefaultKeyPassphrases(event.keyPaths);
-      const updated = clearReferenceKeyPassphrases(keysRef.current, event.keyPaths);
+      const keyPaths = event.keyPaths ?? [];
+      const keyIds = event.keyIds ?? [];
+      console.log('[App] Passphrase auth failed for keys:', { keyPaths, keyIds });
+      removeDefaultKeyPassphrases(keyPaths);
+      const withoutReferencePassphrases = clearReferenceKeyPassphrases(keysRef.current, keyPaths);
+      const updated = clearKeyPassphrasesByIds(withoutReferencePassphrases, keyIds);
       if (updated !== keysRef.current) {
+        keysRef.current = updated;
         void updateKeys(updated);
       }
     });

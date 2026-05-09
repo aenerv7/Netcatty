@@ -1098,6 +1098,14 @@ async function buildMoshSshAuthArgs(options, sessionId) {
       if (sshArgs.length > 0) {
         sshArgs.push("-o", "IdentitiesOnly=yes");
       }
+      if (typeof options.certificate === "string" && options.certificate.trim().length > 0) {
+        const certPath = await writeMoshAuthTempFile(
+          safeMoshAuthFileName(sessionId, options.keyId, "-cert.pub"),
+          options.certificate,
+        );
+        tempFiles.push(certPath);
+        sshArgs.push("-o", `CertificateFile=${certPath}`);
+      }
     }
   } catch (err) {
     cleanupMoshAuthTempFiles(tempFiles);

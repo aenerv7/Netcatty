@@ -281,7 +281,7 @@ export const useSftpConnections = ({
             );
           };
 
-          const hasKey = !!credentials.privateKey;
+          const hasKey = !!credentials.privateKey || !!credentials.identityFilePaths?.length;
           const hasPassword = !!credentials.password;
 
           let sftpId: string | undefined;
@@ -305,6 +305,7 @@ export const useSftpConnections = ({
                   publicKey: undefined,
                   keyId: undefined,
                   keySource: undefined,
+                  identityFilePaths: undefined,
                 });
               } else {
                 throw err;

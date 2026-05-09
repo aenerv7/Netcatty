@@ -25,6 +25,11 @@ const {
   findAllDefaultPrivateKeys: findAllDefaultPrivateKeysFromHelper,
   getSshAgentSocket,
   readFileNoFollow,
+  preparePrivateKeyForAuth,
+  loadIdentityFileForAuth,
+  loadFirstIdentityFileForAuth,
+  PassphraseCancelledError,
+  isPassphraseCancelledError,
 } = require("./sshAuthHelper.cjs");
 const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
 const { trackSessionIdlePrompt } = require("./ai/shellUtils.cjs");
@@ -468,6 +473,40 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
       const hasCertificate =
         typeof jump.certificate === "string" && jump.certificate.trim().length > 0;
 
+      const identityFile = !jump.privateKey
+        ? await loadFirstIdentityFileForAuth({
+          sender,
+          identityFilePaths: jump.identityFilePaths,
+          hostname: hopLabel,
+          initialPassphrase: jump.passphrase,
+          passphraseSignal: options._passphraseSignal,
+          logPrefix: `[Chain] Hop ${i + 1}:`,
+          onLoaded: (loaded) => {
+            if (loaded.passphrase) {
+              sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
+            }
+            console.log(`[Chain] Hop ${i + 1}: loaded identity file ${loaded.keyPath}`);
+          },
+          onError: (err, keyPath) => {
+            console.warn(`[Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
+          },
+        })
+        : null;
+      const inlineKey = jump.privateKey
+        ? await preparePrivateKeyForAuth({
+          sender,
+          privateKey: jump.privateKey,
+          keyId: jump.keyId,
+          keyName: jump.keyId || jump.label || jump.username,
+          hostname: hopLabel,
+          initialPassphrase: jump.passphrase,
+          passphraseSignal: options._passphraseSignal,
+          logPrefix: `[Chain] Hop ${i + 1}:`,
+        })
+        : null;
+      const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+      const effectivePassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
       let authAgent = null;
       if (hasCertificate) {
         authAgent = new NetcattyAgent({
@@ -476,16 +515,16 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
           meta: {
             label: jump.keyId || jump.username || "",
             certificate: jump.certificate,
-            privateKey: jump.privateKey,
-            passphrase: jump.passphrase,
+            privateKey: effectivePrivateKey,
+            passphrase: effectivePassphrase,
           },
         });
         connOpts.agent = authAgent;
-      } else if (jump.privateKey) {
-        connOpts.privateKey = jump.privateKey;
-        if (jump.passphrase) {
-          connOpts.passphrase = jump.passphrase;
-        } else if (isKeyEncrypted(jump.privateKey)) {
+      } else if (effectivePrivateKey) {
+        connOpts.privateKey = effectivePrivateKey;
+        if (effectivePassphrase) {
+          connOpts.passphrase = effectivePassphrase;
+        } else if (jump.privateKey && isKeyEncrypted(jump.privateKey)) {
           // Key is encrypted but no passphrase provided — prompt the user
           console.log(`[Chain] Hop ${i + 1}: key is encrypted, requesting passphrase`);
           sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
@@ -494,7 +533,9 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
             sender,
             `SSH key for ${keyLabel}`,
             keyLabel,
-            hopLabel
+            hopLabel,
+            false,
+            { signal: options._passphraseSignal }
           );
           if (result?.passphrase) {
             connOpts.passphrase = result.passphrase;
@@ -503,42 +544,8 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
             // key so buildAuthHandler won't try it and stall auth.
             delete connOpts.privateKey;
             if (result?.cancelled) {
-              throw new Error(`Passphrase entry cancelled for ${hopLabel}`);
+              throw new PassphraseCancelledError(hopLabel);
             }
-          }
-        }
-      }
-
-      // Read identity files from local paths (e.g. from SSH config IdentityFile)
-      if (!connOpts.privateKey && !connOpts.agent && jump.identityFilePaths?.length > 0) {
-        for (const keyPath of jump.identityFilePaths) {
-          try {
-            const resolvedPath = keyPath.startsWith("~/")
-              ? path.join(os.homedir(), keyPath.slice(2))
-              : keyPath;
-            const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-            connOpts.privateKey = keyContent;
-            if (isKeyEncrypted(keyContent)) {
-              console.log(`[Chain] Hop ${i + 1}: identity file ${resolvedPath} is encrypted, requesting passphrase`);
-              sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
-              const result = await passphraseHandler.requestPassphrase(
-                sender,
-                resolvedPath,
-                path.basename(resolvedPath),
-                hopLabel
-              );
-              if (result?.passphrase) {
-                connOpts.passphrase = result.passphrase;
-              } else {
-                // Cancelled/skipped/timeout — clear encrypted key, try next file
-                delete connOpts.privateKey;
-                continue;
-              }
-            }
-            console.log(`[Chain] Hop ${i + 1}: loaded identity file ${resolvedPath}`);
-            break;
-          } catch (err) {
-            console.warn(`[Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
           }
         }
       }
@@ -753,6 +760,35 @@ async function startSSHSession(event, options) {
     });
 
     let authAgent = null;
+    const identityFile = !options.privateKey
+      ? await loadFirstIdentityFileForAuth({
+        sender,
+        identityFilePaths: options.identityFilePaths,
+        hostname: options.hostname,
+        initialPassphrase: options.passphrase,
+        logPrefix: "[SSH]",
+        onLoaded: (loaded) => {
+          log("Loaded identity file", { keyPath: loaded.keyPath, encrypted: !!loaded.passphrase });
+        },
+        onError: (err, keyPath) => {
+          log("Failed to read identity file", { keyPath, error: err.message });
+        },
+      })
+      : null;
+    const inlineKey = options.privateKey
+      ? await preparePrivateKeyForAuth({
+        sender,
+        privateKey: options.privateKey,
+        keyId: options.keyId,
+        keyName: options.keyId || options.username,
+        hostname: options.hostname,
+        initialPassphrase: effectivePassphrase,
+        logPrefix: "[SSH]",
+      })
+      : null;
+    const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+    const effectiveIdentityPassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
     if (hasCertificate) {
       authAgent = new NetcattyAgent({
         mode: "certificate",
@@ -760,77 +796,15 @@ async function startSSHSession(event, options) {
         meta: {
           label: options.keyId || options.username || "",
           certificate: options.certificate,
-          privateKey: options.privateKey,
-          passphrase: effectivePassphrase,
+          privateKey: effectivePrivateKey,
+          passphrase: effectiveIdentityPassphrase,
         },
       });
       connectOpts.agent = authAgent;
-    } else if (options.privateKey) {
-      connectOpts.privateKey = options.privateKey;
-      if (effectivePassphrase) {
-        connectOpts.passphrase = effectivePassphrase;
-      }
-    }
-
-    // Read identity files from local paths (e.g. from SSH config IdentityFile)
-    // Only if no explicit key was already configured
-    if (!connectOpts.privateKey && !connectOpts.agent && options.identityFilePaths?.length > 0) {
-      for (const keyPath of options.identityFilePaths) {
-        try {
-          const resolvedPath = keyPath.startsWith("~/")
-            ? path.join(os.homedir(), keyPath.slice(2))
-            : keyPath;
-          const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-          connectOpts.privateKey = keyContent;
-          // Check if key is encrypted — if so, use provided passphrase or prompt
-          if (isKeyEncrypted(keyContent)) {
-            let resolved = false;
-            let passphraseInvalid = false;
-            // Try provided passphrase first
-            if (options.passphrase) {
-              log("Identity file is encrypted, trying provided passphrase", { keyPath: resolvedPath });
-              const parsed = sshUtils.parseKey(keyContent, options.passphrase);
-              if (parsed && !(parsed instanceof Error)) {
-                connectOpts.passphrase = options.passphrase;
-                resolved = true;
-              } else {
-                log("Provided passphrase failed, will prompt user", { keyPath: resolvedPath });
-                passphraseInvalid = true;
-              }
-            }
-            // Prompt user until a valid passphrase is entered or they cancel/skip
-            while (!resolved) {
-              log("Identity file is encrypted, requesting passphrase", { keyPath: resolvedPath, passphraseInvalid });
-              const result = await passphraseHandler.requestPassphrase(
-                sender,
-                resolvedPath,
-                path.basename(resolvedPath),
-                options.hostname,
-                passphraseInvalid
-              );
-              if (!result?.passphrase) {
-                // Cancelled/skipped/timeout — clear encrypted key, try next file
-                delete connectOpts.privateKey;
-                break;
-              }
-              const parsed = sshUtils.parseKey(keyContent, result.passphrase);
-              if (parsed && !(parsed instanceof Error)) {
-                connectOpts.passphrase = result.passphrase;
-                resolved = true;
-              } else {
-                log("User-entered passphrase failed locally, requesting again", { keyPath: resolvedPath });
-                passphraseInvalid = true;
-              }
-            }
-            if (!resolved) {
-              continue;
-            }
-          }
-          log("Loaded identity file", { keyPath: resolvedPath, encrypted: isKeyEncrypted(keyContent) });
-          break; // Use the first successfully loaded key
-        } catch (err) {
-          log("Failed to read identity file", { keyPath, error: err.message });
-        }
+    } else if (effectivePrivateKey) {
+      connectOpts.privateKey = effectivePrivateKey;
+      if (effectiveIdentityPassphrase) {
+        connectOpts.passphrase = effectiveIdentityPassphrase;
       }
     }
 
@@ -1670,6 +1644,44 @@ async function execCommand(event, payload) {
   const sender = event.sender;
   const sessionId = payload.sessionId || randomUUID();
   const defaultKeys = enableKeyboardInteractive ? await findAllDefaultPrivateKeysFromHelper() : [];
+  let identityFilePrivateKey = null;
+  let identityFilePassphrase = null;
+  const inlineKey = payload.privateKey
+    ? await preparePrivateKeyForAuth({
+      sender,
+      privateKey: payload.privateKey,
+      keyId: payload.keyId,
+      keyName: payload.keyId || payload.username,
+      hostname: payload.hostname,
+      initialPassphrase: payload.passphrase,
+      logPrefix: "[SSH Exec]",
+    })
+    : null;
+
+  if (!payload.privateKey && payload.identityFilePaths?.length > 0) {
+    for (const keyPath of payload.identityFilePaths) {
+      try {
+        const identityFile = await loadIdentityFileForAuth({
+          sender,
+          keyPath,
+          hostname: payload.hostname,
+          initialPassphrase: payload.passphrase,
+          logPrefix: "[SSH Exec]",
+        });
+        if (!identityFile) {
+          continue;
+        }
+        identityFilePrivateKey = identityFile.privateKey;
+        identityFilePassphrase = identityFile.passphrase || null;
+        break;
+      } catch (err) {
+        if (isPassphraseCancelledError(err)) {
+          throw err;
+        }
+        console.warn("[SSH Exec] Failed to read identity file:", err?.message || err);
+      }
+    }
+  }
 
   return new Promise((resolve, reject) => {
     const conn = new SSHClient();
@@ -1737,6 +1749,8 @@ async function execCommand(event, payload) {
     };
 
     let authAgent = null;
+    const effectivePrivateKey = inlineKey?.privateKey || identityFilePrivateKey;
+    const effectivePassphrase = inlineKey?.passphrase || identityFilePassphrase;
     if (hasCertificate) {
       authAgent = new NetcattyAgent({
         mode: "certificate",
@@ -1744,14 +1758,16 @@ async function execCommand(event, payload) {
         meta: {
           label: payload.keyId || payload.username || "",
           certificate: payload.certificate,
-          privateKey: payload.privateKey,
-          passphrase: payload.passphrase,
+          privateKey: effectivePrivateKey,
+          passphrase: effectivePassphrase,
         },
       });
       connectOpts.agent = authAgent;
-    } else if (payload.privateKey) {
-      connectOpts.privateKey = payload.privateKey;
-      if (payload.passphrase) connectOpts.passphrase = payload.passphrase;
+    } else if (effectivePrivateKey) {
+      connectOpts.privateKey = effectivePrivateKey;
+      if (effectivePassphrase) {
+        connectOpts.passphrase = effectivePassphrase;
+      }
     }
 
     if (payload.password) connectOpts.password = payload.password;

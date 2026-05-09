@@ -7,12 +7,26 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { exec } = require("node:child_process");
+const { utils: sshUtils } = require("ssh2");
 const keyboardInteractiveHandler = require("./keyboardInteractiveHandler.cjs");
 const passphraseHandler = require("./passphraseHandler.cjs");
 
 // Default SSH key names in priority order
 const PREFERRED_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
 const SSH_KEY_PATTERN = /^id_[\w-]+$/;
+
+class PassphraseCancelledError extends Error {
+  constructor(keyPath) {
+    super(`Passphrase entry cancelled for ${keyPath}`);
+    this.name = "PassphraseCancelledError";
+    this.code = "ERR_PASSPHRASE_CANCELLED";
+    this.cancelled = true;
+  }
+}
+
+function isPassphraseCancelledError(err) {
+  return Boolean(err?.cancelled || err?.code === "ERR_PASSPHRASE_CANCELLED");
+}
 
 async function readFileNoFollow(filePath) {
   const lstat = await fs.promises.lstat(filePath);
@@ -95,6 +109,188 @@ function isKeyEncrypted(keyContent) {
   }
 
   return false;
+}
+
+function expandIdentityFilePath(keyPath) {
+  return keyPath.startsWith("~/")
+    ? path.join(os.homedir(), keyPath.slice(2))
+    : keyPath;
+}
+
+function notifyPassphraseAuthFailed(sender, keyPath, resolvedPath, keyIds) {
+  const keyPaths = resolvedPath && resolvedPath !== keyPath
+    ? [keyPath, resolvedPath]
+    : [keyPath];
+  try {
+    if (typeof sender?.isDestroyed === "function" && sender.isDestroyed()) return;
+    const payload = { keyPaths };
+    if (Array.isArray(keyIds) && keyIds.length > 0) {
+      payload.keyIds = keyIds;
+    }
+    sender?.send?.("netcatty:passphrase-auth-failed", payload);
+  } catch {
+    // Sender may have gone away while authentication was in progress.
+  }
+}
+
+async function preparePrivateKeyForAuth({
+  sender,
+  privateKey,
+  keyPath,
+  keyId,
+  keyName,
+  hostname,
+  initialPassphrase,
+  passphraseSignal,
+  logPrefix = "[SSHAuth]",
+}) {
+  if (!privateKey) return null;
+
+  if (!isKeyEncrypted(privateKey)) {
+    return { privateKey, keyPath, keyName };
+  }
+
+  const promptKeyPath = keyPath || `SSH key for ${keyName || hostname || "connection"}`;
+  const promptKeyName = keyName || path.basename(promptKeyPath);
+  let passphraseInvalid = false;
+
+  if (initialPassphrase) {
+    const parsed = sshUtils.parseKey(privateKey, initialPassphrase);
+    if (parsed && !(parsed instanceof Error)) {
+      return { privateKey, keyPath, keyName, passphrase: initialPassphrase };
+    }
+    console.log(`${logPrefix} Stored passphrase failed for private key`, { keyPath: promptKeyPath });
+    notifyPassphraseAuthFailed(sender, promptKeyPath, undefined, keyId ? [keyId] : undefined);
+    passphraseInvalid = true;
+  }
+
+  while (true) {
+    console.log(`${logPrefix} Private key is encrypted, requesting passphrase`, {
+      keyPath: promptKeyPath,
+      passphraseInvalid,
+    });
+    const result = await passphraseHandler.requestPassphrase(
+      sender,
+      promptKeyPath,
+      promptKeyName,
+      hostname,
+      passphraseInvalid,
+      { signal: passphraseSignal }
+    );
+    if (result?.cancelled) {
+      throw new PassphraseCancelledError(promptKeyPath);
+    }
+    if (!result?.passphrase) {
+      return null;
+    }
+
+    const parsed = sshUtils.parseKey(privateKey, result.passphrase);
+    if (parsed && !(parsed instanceof Error)) {
+      return { privateKey, keyPath, keyName, passphrase: result.passphrase };
+    }
+
+    console.log(`${logPrefix} Entered passphrase failed for private key`, { keyPath: promptKeyPath });
+    notifyPassphraseAuthFailed(sender, promptKeyPath, undefined, keyId ? [keyId] : undefined);
+    passphraseInvalid = true;
+  }
+}
+
+async function loadIdentityFileForAuth({
+  sender,
+  keyPath,
+  hostname,
+  initialPassphrase,
+  passphraseSignal,
+  logPrefix = "[SSHAuth]",
+}) {
+  const resolvedPath = expandIdentityFilePath(keyPath);
+  const privateKey = await fs.promises.readFile(resolvedPath, "utf8");
+  const keyName = path.basename(resolvedPath);
+
+  if (!isKeyEncrypted(privateKey)) {
+    return { privateKey, keyPath: resolvedPath, keyName };
+  }
+
+  let passphraseInvalid = false;
+  if (initialPassphrase) {
+    const parsed = sshUtils.parseKey(privateKey, initialPassphrase);
+    if (parsed && !(parsed instanceof Error)) {
+      return { privateKey, keyPath: resolvedPath, keyName, passphrase: initialPassphrase };
+    }
+    console.log(`${logPrefix} Stored passphrase failed for identity file`, { keyPath: resolvedPath });
+    notifyPassphraseAuthFailed(sender, keyPath, resolvedPath);
+    passphraseInvalid = true;
+  }
+
+  while (true) {
+    console.log(`${logPrefix} Identity file is encrypted, requesting passphrase`, {
+      keyPath: resolvedPath,
+      passphraseInvalid,
+    });
+    const result = await passphraseHandler.requestPassphrase(
+      sender,
+      resolvedPath,
+      keyName,
+      hostname,
+      passphraseInvalid,
+      { signal: passphraseSignal }
+    );
+    if (result?.cancelled) {
+      throw new PassphraseCancelledError(resolvedPath);
+    }
+    if (!result?.passphrase) {
+      return null;
+    }
+
+    const parsed = sshUtils.parseKey(privateKey, result.passphrase);
+    if (parsed && !(parsed instanceof Error)) {
+      return { privateKey, keyPath: resolvedPath, keyName, passphrase: result.passphrase };
+    }
+
+    console.log(`${logPrefix} Entered passphrase failed for identity file`, { keyPath: resolvedPath });
+    notifyPassphraseAuthFailed(sender, keyPath, resolvedPath);
+    passphraseInvalid = true;
+  }
+}
+
+async function loadFirstIdentityFileForAuth({
+  sender,
+  identityFilePaths,
+  hostname,
+  initialPassphrase,
+  passphraseSignal,
+  logPrefix = "[SSHAuth]",
+  onLoaded,
+  onError,
+}) {
+  if (!Array.isArray(identityFilePaths) || identityFilePaths.length === 0) {
+    return null;
+  }
+
+  for (const keyPath of identityFilePaths) {
+    try {
+      const identityFile = await loadIdentityFileForAuth({
+        sender,
+        keyPath,
+        hostname,
+        initialPassphrase,
+        passphraseSignal,
+        logPrefix,
+      });
+      if (!identityFile) {
+        continue;
+      }
+      onLoaded?.(identityFile);
+      return identityFile;
+    } catch (err) {
+      if (isPassphraseCancelledError(err)) {
+        throw err;
+      }
+      onError?.(err, keyPath);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -669,4 +865,10 @@ module.exports = {
   safeSend,
   requestPassphrasesForEncryptedKeys,
   readFileNoFollow,
+  expandIdentityFilePath,
+  preparePrivateKeyForAuth,
+  loadIdentityFileForAuth,
+  loadFirstIdentityFileForAuth,
+  PassphraseCancelledError,
+  isPassphraseCancelledError,
 };

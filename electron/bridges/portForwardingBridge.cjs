@@ -3,9 +3,6 @@
  * Extracted from main.cjs for single responsibility
  */
 
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
 const net = require("node:net");
 const { Client: SSHClient } = require("ssh2");
 const { NetcattyAgent } = require("./netcattyAgent.cjs");
@@ -17,9 +14,10 @@ const {
   createKeyboardInteractiveHandler, 
   applyAuthToConnOpts,
   findAllDefaultPrivateKeys: findAllDefaultPrivateKeysFromHelper,
-  isKeyEncrypted,
+  preparePrivateKeyForAuth,
+  loadFirstIdentityFileForAuth,
+  isPassphraseCancelledError,
 } = require("./sshAuthHelper.cjs");
-const passphraseHandler = require("./passphraseHandler.cjs");
 
 // Active port forwarding tunnels
 const portForwardingTunnels = new Map();
@@ -35,6 +33,29 @@ function isTunnelCancelled(tunnelState) {
   return Boolean(tunnelState?.cancelled);
 }
 
+function cancelTunnel(tunnelId, tunnel, sendStatus, { deleteEntry = false } = {}) {
+  if (!tunnel) return;
+  tunnel.cancelled = true;
+  tunnel.status = 'inactive';
+  if (tunnel.server) {
+    try { tunnel.server.close(); } catch { /* ignore */ }
+  }
+  if (tunnel.passphraseAbortController && !tunnel.passphraseAbortController.signal.aborted) {
+    try { tunnel.passphraseAbortController.abort(); } catch { /* ignore */ }
+  }
+  if (tunnel.pendingConn) {
+    try { tunnel.pendingConn.end(); } catch { /* ignore */ }
+  }
+  cleanupChainConnections(tunnel.chainConnections);
+  if (tunnel.conn) {
+    try { tunnel.conn.end(); } catch { /* ignore */ }
+  }
+  sendStatus?.('inactive');
+  if (deleteEntry) {
+    portForwardingTunnels.delete(tunnelId);
+  }
+}
+
 const { safeSend } = require("./ipcUtils.cjs");
 
 /**
@@ -42,6 +63,7 @@ const { safeSend } = require("./ipcUtils.cjs");
  */
 async function startPortForward(event, payload) {
   const {
+    ruleId,
     tunnelId,
     type, // 'local' | 'remote' | 'dynamic'
     localPort,
@@ -68,12 +90,15 @@ async function startPortForward(event, payload) {
   const hasProxy = !!proxy;
   let chainConnections = [];
   let connectionSocket = null;
+  const passphraseAbortController = new AbortController();
   const tunnelState = {
     type,
     conn,
     pendingConn: null,
     server: null,
     chainConnections,
+    passphraseAbortController,
+    ruleId,
     status: 'connecting',
     webContentsId: sender.id,
     cancelled: false,
@@ -97,64 +122,65 @@ async function startPortForward(event, payload) {
   };
 
   const hasCertificate = typeof certificate === "string" && certificate.trim().length > 0;
-
-  if (hasCertificate) {
-    connectOpts.agent = new NetcattyAgent({
-      mode: "certificate",
-      webContents: sender,
-      meta: {
-        label: keyId || username || "",
-        certificate,
-        privateKey,
-        passphrase,
-      },
-    });
-  } else if (privateKey) {
-    connectOpts.privateKey = privateKey;
-  }
-
-  // Read identity files from local paths (e.g. SSH config IdentityFile)
-  // when no explicit key/certificate was already configured.
-  if (!connectOpts.privateKey && !connectOpts.agent && identityFilePaths?.length > 0) {
-    for (const keyPath of identityFilePaths) {
-      try {
-        const resolvedPath = keyPath.startsWith("~/")
-          ? path.join(os.homedir(), keyPath.slice(2))
-          : keyPath;
-        const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-        connectOpts.privateKey = keyContent;
-        if (isKeyEncrypted(keyContent)) {
-          const result = await passphraseHandler.requestPassphrase(
-            sender,
-            resolvedPath,
-            path.basename(resolvedPath),
-            hostname,
-          );
-          if (result?.passphrase) {
-            connectOpts.passphrase = result.passphrase;
-          } else {
-            delete connectOpts.privateKey;
-            continue;
-          }
-        }
-        break;
-      } catch (err) {
-        console.warn(`[PortForward] Failed to read identity file ${keyPath}:`, err.message);
-      }
-    }
-  }
-  if (passphrase) {
-    connectOpts.passphrase = passphrase;
-  }
-  if (password) {
-    connectOpts.password = password;
-  }
-
   sendStatus('connecting');
   portForwardingTunnels.set(tunnelId, tunnelState);
 
   let defaultKeys = [];
   try {
+    const identityFile = !privateKey
+      ? await loadFirstIdentityFileForAuth({
+        sender,
+        identityFilePaths,
+        hostname,
+        initialPassphrase: passphrase,
+        passphraseSignal: passphraseAbortController.signal,
+        logPrefix: "[PortForward]",
+        onError: (err, keyPath) => {
+          console.warn(`[PortForward] Failed to read identity file ${keyPath}:`, err.message);
+        },
+      })
+      : null;
+    const inlineKey = privateKey
+      ? await preparePrivateKeyForAuth({
+        sender,
+        privateKey,
+        keyId,
+        keyName: keyId || username,
+        hostname,
+        initialPassphrase: passphrase,
+        passphraseSignal: passphraseAbortController.signal,
+        logPrefix: "[PortForward]",
+      })
+      : null;
+    const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+    const effectivePassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
+    if (isTunnelCancelled(tunnelState)) {
+      portForwardingTunnels.delete(tunnelId);
+      return { tunnelId, success: false, cancelled: true };
+    }
+
+    if (hasCertificate) {
+      connectOpts.agent = new NetcattyAgent({
+        mode: "certificate",
+        webContents: sender,
+        meta: {
+          label: keyId || username || "",
+          certificate,
+          privateKey: effectivePrivateKey,
+          passphrase: effectivePassphrase,
+        },
+      });
+    } else if (effectivePrivateKey) {
+      connectOpts.privateKey = effectivePrivateKey;
+      if (effectivePassphrase) {
+        connectOpts.passphrase = effectivePassphrase;
+      }
+    }
+    if (password) {
+      connectOpts.password = password;
+    }
+
     // Get default keys
     defaultKeys = await findAllDefaultPrivateKeysFromHelper();
     if (isTunnelCancelled(tunnelState)) {
@@ -194,6 +220,7 @@ async function startPortForward(event, payload) {
           _defaultKeys: defaultKeys,
           _connectionsRef: chainConnections,
           _tunnelRef: tunnelState,
+          _passphraseSignal: passphraseAbortController.signal,
         },
         jumpHosts,
         hostname,
@@ -231,6 +258,10 @@ async function startPortForward(event, payload) {
   } catch (err) {
     if (isTunnelCancelled(tunnelState)) {
       portForwardingTunnels.delete(tunnelId);
+      return { tunnelId, success: false, cancelled: true };
+    }
+    if (isPassphraseCancelledError(err)) {
+      cancelTunnel(tunnelId, tunnelState, sendStatus, { deleteEntry: true });
       return { tunnelId, success: false, cancelled: true };
     }
     tunnelState.cancelled = true;
@@ -467,7 +498,7 @@ async function startPortForward(event, payload) {
 
     conn.once('close', () => {
       console.log(`[PortForward] SSH connection closed for tunnel ${tunnelId}`);
-      const tunnel = portForwardingTunnels.get(tunnelId);
+      const tunnel = portForwardingTunnels.get(tunnelId) || tunnelState;
       // Capture the cancelled flag BEFORE cleanup deletes the entry.
       const wasCancelled = !!tunnel?.cancelled;
       if (tunnel) {
@@ -511,22 +542,10 @@ async function stopPortForward(event, payload) {
   }
 
   try {
-    // Mark as cancelled so conn.on('close') resolves gracefully
-    // instead of rejecting for in-flight handshakes.
-    tunnel.cancelled = true;
-    if (tunnel.server) {
-      tunnel.server.close();
+    cancelTunnel(tunnelId, tunnel, null, { deleteEntry: true });
+    if (!event.sender.isDestroyed()) {
+      event.sender.send("netcatty:portforward:status", { tunnelId, status: 'inactive', error: null });
     }
-    if (tunnel.pendingConn) {
-      tunnel.pendingConn.end();
-    }
-    cleanupChainConnections(tunnel.chainConnections);
-    if (tunnel.conn) {
-      tunnel.conn.end();
-    }
-    // Don't delete here — let conn.on('close') handle cleanup
-    // so it can read the cancelled flag.
-
     return { tunnelId, success: true };
   } catch (err) {
     return { tunnelId, success: false, error: err.message };
@@ -568,23 +587,9 @@ async function listPortForwards() {
 function stopAllPortForwards() {
   console.log(`[PortForward] Stopping all ${portForwardingTunnels.size} active tunnels...`);
   for (const [tunnelId, tunnel] of portForwardingTunnels) {
-    try {
-      // Mark as cancelled so conn.on('close') resolves gracefully
-      // instead of rejecting with an error for in-flight handshakes.
-      tunnel.cancelled = true;
-      if (tunnel.server) {
-        tunnel.server.close();
-      }
-      if (tunnel.pendingConn) {
-        tunnel.pendingConn.end();
-      }
-      cleanupChainConnections(tunnel.chainConnections);
-      if (tunnel.conn) {
-        tunnel.conn.end();
-      }
-      // Don't delete here — let conn.on('close') handle cleanup
-      // so it can read the cancelled flag.
-      console.log(`[PortForward] Stopped tunnel ${tunnelId}`);
+      try {
+        cancelTunnel(tunnelId, tunnel, null, { deleteEntry: true });
+        console.log(`[PortForward] Stopped tunnel ${tunnelId}`);
     } catch (err) {
       console.warn(`[PortForward] Failed to stop tunnel ${tunnelId}:`, err.message);
     }
@@ -594,25 +599,15 @@ function stopAllPortForwards() {
 
 /**
  * Stop all active port forwards for a given rule ID.
- * Tunnel IDs follow the format `pf-{ruleId}-{timestamp}`, so we match
- * by checking if the tunnelId contains the ruleId.
  * This catches tunnels in ANY state (connecting, active) because it
  * operates on the main-process portForwardingTunnels map directly.
  */
 function stopPortForwardByRuleId(_event, { ruleId }) {
   let stopped = 0;
   for (const [tunnelId, tunnel] of portForwardingTunnels) {
-    if (tunnelId.includes(ruleId)) {
+    if (tunnel.ruleId === ruleId) {
       try {
-        // Mark as intentionally cancelled BEFORE conn.end() so the
-        // close handler resolves gracefully instead of rejecting.
-        tunnel.cancelled = true;
-        if (tunnel.server) tunnel.server.close();
-        if (tunnel.pendingConn) tunnel.pendingConn.end();
-        cleanupChainConnections(tunnel.chainConnections);
-        if (tunnel.conn) tunnel.conn.end();
-        // Don't delete here — let the conn.on('close') handler delete
-        // the entry so it can read tunnel.cancelled first.
+        cancelTunnel(tunnelId, tunnel, null, { deleteEntry: true });
         console.log(`[PortForward] Stopped tunnel ${tunnelId} for rule ${ruleId}`);
         stopped++;
       } catch (err) {
