@@ -304,7 +304,8 @@ export const useSftpState = (
     writeTextFileByConnection,
     downloadToTempAndOpen,
     uploadExternalFiles,
-    uploadExternalFolder,
+    uploadExternalFileList,
+    uploadExternalFolderPath,
     uploadExternalEntries,
     cancelExternalUpload,
     selectApplication,
@@ -382,7 +383,8 @@ export const useSftpState = (
     writeTextFileByConnection,
     downloadToTempAndOpen,
     uploadExternalFiles,
-    uploadExternalFolder,
+    uploadExternalFileList,
+    uploadExternalFolderPath,
     uploadExternalEntries,
     cancelExternalUpload,
     selectApplication,
@@ -438,7 +440,8 @@ export const useSftpState = (
     writeTextFileByConnection,
     downloadToTempAndOpen,
     uploadExternalFiles,
-    uploadExternalFolder,
+    uploadExternalFileList,
+    uploadExternalFolderPath,
     uploadExternalEntries,
     cancelExternalUpload,
     selectApplication,
@@ -504,8 +507,10 @@ export const useSftpState = (
       methodsRef.current.writeTextFileByConnection(...args),
     downloadToTempAndOpen: (...args: Parameters<typeof downloadToTempAndOpen>) => methodsRef.current.downloadToTempAndOpen(...args),
     uploadExternalFiles: (...args: Parameters<typeof uploadExternalFiles>) => methodsRef.current.uploadExternalFiles(...args),
-    uploadExternalFolder: (...args: Parameters<typeof uploadExternalFolder>) =>
-      methodsRef.current.uploadExternalFolder(...args),
+    uploadExternalFileList: (...args: Parameters<typeof uploadExternalFileList>) =>
+      methodsRef.current.uploadExternalFileList(...args),
+    uploadExternalFolderPath: (...args: Parameters<typeof uploadExternalFolderPath>) =>
+      methodsRef.current.uploadExternalFolderPath(...args),
     uploadExternalEntries: (...args: Parameters<typeof uploadExternalEntries>) =>
       methodsRef.current.uploadExternalEntries(...args),
     cancelExternalUpload: () => methodsRef.current.cancelExternalUpload(),
