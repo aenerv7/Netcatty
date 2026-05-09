@@ -43,6 +43,7 @@ const {
   buildSyncPayload,
   hasMeaningfulCloudSyncData,
 } = await import("./syncPayload.ts");
+const storageKeys = await import("../infrastructure/config/storageKeys.ts");
 
 const knownHost = (id = "kh-1"): KnownHost => ({
   id,
@@ -91,6 +92,164 @@ test("buildSyncPayload includes reusable proxy profiles", () => {
   } as SyncableVaultData & { proxyProfiles: typeof proxyProfiles });
 
   assert.deepEqual(payload.proxyProfiles, proxyProfiles);
+});
+
+test("buildSyncPayload includes AI configuration settings", () => {
+  const providers = [{
+    id: "openai-main",
+    providerId: "openai",
+    name: "OpenAI",
+    apiKey: "enc:v1:test",
+    defaultModel: "gpt-test",
+    enabled: true,
+  }];
+  const externalAgents = [{
+    id: "codex",
+    name: "Codex",
+    command: "codex",
+    enabled: true,
+    acpCommand: "codex-acp",
+  }];
+  const webSearch = {
+    providerId: "tavily",
+    apiKey: "enc:v1:web",
+    enabled: true,
+    maxResults: 7,
+  };
+
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PROVIDERS, JSON.stringify(providers));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_ACTIVE_PROVIDER, "openai-main");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_ACTIVE_MODEL, "gpt-test");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PERMISSION_MODE, "autonomous");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_TOOL_INTEGRATION_MODE, "skills");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_EXTERNAL_AGENTS, JSON.stringify(externalAgents));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_DEFAULT_AGENT, "codex");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_COMMAND_BLOCKLIST, JSON.stringify(["rm -rf"]));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_COMMAND_TIMEOUT, "120");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_MAX_ITERATIONS, "10");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_AGENT_MODEL_MAP, JSON.stringify({ codex: "gpt-test" }));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH, JSON.stringify(webSearch));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.deepEqual(payload.settings?.ai, {
+    providers,
+    activeProviderId: "openai-main",
+    activeModelId: "gpt-test",
+    globalPermissionMode: "autonomous",
+    toolIntegrationMode: "skills",
+    externalAgents,
+    defaultAgentId: "codex",
+    commandBlocklist: ["rm -rf"],
+    commandTimeout: 120,
+    maxIterations: 10,
+    agentModelMap: { codex: "gpt-test" },
+    webSearchConfig: webSearch,
+  });
+});
+
+test("buildSyncPayload omits device-bound encrypted AI API keys", () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PROVIDERS, JSON.stringify([{
+    id: "openai-main",
+    providerId: "openai",
+    name: "OpenAI",
+    apiKey: "enc:v1:djEwAAAA",
+    enabled: true,
+  }]));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH, JSON.stringify({
+    providerId: "tavily",
+    apiKey: "enc:v1:djEwAAAA",
+    enabled: true,
+  }));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.equal("apiKey" in (payload.settings?.ai?.providers?.[0] ?? {}), false);
+  assert.equal("apiKey" in (payload.settings?.ai?.webSearchConfig ?? {}), false);
+});
+
+test("applySyncPayload restores AI configuration settings", async () => {
+  const providers = [{
+    id: "anthropic-main",
+    providerId: "anthropic",
+    name: "Anthropic",
+    apiKey: "enc:v1:test",
+    enabled: true,
+  }];
+  const externalAgents = [{
+    id: "claude",
+    name: "Claude",
+    command: "claude",
+    enabled: true,
+  }];
+  const webSearch = {
+    providerId: "exa",
+    apiKey: "enc:v1:web",
+    enabled: true,
+  };
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: {
+      ai: {
+        providers,
+        activeProviderId: "anthropic-main",
+        activeModelId: "claude-test",
+        globalPermissionMode: "observer",
+        toolIntegrationMode: "mcp",
+        externalAgents,
+        defaultAgentId: "claude",
+        commandBlocklist: ["shutdown"],
+        commandTimeout: 30,
+        maxIterations: 5,
+        agentModelMap: { claude: "claude-test" },
+        webSearchConfig: webSearch,
+      },
+    },
+    syncedAt: 1,
+  } as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_PROVIDERS)!), providers);
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_ACTIVE_PROVIDER), "anthropic-main");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_ACTIVE_MODEL), "claude-test");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_PERMISSION_MODE), "observer");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_TOOL_INTEGRATION_MODE), "mcp");
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_EXTERNAL_AGENTS)!), externalAgents);
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_DEFAULT_AGENT), "claude");
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_COMMAND_BLOCKLIST)!), ["shutdown"]);
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_COMMAND_TIMEOUT), "30");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_MAX_ITERATIONS), "5");
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_AGENT_MODEL_MAP)!), { claude: "claude-test" });
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH)!), webSearch);
+});
+
+test("buildSyncPayload includes syncable terminal options from settings", () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_TERM_FOLLOW_APP_THEME, "true");
+  localStorage.setItem(storageKeys.STORAGE_KEY_TERM_SETTINGS, JSON.stringify({
+    terminalEmulationType: "vt100",
+    altAsMeta: true,
+    showServerStats: false,
+    serverStatsRefreshInterval: 12,
+    rendererType: "dom",
+    localShell: "/bin/zsh",
+  }));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.equal(payload.settings?.followAppTerminalTheme, true);
+  assert.deepEqual(payload.settings?.terminalSettings, {
+    terminalEmulationType: "vt100",
+    altAsMeta: true,
+    showServerStats: false,
+    serverStatsRefreshInterval: 12,
+    rendererType: "dom",
+  });
 });
 
 test("hasMeaningfulCloudSyncData ignores legacy cloud known hosts", () => {

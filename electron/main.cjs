@@ -576,7 +576,7 @@ const registerBridges = (win) => {
   });
 
   // Settings window handler
-  ipcMain.handle("netcatty:settings:open", async () => {
+  ipcMain.handle("netcatty:settings:open", async (event) => {
     try {
       await getWindowManager().openSettingsWindow(electronModule, {
         preload,
@@ -585,6 +585,7 @@ const registerBridges = (win) => {
         appIcon,
         isMac,
         electronDir,
+        sourceWindow: BrowserWindow.fromWebContents(event.sender),
       });
       return true;
     } catch (err) {

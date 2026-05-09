@@ -16,13 +16,20 @@ import {
   findSyncPayloadEncryptedCredentialPaths,
 } from '../../domain/credentials';
 import { isProviderReadyForSync, type CloudProvider, type SyncPayload } from '../../domain/sync';
-import { collectSyncableSettings, hasMeaningfulCloudSyncData } from '../syncPayload';
+import {
+  SYNCABLE_SETTING_STORAGE_KEYS,
+  collectSyncableSettings,
+  hasMeaningfulCloudSyncData,
+} from '../syncPayload';
 import { readInterruptedVaultApply } from '../localVaultBackups';
 import {
   STORAGE_KEY_PORT_FORWARDING,
   STORAGE_KEY_VAULT_RESTORE_IN_PROGRESS_UNTIL,
 } from '../../infrastructure/config/storageKeys';
-import { localStorageAdapter } from '../../infrastructure/persistence/localStorageAdapter';
+import {
+  LOCAL_STORAGE_ADAPTER_CHANGED_EVENT,
+  localStorageAdapter,
+} from '../../infrastructure/persistence/localStorageAdapter';
 import { notify } from '../notification';
 
 interface AutoSyncConfig {
@@ -47,6 +54,7 @@ interface AutoSyncConfig {
 // Get manager singleton for direct state access
 const manager = getCloudSyncManager();
 const AUTO_SYNC_PROVIDER_ORDER: CloudProvider[] = ['github', 'google', 'onedrive', 'webdav', 's3'];
+const SYNCABLE_SETTING_STORAGE_KEY_SET = new Set<string>(SYNCABLE_SETTING_STORAGE_KEYS);
 
 // Cross-window restore barrier: stored as an epoch-ms deadline. Any value
 // in the future means a restore is applying in some window and auto-sync
@@ -122,6 +130,29 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     const handler = () => setBookmarksVersion((v) => v + 1);
     window.addEventListener('sftp-bookmarks-changed', handler);
     return () => window.removeEventListener('sftp-bookmarks-changed', handler);
+  }, []);
+
+  const [syncableSettingsStorageVersion, setSyncableSettingsStorageVersion] = useState(0);
+  useEffect(() => {
+    const bumpIfSyncableSetting = (key: string | null | undefined) => {
+      if (!key || !SYNCABLE_SETTING_STORAGE_KEY_SET.has(key)) return;
+      setSyncableSettingsStorageVersion((v) => v + 1);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      bumpIfSyncableSetting(event.key);
+    };
+    const handleLocalStorageAdapterChanged = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      bumpIfSyncableSetting(key);
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(LOCAL_STORAGE_ADAPTER_CHANGED_EVENT, handleLocalStorageAdapterChanged);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(LOCAL_STORAGE_ADAPTER_CHANGED_EVENT, handleLocalStorageAdapterChanged);
+    };
   }, []);
 
   const getSyncSnapshot = useCallback(() => {
@@ -639,7 +670,17 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, sync.isSyncing, getDataHash, syncNow, config.settingsVersion, bookmarksVersion]);
+  }, [
+    sync.hasAnyConnectedProvider,
+    sync.autoSyncEnabled,
+    sync.isUnlocked,
+    sync.isSyncing,
+    getDataHash,
+    syncNow,
+    config.settingsVersion,
+    bookmarksVersion,
+    syncableSettingsStorageVersion,
+  ]);
   
   // Check remote version on startup/unlock, then retry with backoff
   // while the inspect keeps failing. Without the timer-based retry,

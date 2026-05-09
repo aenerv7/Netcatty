@@ -191,6 +191,7 @@ export interface SyncPayload {
     customCSS?: string;
     // Terminal
     terminalTheme?: string;
+    followAppTerminalTheme?: boolean;
     terminalFontFamily?: string;
     terminalFontSize?: number;
     terminalSettings?: Record<string, unknown>;
@@ -205,6 +206,7 @@ export interface SyncPayload {
     sftpShowHiddenFiles?: boolean;
     sftpUseCompressedUpload?: boolean;
     sftpAutoOpenSidebar?: boolean;
+    sftpDefaultViewMode?: 'list' | 'tree';
     sftpGlobalBookmarks?: import('./models').SftpBookmark[];
     // Immersive mode
     immersiveMode?: boolean;
@@ -214,6 +216,24 @@ export interface SyncPayload {
     showOnlyUngroupedHostsInRoot?: boolean;
     // Top tabs: show standalone SFTP view tab
     showSftpTab?: boolean;
+    // Workspace focus indicator style
+    workspaceFocusStyle?: 'dim' | 'border';
+    // AI configuration
+    ai?: {
+      providers?: Array<Record<string, unknown>>;
+      activeProviderId?: string;
+      activeModelId?: string;
+      globalPermissionMode?: 'observer' | 'confirm' | 'autonomous';
+      toolIntegrationMode?: 'mcp' | 'skills';
+      hostPermissions?: Array<Record<string, unknown>>;
+      externalAgents?: Array<Record<string, unknown>>;
+      defaultAgentId?: string;
+      commandBlocklist?: string[];
+      commandTimeout?: number;
+      maxIterations?: number;
+      agentModelMap?: Record<string, string>;
+      webSearchConfig?: Record<string, unknown> | null;
+    };
   };
 
   // Sync metadata

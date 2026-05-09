@@ -1,7 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { isWindowUsable, registerWindowHandlers, restoreWindowInputFocus } = require("./windowManager.cjs");
+const {
+  isWindowUsable,
+  registerWindowHandlers,
+  resolveSettingsWindowBounds,
+  restoreWindowInputFocus,
+} = require("./windowManager.cjs");
 
 function createWindowStub({ destroyed = false, webContents } = {}) {
   return {
@@ -206,4 +211,32 @@ test("window focus IPC handler focuses the sender owner window", async () => {
 
   assert.equal(result, true);
   assert.deepEqual(calls, ["focus", "webContents.focus"]);
+});
+
+test("resolveSettingsWindowBounds centers settings on the requesting window display", () => {
+  const sourceWindow = {
+    getBounds() {
+      return { x: 2100, y: 80, width: 900, height: 700 };
+    },
+    isDestroyed() {
+      return false;
+    },
+  };
+  const electronModule = {
+    screen: {
+      getDisplayMatching(bounds) {
+        assert.deepEqual(bounds, { x: 2100, y: 80, width: 900, height: 700 });
+        return { workArea: { x: 1920, y: 0, width: 1440, height: 900 } };
+      },
+    },
+  };
+
+  assert.deepEqual(
+    resolveSettingsWindowBounds(electronModule, {
+      sourceWindow,
+      settingsWidth: 980,
+      settingsHeight: 720,
+    }),
+    { x: 2150, y: 90 },
+  );
 });

@@ -7,6 +7,24 @@ const safeParse = <T>(value: string | null): T | null => {
   }
 };
 
+export const LOCAL_STORAGE_ADAPTER_CHANGED_EVENT = 'netcatty:local-storage-adapter-changed';
+
+function emitLocalStorageAdapterChanged(key: string): void {
+  try {
+    const target = globalThis as typeof globalThis & {
+      dispatchEvent?: (event: Event) => boolean;
+      CustomEvent?: typeof CustomEvent;
+    };
+    if (typeof target.dispatchEvent !== 'function' || typeof target.CustomEvent !== 'function') return;
+    target.dispatchEvent(new target.CustomEvent<{ key: string }>(
+      LOCAL_STORAGE_ADAPTER_CHANGED_EVENT,
+      { detail: { key } },
+    ));
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Safely write to localStorage, catching QuotaExceededError.
  * Returns true if the write succeeded, false if storage quota was exceeded.
@@ -14,6 +32,7 @@ const safeParse = <T>(value: string | null): T | null => {
 function safeSetItem(key: string, value: string): boolean {
   try {
     localStorage.setItem(key, value);
+    emitLocalStorageAdapterChanged(key);
     return true;
   } catch (err) {
     if (
@@ -63,5 +82,6 @@ export const localStorageAdapter = {
   },
   remove(key: string) {
     localStorage.removeItem(key);
+    emitLocalStorageAdapterChanged(key);
   },
 };
