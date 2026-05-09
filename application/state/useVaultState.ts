@@ -66,7 +66,7 @@ const migrateKey = (key: Partial<SSHKey>): SSHKey => {
   const label = key.label ?? `Key ${id.slice(0, 8)}`;
 
   const source =
-    key.source === "generated" || key.source === "imported"
+    key.source === "generated" || key.source === "imported" || key.source === "reference"
       ? key.source
       : key.privateKey
         ? "imported"
@@ -86,6 +86,7 @@ const migrateKey = (key: Partial<SSHKey>): SSHKey => {
       key.category ||
       ((key.certificate ? "certificate" : "key") as KeyCategory),
     created: key.created || Date.now(),
+    filePath: key.filePath,
   };
 };
 
@@ -158,6 +159,42 @@ export const useVaultState = () => {
         localStorageAdapter.write(STORAGE_KEY_KEYS, enc);
     });
   }, []);
+
+  const importOrReuseKey = useCallback((draft: Partial<SSHKey>): SSHKey => {
+    const existing = keys.find((k) => {
+      if (draft.source === 'reference' && draft.filePath) {
+        return k.source === 'reference' && k.filePath === draft.filePath;
+      }
+      if (draft.privateKey) {
+        return k.privateKey === draft.privateKey;
+      }
+      return false;
+    });
+    if (existing) return existing;
+
+    const newKey: SSHKey = {
+      id: crypto.randomUUID(),
+      label: draft.label || 'Imported Key',
+      type: draft.type || 'ED25519',
+      privateKey: draft.privateKey || '',
+      publicKey: draft.publicKey,
+      certificate: draft.certificate,
+      passphrase: draft.passphrase,
+      savePassphrase: draft.savePassphrase,
+      source: draft.source || 'imported',
+      category: (draft.category || 'key') as KeyCategory,
+      created: Date.now(),
+      filePath: draft.filePath,
+    };
+    const updated = [...keys, newKey];
+    setKeys(updated);
+    const ver = ++keysWriteVersion.current;
+    void encryptKeys(updated).then((enc) => {
+      if (ver === keysWriteVersion.current)
+        localStorageAdapter.write(STORAGE_KEY_KEYS, enc);
+    });
+    return newKey;
+  }, [keys]);
 
   const updateIdentities = useCallback((data: Identity[]) => {
     setIdentities(data);
@@ -727,6 +764,7 @@ export const useVaultState = () => {
     groupConfigs,
     updateHosts,
     updateKeys,
+    importOrReuseKey,
     updateIdentities,
     updateProxyProfiles,
     updateSnippets,

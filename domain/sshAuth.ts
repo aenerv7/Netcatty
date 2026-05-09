@@ -1,4 +1,5 @@
 import type { Host, Identity, SSHKey } from "./models";
+import { sanitizeCredentialValue } from "./credentials";
 
 type HostAuthMethod = "password" | "key" | "certificate";
 
@@ -18,6 +19,7 @@ type ResolvedHostAuth = {
   keyId?: string;
   key?: SSHKey;
   passphrase?: string;
+  identityFilePath?: string;
 };
 
 const inferAuthMethod = (opts: {
@@ -57,9 +59,15 @@ export const resolveHostAuth = (args: {
     host.username?.trim() ||
     "";
 
-  // Don't load key when explicit password auth is requested
-  // This ensures user's auth method selection is strictly respected
-  const keyId = override?.authMethod === 'password'
+  const selectedAuthMethod = (
+    override?.authMethod ||
+    identity?.authMethod ||
+    host.authMethod
+  ) as HostAuthMethod | undefined;
+
+  // Don't load key when password auth is selected.
+  // This ensures the user's auth method selection is strictly respected.
+  const keyId = selectedAuthMethod === "password"
     ? undefined
     : (override?.keyId || identity?.keyId || host.identityFileId || undefined);
 
@@ -78,6 +86,10 @@ export const resolveHostAuth = (args: {
 
   const passphrase = override?.passphrase || key?.passphrase || undefined;
 
+  const identityFilePath = key?.source === 'reference' && key.filePath
+    ? key.filePath
+    : undefined;
+
   return {
     identity,
     authMethod,
@@ -86,5 +98,27 @@ export const resolveHostAuth = (args: {
     keyId,
     key,
     passphrase,
+    identityFilePath,
+  };
+};
+
+export const resolveBridgeKeyAuth = (args: {
+  key?: SSHKey | null;
+  fallbackIdentityFilePaths?: string[];
+  passphrase?: string;
+}): {
+  privateKey?: string;
+  identityFilePaths?: string[];
+  passphrase?: string;
+} => {
+  const { key, fallbackIdentityFilePaths, passphrase } = args;
+  const identityFilePaths = key?.source === "reference" && key.filePath
+    ? [key.filePath]
+    : fallbackIdentityFilePaths;
+
+  return {
+    privateKey: key?.source === "reference" ? undefined : sanitizeCredentialValue(key?.privateKey),
+    identityFilePaths,
+    passphrase: sanitizeCredentialValue(passphrase ?? key?.passphrase),
   };
 };

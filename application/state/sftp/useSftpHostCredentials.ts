@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import type { Host, Identity, SSHKey } from "../../../domain/models";
 import { isEncryptedCredentialPlaceholder, sanitizeCredentialValue } from "../../../domain/credentials";
-import { resolveHostAuth } from "../../../domain/sshAuth";
+import { resolveBridgeKeyAuth, resolveHostAuth } from "../../../domain/sshAuth";
 
 interface UseSftpHostCredentialsParams {
   hosts: Host[];
@@ -49,6 +49,15 @@ export const buildSftpHostCredentials = ({
         identities,
       });
       const jumpKey = jumpAuth.key;
+      const jumpPassword = sanitizeCredentialValue(jumpAuth.password);
+      const jumpKeyAuth = resolveBridgeKeyAuth({
+        key: jumpKey,
+        fallbackIdentityFilePaths: jumpAuth.authMethod === "password" || jumpAuth.keyId
+          ? undefined
+          : jumpHost.identityFilePaths,
+        passphrase: jumpAuth.passphrase,
+      });
+      const hasJumpKeyMaterial = Boolean(jumpKeyAuth.privateKey || jumpKeyAuth.identityFilePaths?.length);
       const hasConfiguredJumpProxyEndpoint =
         index === 0 &&
         !!(jumpHost.proxyConfig?.host && jumpHost.proxyConfig?.port);
@@ -60,14 +69,24 @@ export const buildSftpHostCredentials = ({
       ) {
         throw new Error(`Proxy credentials for jump host "${jumpHost.label || jumpHost.hostname}" cannot be decrypted on this device. Open host settings and re-enter the proxy password.`);
       }
+      const hasUnreadableJumpCredential =
+        isEncryptedCredentialPlaceholder(jumpAuth.password) ||
+        isEncryptedCredentialPlaceholder(jumpKey?.privateKey) ||
+        isEncryptedCredentialPlaceholder(jumpAuth.passphrase);
+      if (
+        (jumpAuth.authMethod === "password" && isEncryptedCredentialPlaceholder(jumpAuth.password) && !jumpPassword) ||
+        (jumpAuth.authMethod !== "password" && hasUnreadableJumpCredential && !jumpPassword && !hasJumpKeyMaterial)
+      ) {
+        throw new Error(`Saved credentials for jump host "${jumpHost.label || jumpHost.hostname}" cannot be decrypted on this device. Open host settings and re-enter them.`);
+      }
       return {
         hostname: jumpHost.hostname,
         port: jumpHost.port || 22,
         username: jumpAuth.username || "root",
-        password: jumpAuth.password,
-        privateKey: jumpKey?.privateKey,
+        password: jumpPassword,
+        privateKey: jumpKeyAuth.privateKey,
         certificate: jumpKey?.certificate,
-        passphrase: jumpAuth.passphrase || jumpKey?.passphrase,
+        passphrase: jumpKeyAuth.passphrase,
         publicKey: jumpKey?.publicKey,
         keyId: jumpAuth.keyId,
         keySource: jumpKey?.source,
@@ -81,7 +100,7 @@ export const buildSftpHostCredentials = ({
             password: sanitizeCredentialValue(jumpHost.proxyConfig.password),
           }
           : undefined,
-        identityFilePaths: jumpHost.identityFilePaths,
+        identityFilePaths: jumpKeyAuth.identityFilePaths,
       };
     });
   }
@@ -90,21 +109,41 @@ export const buildSftpHostCredentials = ({
     throw new Error("Proxy credentials cannot be decrypted on this device. Open host settings and re-enter the proxy password.");
   }
 
+  const keyAuth = resolveBridgeKeyAuth({
+    key,
+    fallbackIdentityFilePaths: resolved.authMethod === "password" || resolved.keyId
+      ? undefined
+      : host.identityFilePaths,
+    passphrase: resolved.passphrase,
+  });
+  const password = sanitizeCredentialValue(resolved.password);
+  const hasKeyMaterial = Boolean(keyAuth.privateKey || keyAuth.identityFilePaths?.length);
+  const hasUnreadableCredential =
+    isEncryptedCredentialPlaceholder(resolved.password) ||
+    isEncryptedCredentialPlaceholder(key?.privateKey) ||
+    isEncryptedCredentialPlaceholder(resolved.passphrase);
+  if (
+    (resolved.authMethod === "password" && isEncryptedCredentialPlaceholder(resolved.password) && !password) ||
+    (resolved.authMethod !== "password" && hasUnreadableCredential && !password && !hasKeyMaterial)
+  ) {
+    throw new Error("Saved credentials cannot be decrypted on this device. Open host settings and re-enter them.");
+  }
+
   return {
     hostname: host.hostname,
     username: resolved.username,
     port: host.port || 22,
-    password: resolved.password,
-    privateKey: key?.privateKey,
+    password,
+    privateKey: keyAuth.privateKey,
     certificate: key?.certificate,
-    passphrase: resolved.passphrase || key?.passphrase,
+    passphrase: keyAuth.passphrase,
     publicKey: key?.publicKey,
     keyId: resolved.keyId,
     keySource: key?.source,
     proxy: proxyConfig,
     jumpHosts: jumpHosts && jumpHosts.length > 0 ? jumpHosts : undefined,
     sudo: host.sftpSudo,
-    identityFilePaths: host.identityFilePaths,
+    identityFilePaths: keyAuth.identityFilePaths,
   };
 };
 

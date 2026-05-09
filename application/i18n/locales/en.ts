@@ -1687,6 +1687,7 @@ const en: Messages = {
   'keychain.edit.publicKey': 'Public key',
   'keychain.edit.certificate': 'Certificate',
   'keychain.edit.certificatePlaceholder': 'Certificate content (optional)',
+  'keychain.edit.filePath': 'File path',
   'keychain.edit.keyExport': 'Key export',
   'keychain.edit.exportToHost': 'Export to host',
 
@@ -1814,6 +1815,7 @@ const en: Messages = {
   'passphrase.unlock': 'Unlock',
   'passphrase.unlocking': 'Unlocking...',
   'passphrase.skip': 'Skip',
+  'passphrase.remember': 'Remember this passphrase',
 
   // Text Editor
   'sftp.editor.wordWrap': 'Word Wrap',

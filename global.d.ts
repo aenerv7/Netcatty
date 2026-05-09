@@ -43,7 +43,7 @@ declare global {
     passphrase?: string;
     publicKey?: string;
     keyId?: string;
-    keySource?: 'generated' | 'imported';
+    keySource?: 'generated' | 'imported' | 'reference';
     label?: string; // Display label for UI
     proxy?: NetcattyProxyConfig;
     identityFilePaths?: string[];
@@ -71,7 +71,7 @@ declare global {
     certificate?: string;
     publicKey?: string; // OpenSSH public key line
     keyId?: string;
-    keySource?: 'generated' | 'imported';
+    keySource?: 'generated' | 'imported' | 'reference';
     agentForwarding?: boolean;
     x11Forwarding?: boolean;
     x11Display?: string;
@@ -118,6 +118,7 @@ declare global {
 
   // Port Forwarding Types
   interface PortForwardOptions {
+    ruleId?: string;
     tunnelId: string;
     type: 'local' | 'remote' | 'dynamic';
     localPort: number;
@@ -231,6 +232,11 @@ declare global {
       port?: number;
       password?: string;
       privateKey?: string;
+      certificate?: string;
+      publicKey?: string;
+      keyId?: string;
+      keySource?: 'generated' | 'imported' | 'reference';
+      identityFilePaths?: string[];
       passphrase?: string;
       command: string;
       timeout?: number;
@@ -367,6 +373,7 @@ declare global {
         keyPath: string;
         keyName: string;
         hostname?: string;
+        passphraseInvalid?: boolean;
       }) => void
     ): () => void;
     respondPassphrase?(
@@ -379,6 +386,12 @@ declare global {
     ): Promise<{ success: boolean; error?: string }>;
     onPassphraseTimeout?(
       cb: (event: { requestId: string }) => void
+    ): () => void;
+    onPassphraseCancelled?(
+      cb: (event: { requestId: string; reason?: string }) => void
+    ): () => void;
+    onPassphraseAuthFailed?(
+      cb: (event: { keyPaths: string[]; keyIds?: string[] }) => void
     ): () => void;
 
     // SFTP operations

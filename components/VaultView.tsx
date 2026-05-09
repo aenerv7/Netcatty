@@ -147,6 +147,7 @@ interface VaultViewProps {
   onConnect: (host: Host) => void;
   onUpdateHosts: (hosts: Host[]) => void;
   onUpdateKeys: (keys: SSHKey[]) => void;
+  onImportOrReuseKey: (draft: Partial<SSHKey>) => SSHKey;
   onUpdateIdentities: (identities: Identity[]) => void;
   onUpdateProxyProfiles: (profiles: ProxyProfile[]) => void;
   onUpdateSnippets: (snippets: Snippet[]) => void;
@@ -197,6 +198,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   onConnect,
   onUpdateHosts,
   onUpdateKeys,
+  onImportOrReuseKey,
   onUpdateIdentities,
   onUpdateProxyProfiles,
   onUpdateSnippets,
@@ -3007,6 +3009,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           terminalFontSize={terminalFontSize}
           groupDefaults={editingHostGroupDefaults}
           groupConfigs={groupConfigs}
+          onImportKey={onImportOrReuseKey}
           onSave={(host) => {
             onUpdateHosts(upsertHostById(hosts, host));
             setIsHostPanelOpen(false);

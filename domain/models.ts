@@ -146,7 +146,7 @@ export interface Host {
 }
 
 export type KeyType = 'RSA' | 'ECDSA' | 'ED25519';
-type KeySource = 'generated' | 'imported';
+type KeySource = 'generated' | 'imported' | 'reference';
 export type KeyCategory = 'key' | 'certificate' | 'identity';
 type IdentityAuthMethod = 'password' | 'key' | 'certificate';
 
@@ -163,6 +163,7 @@ export interface SSHKey {
   source: KeySource;
   category: KeyCategory;
   created: number;
+  filePath?: string;
 }
 
 // Identity combines username with authentication method

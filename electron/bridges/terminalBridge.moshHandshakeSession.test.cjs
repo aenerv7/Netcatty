@@ -243,6 +243,37 @@ test("startMoshSession passes vault private keys to ssh via a temp identity file
   assert.equal(fs.existsSync(keyPath), false);
 });
 
+test("startMoshSession passes certificates with reference identity files", async (t) => {
+  const h = makeHarness(t);
+  const referenceKeyPath = path.join(os.tmpdir(), "netcatty-reference-id_ed25519");
+  await h.bridge.startMoshSession(
+    h.event,
+    {
+      ...h.options,
+      keyId: "reference-key-1",
+      identityFilePaths: [referenceKeyPath],
+      certificate: "ssh-ed25519-cert-v01@openssh.com AAAATEST netcatty-cert",
+    },
+    { moshClientLookup: h.lookupOpts },
+  );
+
+  const keyFlagIndex = h.spawns[0].args.indexOf("-i");
+  assert.notEqual(keyFlagIndex, -1);
+  assert.equal(h.spawns[0].args[keyFlagIndex + 1], referenceKeyPath);
+  assert.equal(h.spawns[0].args.includes("IdentitiesOnly=yes"), true);
+
+  const certFlagIndex = h.spawns[0].args.findIndex((arg) =>
+    typeof arg === "string" && arg.startsWith("CertificateFile=")
+  );
+  assert.notEqual(certFlagIndex, -1);
+  const certPath = h.spawns[0].args[certFlagIndex].slice("CertificateFile=".length);
+  assert.equal(fs.existsSync(certPath), true);
+  assert.match(fs.readFileSync(certPath, "utf8"), /netcatty-cert/);
+
+  h.spawns[0].emitExit({ exitCode: 255, signal: 0 });
+  assert.equal(fs.existsSync(certPath), false);
+});
+
 test("startMoshSession uses unique temp identity files for concurrent sessions with the same key", async (t) => {
   const h = makeHarness(t);
   const authOptions = {
