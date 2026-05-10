@@ -683,7 +683,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     return () => {
       dispose?.();
     };
-  }, [sessionId, terminalBackend.onHostKeyVerification]);
+  }, [sessionId, terminalBackend]);
 
   const handleTopOverlayMouseDownCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
