@@ -48,6 +48,15 @@ const buildError = (message, details) => {
   return err;
 };
 
+// Per RFC 7617, Basic Auth credentials must be UTF-8 encoded before base64.
+// The upstream `webdav` package routes through `base-64`, which encodes as
+// Latin1 — silently corrupting non-ASCII characters (e.g. `ö`, `ä`) and
+// causing 401s against servers that follow the spec, like Hetzner Storage
+// Box (#891). We build the header ourselves to avoid that path.
+const buildBasicAuthHeader = (username, password) =>
+  "Basic " +
+  Buffer.from(`${username || ""}:${password || ""}`, "utf8").toString("base64");
+
 const buildWebdavClient = (config) => {
   if (!config) throw new Error("Missing WebDAV config");
   const endpoint = normalizeEndpoint(config.endpoint);
@@ -74,9 +83,10 @@ const buildWebdavClient = (config) => {
     });
   }
   return createClient(endpoint, {
-    authType: AuthType.Password,
-    username: config.username || "",
-    password: config.password || "",
+    authType: AuthType.None,
+    headers: {
+      Authorization: buildBasicAuthHeader(config.username, config.password),
+    },
     ...extraOpts,
   });
 };
@@ -286,4 +296,7 @@ const registerHandlers = (ipcMain) => {
 
 module.exports = {
   registerHandlers,
+  // Exposed for tests
+  handleWebdavInitialize,
+  buildBasicAuthHeader,
 };
