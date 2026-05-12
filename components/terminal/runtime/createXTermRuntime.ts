@@ -572,7 +572,6 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       if (id) {
         e.preventDefault();
         e.stopPropagation();
-        ctx.onAutocompleteInput?.(kittyControlSequence);
         ctx.terminalBackend.writeToSession(id, kittyControlSequence);
         if (ctx.isBroadcastEnabledRef.current && ctx.onBroadcastInputRef.current) {
           ctx.onBroadcastInputRef.current(kittyControlSequence, ctx.sessionId);

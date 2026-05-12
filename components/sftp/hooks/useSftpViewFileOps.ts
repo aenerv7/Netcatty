@@ -104,10 +104,10 @@ interface UseSftpViewFileOpsResult {
   onDownloadFileRight: (file: SftpFileEntry, fullPath?: string) => void;
   onDownloadFilesLeft: (files: SftpFileEntry[]) => void;
   onDownloadFilesRight: (files: SftpFileEntry[]) => void;
-  onUploadExternalFilesLeft: (dataTransfer: DataTransfer, targetPath?: string) => void;
-  onUploadExternalFilesRight: (dataTransfer: DataTransfer, targetPath?: string) => void;
-  onUploadExternalFileListLeft: (fileList: FileList, targetPath?: string) => void;
-  onUploadExternalFileListRight: (fileList: FileList, targetPath?: string) => void;
+  onUploadExternalFilesLeft: (dataTransfer: DataTransfer, targetPath?: string) => Promise<void>;
+  onUploadExternalFilesRight: (dataTransfer: DataTransfer, targetPath?: string) => Promise<void>;
+  onUploadExternalFileListLeft: (fileList: FileList, targetPath?: string) => Promise<void>;
+  onUploadExternalFileListRight: (fileList: FileList, targetPath?: string) => Promise<void>;
   onUploadExternalFolderLeft: (targetPath?: string) => Promise<void>;
   onUploadExternalFolderRight: (targetPath?: string) => Promise<void>;
 }
