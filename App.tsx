@@ -1763,7 +1763,6 @@ function App({ settings }: { settings: SettingsState }) {
         onCloseTabsBatch={closeTabsBatch}
         onOpenQuickSwitcher={handleOpenQuickSwitcher}
         onToggleTheme={handleToggleTheme}
-        onOpenSettings={handleOpenSettings}
         onBuildPayload={buildCurrentSyncPayload}
         onApplyPayload={handleApplySyncPayload}
         isImmersiveActive={activeTerminalTheme !== null}

@@ -1,4 +1,4 @@
-import { Bell, Copy, FileCode, FileText, Folder, FolderLock, LayoutGrid, Minus, Moon, MoreHorizontal, Plus, Server, Settings, Sparkles, Square, Sun, TerminalSquare, Usb, X } from 'lucide-react';
+import { Bell, Copy, FileCode, FileText, Folder, FolderLock, LayoutGrid, Minus, Moon, MoreHorizontal, Plus, Server, Sparkles, Square, Sun, TerminalSquare, Usb, X } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activeTabStore, fromEditorTabId, isEditorTabId, useActiveTabId } from '../application/state/activeTabStore';
 import type { EditorTab } from '../application/state/editorTabStore';
@@ -42,7 +42,6 @@ interface TopTabsProps {
   onCloseTabsBatch: (targetIds: string[]) => void;
   onOpenQuickSwitcher: () => void;
   onToggleTheme: () => void;
-  onOpenSettings: () => void;
   onBuildPayload: () => import('../domain/sync').SyncPayload;
   onApplyPayload: (payload: import('../domain/sync').SyncPayload) => void;
   isImmersiveActive?: boolean;
@@ -254,7 +253,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   onCloseTabsBatch,
   onOpenQuickSwitcher,
   onToggleTheme,
-  onOpenSettings,
   onBuildPayload,
   onApplyPayload,
   isImmersiveActive,
@@ -1089,17 +1087,6 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
         <div className="flex-shrink-0 flex items-center gap-2 app-drag self-center" style={dragRegionStyle}>
           <SyncStatusButton onBuildPayload={onBuildPayload} onApplyPayload={onApplyPayload} />
         </div>
-        {/* Settings gear button - sits to the left of WindowControls on win/linux, at the right edge on mac */}
-        <div className="self-stretch flex items-stretch">
-          <button
-            onClick={onOpenSettings}
-            className="h-full w-10 flex items-center justify-center transition-all duration-150 app-no-drag"
-            style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
-            title="Open Settings"
-          >
-            <Settings size={16} />
-          </button>
-        </div>
         {/* Custom window controls for Windows/Linux */}
         {!isMacClient && <div className="self-stretch flex items-stretch"><WindowControls /></div>}
         {/* Small drag shim to the right edge (macOS only – on Windows the close button should touch the edge) */}
@@ -1121,7 +1108,6 @@ const topTabsAreEqual = (prev: TopTabsProps, next: TopTabsProps): boolean => {
     prev.logViews === next.logViews &&
     prev.draggingSessionId === next.draggingSessionId &&
     prev.isMacClient === next.isMacClient &&
-    prev.onOpenSettings === next.onOpenSettings &&
     prev.onBuildPayload === next.onBuildPayload &&
     prev.onApplyPayload === next.onApplyPayload &&
     prev.isImmersiveActive === next.isImmersiveActive &&
