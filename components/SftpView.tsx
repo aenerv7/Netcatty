@@ -148,9 +148,9 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
 
   // Register this useSftpState's writeTextFileByConnection with the bridge so
   // the editor tab's save path can reach the active SFTP session. The bridge
-  // supports multiple simultaneous writers (SftpSidePanel inside terminals
-  // also registers its own instance) and dispatches by trying each until one
-  // owns the target connectionId.
+  // supports multiple simultaneous writers (e.g. SFTP and SCP each register
+  // their own instance) and dispatches by trying each until one owns the
+  // target connectionId.
   //
   // Intentionally no deps: `sftp` identity churns on every SFTP state change
   // (transfers, pane updates, tab switches), which would make this effect

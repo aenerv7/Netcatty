@@ -107,12 +107,11 @@ ExternalAgentConfig
 ## 云同步模型
 
 ```
-SyncConfig
-├── provider: 'github' | 'google' | 'onedrive' | 'webdav' | 's3'
-├── connection: ProviderConnection (OAuth tokens / credentials)
-├── masterKey: MasterKeyConfig (加密主密钥)
-├── autoSync: boolean
-└── lastSync: number
+WebDAVConfig (WebDAV 连接配置)
+├── endpoint: string
+├── authType: 'basic' | 'digest' | 'token'
+├── username / password / token
+└── allowInsecure: boolean
 
 SyncPayload (同步负载)
 ├── hosts / keys / identities / snippets

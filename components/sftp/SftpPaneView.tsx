@@ -75,7 +75,7 @@ interface SftpPaneViewProps {
   showEmptyHeader?: boolean;
   onToggleShowHiddenFiles?: () => void;
   onGoToTerminalCwd?: () => void;
-  /** When true, treat this pane as always active (used by SftpSidePanel which manages visibility itself) */
+  /** When true, treat this pane as always active (bypasses internal visibility checks) */
   forceActive?: boolean;
 }
 

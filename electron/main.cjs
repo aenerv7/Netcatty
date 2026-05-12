@@ -103,9 +103,6 @@ const terminalBridge = require("./bridges/terminalBridge.cjs");
 const sessionLogStreamManager = require("./bridges/sessionLogStreamManager.cjs");
 // crashLogBridge is required at the top of the file (before error handlers)
 const getOauthBridge = createLazyModule("./bridges/oauthBridge.cjs");
-const getGithubAuthBridge = createLazyModule("./bridges/githubAuthBridge.cjs");
-const getGoogleAuthBridge = createLazyModule("./bridges/googleAuthBridge.cjs");
-const getOnedriveAuthBridge = createLazyModule("./bridges/onedriveAuthBridge.cjs");
 const getCloudSyncBridge = createLazyModule("./bridges/cloudSyncBridge.cjs");
 const getFileWatcherBridge = createLazyModule("./bridges/fileWatcherBridge.cjs");
 const getTempDirBridge = createLazyModule("./bridges/tempDirBridge.cjs");
@@ -357,9 +354,6 @@ const registerBridges = (win) => {
   const { ipcMain } = electronModule;
   const { safeStorage } = electronModule;
   const oauthBridge = getOauthBridge();
-  const githubAuthBridge = getGithubAuthBridge();
-  const googleAuthBridge = getGoogleAuthBridge();
-  const onedriveAuthBridge = getOnedriveAuthBridge();
   const cloudSyncBridge = getCloudSyncBridge();
   const fileWatcherBridge = getFileWatcherBridge();
   const tempDirBridge = getTempDirBridge();
@@ -455,9 +449,6 @@ const registerBridges = (win) => {
   portForwardingBridge.registerHandlers(ipcMain);
   terminalBridge.registerHandlers(ipcMain);
   oauthBridge.setupOAuthBridge(ipcMain);
-  githubAuthBridge.registerHandlers(ipcMain);
-  googleAuthBridge.registerHandlers(ipcMain, electronModule);
-  onedriveAuthBridge.registerHandlers(ipcMain, electronModule);
   cloudSyncBridge.registerHandlers(ipcMain);
   fileWatcherBridge.registerHandlers(ipcMain);
   tempDirBridge.registerHandlers(ipcMain, shell);
