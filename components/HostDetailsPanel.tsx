@@ -8,6 +8,7 @@ import {
   FolderPlus,
   Forward,
   Globe,
+  HeartPulse,
   Key,
   KeyRound,
   Link2,
@@ -153,6 +154,7 @@ interface HostDetailsPanelProps {
   groupDefaults?: Partial<import('../domain/models').GroupConfig>;
   groupConfigs?: GroupConfig[];
   layout?: AsidePanelLayout;
+  onImportKey?: (draft: Partial<SSHKey>) => SSHKey;
 }
 
 const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
@@ -174,6 +176,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   groupDefaults,
   groupConfigs = [],
   layout = "overlay",
+  onImportKey,
 }) => {
   const { t } = useI18n();
   const { checkSshAgent } = useApplicationBackend();
@@ -213,6 +216,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
 
   // Local key file path input state
   const [newKeyFilePath, setNewKeyFilePath] = useState("");
+  const [pendingReferenceKeyPath, setPendingReferenceKeyPath] = useState<string | null>(null);
 
   // New group creation state
   const [newGroupName, setNewGroupName] = useState("");
@@ -241,6 +245,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
     if (initialData) {
       setForm(normalizePrimaryTelnetState(initialData));
       setGroupInputValue(initialData.group || "");
+      setPendingReferenceKeyPath(null);
       // Reset password visibility when host changes for privacy
       setShowPassword(false);
     }
@@ -249,6 +254,20 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
   const update = <K extends keyof Host>(key: K, value: Host[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  const addLocalKeyFilePath = useCallback((path: string) => {
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    setForm((prev) => ({
+      ...prev,
+      identityFilePaths: onImportKey ? [trimmed] : [...(prev.identityFilePaths || []), trimmed],
+      identityFileId: undefined,
+      authMethod: "key",
+    }));
+    setPendingReferenceKeyPath(onImportKey ? trimmed : null);
+    setNewKeyFilePath("");
+    setSelectedCredentialType(null);
+  }, [onImportKey]);
 
   const effectiveGroupDefaults = useMemo(() => {
     const currentGroupPath = form.group || defaultGroup;
@@ -475,6 +494,26 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
       managedSourceId: finalManagedSourceId,
     };
     cleaned = normalizePrimaryTelnetState(cleaned);
+    if (
+      onImportKey &&
+      pendingReferenceKeyPath &&
+      cleaned.identityFilePaths?.includes(pendingReferenceKeyPath)
+    ) {
+      const fileName = pendingReferenceKeyPath.split('/').pop() || pendingReferenceKeyPath;
+      const key = onImportKey({
+        source: 'reference',
+        filePath: pendingReferenceKeyPath,
+        label: fileName,
+        privateKey: '',
+        category: 'key',
+      });
+      cleaned = {
+        ...cleaned,
+        identityFileId: key.id,
+        identityFilePaths: [pendingReferenceKeyPath],
+        authMethod: "key",
+      };
+    }
     const preserveLegacyTheme = initialData?.theme != null && cleaned.themeOverride !== false;
     const preserveLegacyFontFamily = initialData?.fontFamily != null && cleaned.fontFamilyOverride !== false;
     const preserveLegacyFontSize = initialData?.fontSize != null && cleaned.fontSizeOverride !== false;
@@ -591,6 +630,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
         identityFileId: undefined,
         identityFilePaths: undefined,
       }));
+      setPendingReferenceKeyPath(null);
       setSelectedCredentialType(null);
       setCredentialPopoverOpen(false);
       setIdentitySuggestionsOpen(false);
@@ -1123,6 +1163,9 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       onClick={() => {
                         const paths = form.identityFilePaths?.filter((_, i) => i !== idx) || [];
                         update("identityFilePaths", paths.length > 0 ? paths : undefined);
+                        if (keyPath === pendingReferenceKeyPath) {
+                          setPendingReferenceKeyPath(null);
+                        }
                       }}
                     >
                       <Trash2 size={12} />
@@ -1151,6 +1194,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                   onClick={() => {
                     update("identityFileId", undefined);
                     update("authMethod", "password");
+                    setPendingReferenceKeyPath(null);
                     setSelectedCredentialType(null);
                   }}
                 >
@@ -1245,6 +1289,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       update("identityFileId", val);
                       update("authMethod", "key");
                       update("identityFilePaths", undefined);
+                      setPendingReferenceKeyPath(null);
                       setSelectedCredentialType(null);
                     }}
                     placeholder={t("hostDetails.keys.search")}
@@ -1281,6 +1326,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       update("identityFileId", val);
                       update("authMethod", "certificate");
                       update("identityFilePaths", undefined);
+                      setPendingReferenceKeyPath(null);
                       setSelectedCredentialType(null);
                     }}
                     placeholder={t("hostDetails.certs.search")}
@@ -1316,11 +1362,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && newKeyFilePath.trim()) {
                           e.preventDefault();
-                          const paths = [...(form.identityFilePaths || []), newKeyFilePath.trim()];
-                          update("identityFilePaths", paths);
-                          update("identityFileId", undefined);
-                          update("authMethod", "key");
-                          setNewKeyFilePath("");
+                          addLocalKeyFilePath(newKeyFilePath);
                         }
                       }}
                     />
@@ -1338,10 +1380,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                           [{ name: "All Files", extensions: ["*"] }]
                         );
                         if (filePath) {
-                          const paths = [...(form.identityFilePaths || []), filePath];
-                          update("identityFilePaths", paths);
-                          update("identityFileId", undefined);
-                          update("authMethod", "key");
+                          addLocalKeyFilePath(filePath);
                         }
                       }}
                     >
@@ -1766,6 +1805,72 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
               <option value="ctrl-h">^H (0x08)</option>
             </select>
           </div>
+        </Card>
+
+        {/* Per-host keepalive override */}
+        <Card className="p-3 space-y-2 bg-card border-border/80">
+          <div className="flex items-center gap-2">
+            <HeartPulse size={14} className="text-muted-foreground" />
+            <p className="text-xs font-semibold">{t("hostDetails.section.keepalive")}</p>
+          </div>
+          <ToggleRow
+            label={t("hostDetails.keepalive.override")}
+            enabled={!!form.keepaliveOverride}
+            onToggle={() => {
+              const next = !form.keepaliveOverride;
+              update("keepaliveOverride", next);
+              // Seed sensible per-host defaults the first time the user
+              // turns the override on so the inputs aren't empty.
+              if (next) {
+                if (form.keepaliveInterval == null) update("keepaliveInterval", 0);
+                if (form.keepaliveCountMax == null) update("keepaliveCountMax", 3);
+              }
+            }}
+          />
+          <p className="text-xs text-muted-foreground break-words">
+            {t("hostDetails.keepalive.desc")}
+          </p>
+          {form.keepaliveOverride && (
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">{t("hostDetails.keepalive.interval")}</p>
+                <input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  className="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
+                  value={form.keepaliveInterval ?? 0}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!Number.isFinite(v)) return;
+                    if (v < 0 || v > 3600) return;
+                    update("keepaliveInterval", v);
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">{t("hostDetails.keepalive.countMax")}</p>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
+                  value={form.keepaliveCountMax ?? 3}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!Number.isFinite(v)) return;
+                    if (v < 1 || v > 100) return;
+                    update("keepaliveCountMax", v);
+                  }}
+                />
+              </div>
+              {(form.keepaliveInterval ?? 0) === 0 && (
+                <p className="text-xs text-muted-foreground break-words pl-1">
+                  {t("hostDetails.keepalive.disabledHint")}
+                </p>
+              )}
+            </div>
+          )}
         </Card>
 
         {/* Proxy via Hosts (Jump Hosts / ProxyJump) */}

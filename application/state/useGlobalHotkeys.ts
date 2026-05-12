@@ -33,6 +33,7 @@ interface HotkeyActions {
   // App features
   broadcast: () => void;
   openLocal: () => void;
+  openSettings: () => void;
 }
 
 // Check if keyboard event matches our app-level shortcuts
@@ -71,6 +72,7 @@ export const getAppLevelActions = (): Set<string> => {
     'moveFocus',
     'broadcast',
     'openLocal',
+    'openSettings',
   ]);
 };
 
@@ -199,6 +201,9 @@ export const useGlobalHotkeys = ({
       }
       case 'broadcast':
         currentActions.broadcast?.();
+        break;
+      case 'openSettings':
+        currentActions.openSettings?.();
         break;
     }
   }, [hotkeyScheme, keyBindings, isSettingsOpen]);

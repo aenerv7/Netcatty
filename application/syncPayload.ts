@@ -24,6 +24,7 @@ import {
   parseCustomKeyBindingsStorageRecord,
   serializeCustomKeyBindingsStorageRecord,
 } from '../domain/customKeyBindings';
+import { isEncryptedCredentialPlaceholder } from '../domain/credentials';
 import { localStorageAdapter } from '../infrastructure/persistence/localStorageAdapter';
 import { rehydrateGlobalBookmarks } from '../components/sftp/hooks/useGlobalSftpBookmarks';
 import {
@@ -36,6 +37,7 @@ import {
   STORAGE_KEY_UI_LANGUAGE,
   STORAGE_KEY_CUSTOM_CSS,
   STORAGE_KEY_TERM_THEME,
+  STORAGE_KEY_TERM_FOLLOW_APP_THEME,
   STORAGE_KEY_TERM_FONT_FAMILY,
   STORAGE_KEY_TERM_FONT_SIZE,
   STORAGE_KEY_TERM_SETTINGS,
@@ -50,6 +52,19 @@ import {
   STORAGE_KEY_SHOW_RECENT_HOSTS,
   STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT,
   STORAGE_KEY_SHOW_SFTP_TAB,
+  STORAGE_KEY_WORKSPACE_FOCUS_STYLE,
+  STORAGE_KEY_AI_PROVIDERS,
+  STORAGE_KEY_AI_ACTIVE_PROVIDER,
+  STORAGE_KEY_AI_ACTIVE_MODEL,
+  STORAGE_KEY_AI_PERMISSION_MODE,
+  STORAGE_KEY_AI_TOOL_INTEGRATION_MODE,
+  STORAGE_KEY_AI_HOST_PERMISSIONS,
+  STORAGE_KEY_AI_DEFAULT_AGENT,
+  STORAGE_KEY_AI_COMMAND_BLOCKLIST,
+  STORAGE_KEY_AI_COMMAND_TIMEOUT,
+  STORAGE_KEY_AI_MAX_ITERATIONS,
+  STORAGE_KEY_AI_AGENT_MODEL_MAP,
+  STORAGE_KEY_AI_WEB_SEARCH,
 } from '../infrastructure/config/storageKeys';
 
 // ---------------------------------------------------------------------------
@@ -135,15 +150,120 @@ interface SyncPayloadImporters {
 
 /** Terminal settings keys that are safe to sync (platform-agnostic). */
 const SYNCABLE_TERMINAL_KEYS = [
-  'scrollback', 'drawBoldInBrightColors', 'fontLigatures', 'fontWeight', 'fontWeightBold',
+  'scrollback', 'drawBoldInBrightColors', 'terminalEmulationType',
+  'fontLigatures', 'fontWeight', 'fontWeightBold', 'fallbackFont',
   'linePadding', 'cursorShape', 'cursorBlink', 'minimumContrastRatio',
-  'scrollOnInput', 'scrollOnOutput', 'scrollOnKeyPress', 'scrollOnPaste',
+  'altAsMeta', 'scrollOnInput', 'scrollOnOutput', 'scrollOnKeyPress', 'scrollOnPaste',
   'smoothScrolling',
   'rightClickBehavior', 'copyOnSelect', 'middleClickPaste', 'wordSeparators',
   'linkModifier', 'keywordHighlightEnabled', 'keywordHighlightRules',
-  'keepaliveInterval', 'disableBracketedPaste', 'clearWipesScrollback',
-  'preserveSelectionOnInput', 'osc52Clipboard',
+  'keepaliveInterval', 'keepaliveCountMax', 'disableBracketedPaste', 'clearWipesScrollback',
+  'preserveSelectionOnInput', 'osc52Clipboard', 'showServerStats',
+  'serverStatsRefreshInterval', 'rendererType',
 ] as const;
+
+export const SYNCABLE_SETTING_STORAGE_KEYS = [
+  STORAGE_KEY_THEME,
+  STORAGE_KEY_UI_THEME_LIGHT,
+  STORAGE_KEY_UI_THEME_DARK,
+  STORAGE_KEY_ACCENT_MODE,
+  STORAGE_KEY_COLOR,
+  STORAGE_KEY_UI_FONT_FAMILY,
+  STORAGE_KEY_UI_LANGUAGE,
+  STORAGE_KEY_CUSTOM_CSS,
+  STORAGE_KEY_TERM_THEME,
+  STORAGE_KEY_TERM_FOLLOW_APP_THEME,
+  STORAGE_KEY_TERM_FONT_FAMILY,
+  STORAGE_KEY_TERM_FONT_SIZE,
+  STORAGE_KEY_TERM_SETTINGS,
+  STORAGE_KEY_CUSTOM_THEMES,
+  STORAGE_KEY_CUSTOM_KEY_BINDINGS,
+  STORAGE_KEY_EDITOR_WORD_WRAP,
+  STORAGE_KEY_SFTP_DOUBLE_CLICK_BEHAVIOR,
+  STORAGE_KEY_SFTP_AUTO_SYNC,
+  STORAGE_KEY_SFTP_SHOW_HIDDEN_FILES,
+  STORAGE_KEY_SFTP_USE_COMPRESSED_UPLOAD,
+  STORAGE_KEY_SFTP_AUTO_OPEN_SIDEBAR,
+  STORAGE_KEY_SFTP_DEFAULT_VIEW_MODE,
+  STORAGE_KEY_SFTP_GLOBAL_BOOKMARKS,
+  STORAGE_KEY_SHOW_RECENT_HOSTS,
+  STORAGE_KEY_SHOW_ONLY_UNGROUPED_HOSTS_IN_ROOT,
+  STORAGE_KEY_SHOW_SFTP_TAB,
+  STORAGE_KEY_WORKSPACE_FOCUS_STYLE,
+  STORAGE_KEY_AI_PROVIDERS,
+  STORAGE_KEY_AI_ACTIVE_PROVIDER,
+  STORAGE_KEY_AI_ACTIVE_MODEL,
+  STORAGE_KEY_AI_PERMISSION_MODE,
+  STORAGE_KEY_AI_TOOL_INTEGRATION_MODE,
+  STORAGE_KEY_AI_HOST_PERMISSIONS,
+  STORAGE_KEY_AI_DEFAULT_AGENT,
+  STORAGE_KEY_AI_COMMAND_BLOCKLIST,
+  STORAGE_KEY_AI_COMMAND_TIMEOUT,
+  STORAGE_KEY_AI_MAX_ITERATIONS,
+  STORAGE_KEY_AI_AGENT_MODEL_MAP,
+  STORAGE_KEY_AI_WEB_SEARCH,
+] as const;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const readArraySetting = <T = Record<string, unknown>>(key: string): T[] | null => {
+  const value = localStorageAdapter.read<T[]>(key);
+  return Array.isArray(value) ? value : null;
+};
+
+const readRecordSetting = <T extends Record<string, unknown> = Record<string, unknown>>(key: string): T | null => {
+  const value = localStorageAdapter.read<T>(key);
+  return isRecord(value) ? value as T : null;
+};
+
+const stripDeviceBoundApiKey = <T extends Record<string, unknown>>(value: T): T => {
+  if (!isEncryptedCredentialPlaceholder(value.apiKey as string | undefined)) return value;
+  const next = { ...value };
+  delete next.apiKey;
+  return next;
+};
+
+/**
+ * `collectSyncableSettings` strips device-bound encrypted apiKeys before upload,
+ * so an incoming providers array typically has no apiKey for providers that
+ * already exist locally. Re-attach the local apiKey by id; without this merge,
+ * applying any synced settings change would silently wipe credentials on the
+ * receiving device.
+ */
+const mergeAiProvidersPreservingLocalApiKeys = (
+  incoming: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> => {
+  const local = readArraySetting(STORAGE_KEY_AI_PROVIDERS) ?? [];
+  const localById = new Map<string, Record<string, unknown>>();
+  for (const provider of local) {
+    if (typeof provider?.id === 'string') localById.set(provider.id, provider);
+  }
+  return incoming.map((provider) => {
+    if (provider.apiKey != null) return provider;
+    const id = typeof provider.id === 'string' ? provider.id : undefined;
+    const localProvider = id != null ? localById.get(id) : undefined;
+    if (localProvider && typeof localProvider.apiKey === 'string') {
+      return { ...provider, apiKey: localProvider.apiKey };
+    }
+    return provider;
+  });
+};
+
+/**
+ * Same rationale as `mergeAiProvidersPreservingLocalApiKeys`. Only restores the
+ * local apiKey when the incoming config still points at the same providerId —
+ * switching providers must not silently leak a key meant for a different one.
+ */
+const mergeWebSearchConfigPreservingLocalApiKey = (
+  incoming: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (incoming.apiKey != null) return incoming;
+  const local = readRecordSetting(STORAGE_KEY_AI_WEB_SEARCH);
+  if (!local || typeof local.apiKey !== 'string') return incoming;
+  if (local.providerId !== incoming.providerId) return incoming;
+  return { ...incoming, apiKey: local.apiKey };
+};
 
 /**
  * Collect all syncable settings from localStorage.
@@ -172,6 +292,10 @@ export function collectSyncableSettings(): SyncPayload['settings'] {
   // Terminal
   const termTheme = localStorageAdapter.readString(STORAGE_KEY_TERM_THEME);
   if (termTheme) settings.terminalTheme = termTheme;
+  const followAppTermTheme = localStorageAdapter.readString(STORAGE_KEY_TERM_FOLLOW_APP_THEME);
+  if (followAppTermTheme === 'true' || followAppTermTheme === 'false') {
+    settings.followAppTerminalTheme = followAppTermTheme === 'true';
+  }
   const termFont = localStorageAdapter.readString(STORAGE_KEY_TERM_FONT_FAMILY);
   if (termFont) settings.terminalFontFamily = termFont;
   const termSize = localStorageAdapter.readNumber(STORAGE_KEY_TERM_FONT_SIZE);
@@ -231,6 +355,42 @@ export function collectSyncableSettings(): SyncPayload['settings'] {
   if (showOnlyUngroupedHostsInRoot != null) settings.showOnlyUngroupedHostsInRoot = showOnlyUngroupedHostsInRoot;
   const showSftpTab = localStorageAdapter.readBoolean(STORAGE_KEY_SHOW_SFTP_TAB);
   if (showSftpTab != null) settings.showSftpTab = showSftpTab;
+  const workspaceFocusStyle = localStorageAdapter.readString(STORAGE_KEY_WORKSPACE_FOCUS_STYLE);
+  if (workspaceFocusStyle === 'dim' || workspaceFocusStyle === 'border') {
+    settings.workspaceFocusStyle = workspaceFocusStyle;
+  }
+
+  const ai: NonNullable<SyncPayload['settings']>['ai'] = {};
+  const providers = readArraySetting(STORAGE_KEY_AI_PROVIDERS);
+  if (providers) ai.providers = providers.map(stripDeviceBoundApiKey);
+  const activeProviderId = localStorageAdapter.readString(STORAGE_KEY_AI_ACTIVE_PROVIDER);
+  if (activeProviderId != null) ai.activeProviderId = activeProviderId;
+  const activeModelId = localStorageAdapter.readString(STORAGE_KEY_AI_ACTIVE_MODEL);
+  if (activeModelId != null) ai.activeModelId = activeModelId;
+  const permissionMode = localStorageAdapter.readString(STORAGE_KEY_AI_PERMISSION_MODE);
+  if (permissionMode === 'observer' || permissionMode === 'confirm' || permissionMode === 'autonomous') {
+    ai.globalPermissionMode = permissionMode;
+  }
+  const toolIntegrationMode = localStorageAdapter.readString(STORAGE_KEY_AI_TOOL_INTEGRATION_MODE);
+  if (toolIntegrationMode === 'mcp' || toolIntegrationMode === 'skills') {
+    ai.toolIntegrationMode = toolIntegrationMode;
+  }
+  const hostPermissions = readArraySetting(STORAGE_KEY_AI_HOST_PERMISSIONS);
+  if (hostPermissions) ai.hostPermissions = hostPermissions;
+  // externalAgents intentionally not collected: command/args/env are device-local.
+  const defaultAgentId = localStorageAdapter.readString(STORAGE_KEY_AI_DEFAULT_AGENT);
+  if (defaultAgentId != null) ai.defaultAgentId = defaultAgentId;
+  const commandBlocklist = localStorageAdapter.read<string[]>(STORAGE_KEY_AI_COMMAND_BLOCKLIST);
+  if (Array.isArray(commandBlocklist)) ai.commandBlocklist = commandBlocklist;
+  const commandTimeout = localStorageAdapter.readNumber(STORAGE_KEY_AI_COMMAND_TIMEOUT);
+  if (commandTimeout != null && Number.isFinite(commandTimeout)) ai.commandTimeout = commandTimeout;
+  const maxIterations = localStorageAdapter.readNumber(STORAGE_KEY_AI_MAX_ITERATIONS);
+  if (maxIterations != null && Number.isFinite(maxIterations)) ai.maxIterations = maxIterations;
+  const agentModelMap = readRecordSetting<Record<string, string>>(STORAGE_KEY_AI_AGENT_MODEL_MAP);
+  if (agentModelMap) ai.agentModelMap = agentModelMap;
+  const webSearchConfig = readRecordSetting(STORAGE_KEY_AI_WEB_SEARCH);
+  if (webSearchConfig) ai.webSearchConfig = stripDeviceBoundApiKey(webSearchConfig);
+  if (Object.keys(ai).length > 0) settings.ai = ai;
 
   return Object.keys(settings).length > 0 ? settings : undefined;
 }
@@ -252,6 +412,9 @@ function applySyncableSettings(settings: NonNullable<SyncPayload['settings']>): 
 
   // Terminal
   if (settings.terminalTheme != null) localStorageAdapter.writeString(STORAGE_KEY_TERM_THEME, settings.terminalTheme);
+  if (settings.followAppTerminalTheme != null) {
+    localStorageAdapter.writeString(STORAGE_KEY_TERM_FOLLOW_APP_THEME, String(settings.followAppTerminalTheme));
+  }
   if (settings.terminalFontFamily != null) localStorageAdapter.writeString(STORAGE_KEY_TERM_FONT_FAMILY, settings.terminalFontFamily);
   if (settings.terminalFontSize != null) localStorageAdapter.writeString(STORAGE_KEY_TERM_FONT_SIZE, String(settings.terminalFontSize));
 
@@ -313,6 +476,41 @@ function applySyncableSettings(settings: NonNullable<SyncPayload['settings']>): 
   }
   if (settings.showSftpTab != null) {
     localStorageAdapter.writeBoolean(STORAGE_KEY_SHOW_SFTP_TAB, settings.showSftpTab);
+  }
+  if (settings.workspaceFocusStyle != null) {
+    localStorageAdapter.writeString(STORAGE_KEY_WORKSPACE_FOCUS_STYLE, settings.workspaceFocusStyle);
+  }
+
+  const ai = settings.ai;
+  if (ai) {
+    if (ai.providers != null) {
+      localStorageAdapter.write(
+        STORAGE_KEY_AI_PROVIDERS,
+        mergeAiProvidersPreservingLocalApiKeys(ai.providers),
+      );
+    }
+    if (ai.activeProviderId != null) localStorageAdapter.writeString(STORAGE_KEY_AI_ACTIVE_PROVIDER, ai.activeProviderId);
+    if (ai.activeModelId != null) localStorageAdapter.writeString(STORAGE_KEY_AI_ACTIVE_MODEL, ai.activeModelId);
+    if (ai.globalPermissionMode != null) localStorageAdapter.writeString(STORAGE_KEY_AI_PERMISSION_MODE, ai.globalPermissionMode);
+    if (ai.toolIntegrationMode != null) localStorageAdapter.writeString(STORAGE_KEY_AI_TOOL_INTEGRATION_MODE, ai.toolIntegrationMode);
+    if (ai.hostPermissions != null) localStorageAdapter.write(STORAGE_KEY_AI_HOST_PERMISSIONS, ai.hostPermissions);
+    // externalAgents intentionally not applied: device-local. Legacy snapshots
+    // that still carry an `externalAgents` field are silently ignored.
+    if (ai.defaultAgentId != null) localStorageAdapter.writeString(STORAGE_KEY_AI_DEFAULT_AGENT, ai.defaultAgentId);
+    if (ai.commandBlocklist != null) localStorageAdapter.write(STORAGE_KEY_AI_COMMAND_BLOCKLIST, ai.commandBlocklist);
+    if (ai.commandTimeout != null) localStorageAdapter.writeNumber(STORAGE_KEY_AI_COMMAND_TIMEOUT, ai.commandTimeout);
+    if (ai.maxIterations != null) localStorageAdapter.writeNumber(STORAGE_KEY_AI_MAX_ITERATIONS, ai.maxIterations);
+    if (ai.agentModelMap != null) localStorageAdapter.write(STORAGE_KEY_AI_AGENT_MODEL_MAP, ai.agentModelMap);
+    if (ai.webSearchConfig !== undefined) {
+      if (ai.webSearchConfig === null) {
+        localStorageAdapter.remove(STORAGE_KEY_AI_WEB_SEARCH);
+      } else {
+        localStorageAdapter.write(
+          STORAGE_KEY_AI_WEB_SEARCH,
+          mergeWebSearchConfigPreservingLocalApiKey(ai.webSearchConfig),
+        );
+      }
+    }
   }
 }
 

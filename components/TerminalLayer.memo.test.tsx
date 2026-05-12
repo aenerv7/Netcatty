@@ -13,6 +13,7 @@ const baseProps = {
   snippetPackages: [],
   sessions: [],
   workspaces: [],
+  knownHosts: [],
   draggingSessionId: null,
   terminalTheme: {},
   accentMode: "theme",
@@ -31,6 +32,7 @@ const baseProps = {
   setEditorWordWrap: () => {},
   onHotkeyAction: () => {},
   onUpdateHost: () => {},
+  onAddKnownHost: () => {},
   onToggleWorkspaceViewMode: () => {},
   onSetWorkspaceFocusedSession: () => {},
   onSplitSession: () => {},
@@ -42,6 +44,36 @@ test("TerminalLayer re-renders when group configs change", () => {
     terminalLayerAreEqual(
       baseProps as never,
       { ...baseProps, groupConfigs: [{ path: "prod", proxyProfileId: "proxy-1" }] } as never,
+    ),
+    false,
+  );
+});
+
+test("TerminalLayer re-renders when known hosts change", () => {
+  assert.equal(
+    terminalLayerAreEqual(
+      baseProps as never,
+      {
+        ...baseProps,
+        knownHosts: [{
+          id: "kh-1",
+          hostname: "switch.local",
+          port: 22,
+          keyType: "ssh-ed25519",
+          fingerprint: "fingerprint",
+          discoveredAt: 1,
+        }],
+      } as never,
+    ),
+    false,
+  );
+});
+
+test("TerminalLayer re-renders when the known host save handler changes", () => {
+  assert.equal(
+    terminalLayerAreEqual(
+      baseProps as never,
+      { ...baseProps, onAddKnownHost: () => {} } as never,
     ),
     false,
   );

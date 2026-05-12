@@ -66,4 +66,10 @@ export interface SftpStateOptions {
   autoConnectLocalOnMount?: boolean;
   /** When true, remote connections use SCP mode (SSH exec) instead of SFTP subsystem. */
   useScp?: boolean;
+  /**
+   * Global SSH keepalive settings, forwarded through to per-SFTP-connection
+   * keepalive resolution so a host that has opted into its own override
+   * is honored for SFTP browsing too (not just the terminal session).
+   */
+  terminalSettings?: { keepaliveInterval: number; keepaliveCountMax: number };
 }

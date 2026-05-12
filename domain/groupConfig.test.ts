@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyGroupDefaults, resolveGroupDefaults } from "./groupConfig.ts";
+import { applyGroupDefaults, resolveGroupDefaults, sanitizeGroupConfig } from "./groupConfig.ts";
 import { resolveTelnetPassword, resolveTelnetUsername } from "./host.ts";
 import type { GroupConfig, Host } from "./models.ts";
 
@@ -181,4 +181,30 @@ test("applyGroupDefaults continues to inherit empty ssh username from the group"
   );
 
   assert.equal(result.username, "group-ssh-user");
+});
+
+test("sanitizeGroupConfig migrates a deprecated fontFamily and clears the override flag", () => {
+  // Regression guard for codex P2 review on PR #940: groups saved with
+  // pingfang-sc / microsoft-yahei / comic-sans-ms must shed the
+  // override so member hosts inherit the global default instead of
+  // silently falling through to fonts[0] under an enabled override.
+  const before: GroupConfig = {
+    path: "team",
+    fontFamily: "pingfang-sc",
+    fontFamilyOverride: true,
+  };
+  const after = sanitizeGroupConfig(before);
+  assert.equal(after.fontFamily, undefined);
+  assert.equal(after.fontFamilyOverride, false);
+});
+
+test("sanitizeGroupConfig keeps a still-valid fontFamily untouched", () => {
+  const before: GroupConfig = {
+    path: "team",
+    fontFamily: "jetbrains-mono",
+    fontFamilyOverride: true,
+  };
+  const after = sanitizeGroupConfig(before);
+  assert.equal(after.fontFamily, "jetbrains-mono");
+  assert.equal(after.fontFamilyOverride, true);
 });

@@ -437,9 +437,14 @@ function startLocalSession(event, payload) {
   sessions.set(sessionId, session);
   ptyProcessTree.registerPid(sessionId, proc.pid);
 
-  // Start real-time session log stream if configured
+  // Start real-time session log stream if configured. The token returned
+  // by startStream is captured so the corresponding stopStream below only
+  // tears down THIS stream — a stale exit event from a previous session
+  // that reused this sessionId would no-op instead of killing a freshly
+  // started stream after a "Restart" reconnect (issue #916).
+  let logStreamToken = null;
   if (payload?.sessionLog?.enabled && payload?.sessionLog?.directory) {
-    sessionLogStreamManager.startStream(sessionId, {
+    logStreamToken = sessionLogStreamManager.startStream(sessionId, {
       hostLabel: "Local",
       hostname: "localhost",
       directory: payload.sessionLog.directory,
@@ -491,7 +496,7 @@ function startLocalSession(event, payload) {
 
   proc.onExit((evt) => {
     flushLocal();
-    sessionLogStreamManager.stopStream(sessionId);
+    sessionLogStreamManager.stopStream(sessionId, logStreamToken);
     ptyProcessTree.unregisterPid(sessionId);
     sessions.delete(sessionId);
     const contents = electronModule.webContents.fromId(session.webContentsId);
@@ -521,6 +526,11 @@ async function startTelnetSession(event, options) {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     let connected = false;
+    // Token for the log stream we open on this connection. Captured here so
+    // the close/error handlers below can pass it back to stopStream and
+    // avoid tearing down a fresh stream that a subsequent reconnect on the
+    // same sessionId may have started (issue #916).
+    let logStreamToken = null;
     const telnetAutoLogin = createTelnetAutoLogin({
       username: options.username,
       password: options.password,
@@ -686,7 +696,7 @@ async function startTelnetSession(event, options) {
 
       // Start real-time session log stream if configured
       if (options.sessionLog?.enabled && options.sessionLog?.directory) {
-        sessionLogStreamManager.startStream(sessionId, {
+        logStreamToken = sessionLogStreamManager.startStream(sessionId, {
           hostLabel: options.label || hostname,
           hostname,
           directory: options.sessionLog.directory,
@@ -773,7 +783,7 @@ async function startTelnetSession(event, options) {
         reject(new Error(`Failed to connect: ${err.message}`));
       } else {
         flushTelnet();
-        sessionLogStreamManager.stopStream(sessionId);
+        sessionLogStreamManager.stopStream(sessionId, logStreamToken);
         const session = sessions.get(sessionId);
         if (session) {
           session.zmodemSentry?.cancel();
@@ -790,7 +800,7 @@ async function startTelnetSession(event, options) {
       clearTimeout(connectTimeout);
 
       flushTelnet();
-      sessionLogStreamManager.stopStream(sessionId);
+      sessionLogStreamManager.stopStream(sessionId, logStreamToken);
       const session = sessions.get(sessionId);
       if (session) {
         session.zmodemSentry?.cancel();
@@ -1098,6 +1108,14 @@ async function buildMoshSshAuthArgs(options, sessionId) {
       if (sshArgs.length > 0) {
         sshArgs.push("-o", "IdentitiesOnly=yes");
       }
+      if (typeof options.certificate === "string" && options.certificate.trim().length > 0) {
+        const certPath = await writeMoshAuthTempFile(
+          safeMoshAuthFileName(sessionId, options.keyId, "-cert.pub"),
+          options.certificate,
+        );
+        tempFiles.push(certPath);
+        sshArgs.push("-o", `CertificateFile=${certPath}`);
+      }
     }
   } catch (err) {
     cleanupMoshAuthTempFiles(tempFiles);
@@ -1196,8 +1214,9 @@ async function startMoshSessionViaHandshake(event, options, { bareClient, sshExe
   };
   sessions.set(sessionId, session);
 
+  let logStreamToken = null;
   if (options.sessionLog?.enabled && options.sessionLog?.directory) {
-    sessionLogStreamManager.startStream(sessionId, {
+    logStreamToken = sessionLogStreamManager.startStream(sessionId, {
       hostLabel: options.label || options.hostname,
       hostname: options.hostname,
       directory: options.sessionLog.directory,
@@ -1205,6 +1224,10 @@ async function startMoshSessionViaHandshake(event, options, { bareClient, sshExe
       startTime: Date.now(),
     });
   }
+  // Expose the token so swapToMoshClient can keep using it after the
+  // handshake hand-off; the new mc-pty's exit handler will also rely on
+  // it to scope its stopStream call.
+  session.logStreamToken = logStreamToken;
 
   const { bufferData, flush } = createPtyBuffer((data) => {
     const contents = electronModule.webContents.fromId(session.webContentsId);
@@ -1255,7 +1278,7 @@ async function startMoshSessionViaHandshake(event, options, { bareClient, sshExe
         });
       } catch (err) {
         flush();
-        sessionLogStreamManager.stopStream(sessionId);
+        sessionLogStreamManager.stopStream(sessionId, logStreamToken);
         const contents = electronModule.webContents.fromId(session.webContentsId);
         contents?.send("netcatty:exit", {
           sessionId,
@@ -1272,7 +1295,7 @@ async function startMoshSessionViaHandshake(event, options, { bareClient, sshExe
     // key warning, etc). Just surface a session-exit with the code so
     // the renderer can label the session "disconnected".
     flush();
-    sessionLogStreamManager.stopStream(sessionId);
+    sessionLogStreamManager.stopStream(sessionId, logStreamToken);
     const contents = electronModule.webContents.fromId(session.webContentsId);
     contents?.send("netcatty:exit", {
       sessionId,
@@ -1359,7 +1382,7 @@ function swapToMoshClient(session, options, ctx) {
       return;
     }
     flush();
-    sessionLogStreamManager.stopStream(sessionId);
+    sessionLogStreamManager.stopStream(sessionId, session.logStreamToken);
     const contents = electronModule.webContents.fromId(session.webContentsId);
     contents?.send("netcatty:exit", {
       sessionId,
@@ -1454,6 +1477,11 @@ async function startSerialSession(event, options) {
   console.log(`[Serial] Starting connection to ${portPath} at ${baudRate} baud`);
 
   return new Promise((resolve, reject) => {
+    // Token for the log stream we open on this connection. Captured here so
+    // the close/error handlers can pass it to stopStream and avoid
+    // tearing down a freshly started stream after a "Restart" reconnect on
+    // the same sessionId (issue #916).
+    let logStreamToken = null;
     try {
       const serialPort = new SerialPort({
         path: portPath,
@@ -1495,7 +1523,7 @@ async function startSerialSession(event, options) {
 
         // Start real-time session log stream if configured
         if (options.sessionLog?.enabled && options.sessionLog?.directory) {
-          sessionLogStreamManager.startStream(sessionId, {
+          logStreamToken = sessionLogStreamManager.startStream(sessionId, {
             hostLabel: options.label || portPath,
             hostname: portPath,
             directory: options.sessionLog.directory,
@@ -1531,7 +1559,7 @@ async function startSerialSession(event, options) {
         serialPort.on('error', (err) => {
           console.error(`[Serial] Port error: ${err.message}`);
           session.zmodemSentry?.cancel();
-          sessionLogStreamManager.stopStream(sessionId);
+          sessionLogStreamManager.stopStream(sessionId, logStreamToken);
           const contents = electronModule.webContents.fromId(session.webContentsId);
           contents?.send("netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
           ptyProcessTree.unregisterPid(sessionId);
@@ -1541,7 +1569,7 @@ async function startSerialSession(event, options) {
         serialPort.on('close', () => {
           console.log(`[Serial] Port closed`);
           session.zmodemSentry?.cancel();
-          sessionLogStreamManager.stopStream(sessionId);
+          sessionLogStreamManager.stopStream(sessionId, logStreamToken);
           const contents = electronModule.webContents.fromId(session.webContentsId);
           contents?.send("netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
           ptyProcessTree.unregisterPid(sessionId);

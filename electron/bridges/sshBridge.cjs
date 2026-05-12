@@ -14,6 +14,7 @@ const { Client: SSHClient, utils: sshUtils } = require("ssh2");
 const { NetcattyAgent } = require("./netcattyAgent.cjs");
 const keyboardInteractiveHandler = require("./keyboardInteractiveHandler.cjs");
 const passphraseHandler = require("./passphraseHandler.cjs");
+const hostKeyVerifier = require("./hostKeyVerifier.cjs");
 const { createProxySocket } = require("./proxyUtils.cjs");
 const { attachX11Forwarding } = require("./x11Forwarding.cjs");
 const {
@@ -25,6 +26,11 @@ const {
   findAllDefaultPrivateKeys: findAllDefaultPrivateKeysFromHelper,
   getSshAgentSocket,
   readFileNoFollow,
+  preparePrivateKeyForAuth,
+  loadIdentityFileForAuth,
+  loadFirstIdentityFileForAuth,
+  PassphraseCancelledError,
+  isPassphraseCancelledError,
 } = require("./sshAuthHelper.cjs");
 const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
 const { trackSessionIdlePrompt } = require("./ai/shellUtils.cjs");
@@ -449,16 +455,23 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
         options._tunnelRef.chainConnections = connections;
       }
 
+      // Per-hop keepalive. Each jump entry already carries its own resolved
+      // interval/countMax (see resolveHostKeepalive in domain/host.ts), so
+      // a chain with a router as the bastion and a cloud host at the end
+      // can have keepalive=0 on the bastion and the cloud-friendly values
+      // on the final target — without one stepping on the other. We fall
+      // back to the target-call options for backward compat with older
+      // serializers that don't populate the per-hop fields yet.
+      const hopInterval = jump.keepaliveInterval ?? options.keepaliveInterval ?? 0;
+      const hopCountMax = jump.keepaliveCountMax ?? options.keepaliveCountMax ?? 10;
       // Build connection options
       const connOpts = {
         host: jump.hostname,
         port: jump.port || 22,
         username: jump.username || 'root',
         readyTimeout: 120000, // 2 minutes to allow for keyboard-interactive (2FA/MFA)
-        // Use user-configured keepalive interval from options (in seconds -> convert to ms)
-        // 0 = disabled (no keepalive packets sent)
-        keepaliveInterval: options.keepaliveInterval > 0 ? options.keepaliveInterval * 1000 : 0,
-        keepaliveCountMax: options.keepaliveInterval > 0 ? 3 : 0,
+        keepaliveInterval: hopInterval > 0 ? hopInterval * 1000 : 0,
+        keepaliveCountMax: hopInterval > 0 ? hopCountMax : 0,
         // Enable keyboard-interactive authentication (required for 2FA/MFA)
         tryKeyboard: true,
         algorithms: buildAlgorithms(options.legacyAlgorithms),
@@ -468,6 +481,40 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
       const hasCertificate =
         typeof jump.certificate === "string" && jump.certificate.trim().length > 0;
 
+      const identityFile = !jump.privateKey
+        ? await loadFirstIdentityFileForAuth({
+          sender,
+          identityFilePaths: jump.identityFilePaths,
+          hostname: hopLabel,
+          initialPassphrase: jump.passphrase,
+          passphraseSignal: options._passphraseSignal,
+          logPrefix: `[Chain] Hop ${i + 1}:`,
+          onLoaded: (loaded) => {
+            if (loaded.passphrase) {
+              sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
+            }
+            console.log(`[Chain] Hop ${i + 1}: loaded identity file ${loaded.keyPath}`);
+          },
+          onError: (err, keyPath) => {
+            console.warn(`[Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
+          },
+        })
+        : null;
+      const inlineKey = jump.privateKey
+        ? await preparePrivateKeyForAuth({
+          sender,
+          privateKey: jump.privateKey,
+          keyId: jump.keyId,
+          keyName: jump.keyId || jump.label || jump.username,
+          hostname: hopLabel,
+          initialPassphrase: jump.passphrase,
+          passphraseSignal: options._passphraseSignal,
+          logPrefix: `[Chain] Hop ${i + 1}:`,
+        })
+        : null;
+      const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+      const effectivePassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
       let authAgent = null;
       if (hasCertificate) {
         authAgent = new NetcattyAgent({
@@ -476,16 +523,16 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
           meta: {
             label: jump.keyId || jump.username || "",
             certificate: jump.certificate,
-            privateKey: jump.privateKey,
-            passphrase: jump.passphrase,
+            privateKey: effectivePrivateKey,
+            passphrase: effectivePassphrase,
           },
         });
         connOpts.agent = authAgent;
-      } else if (jump.privateKey) {
-        connOpts.privateKey = jump.privateKey;
-        if (jump.passphrase) {
-          connOpts.passphrase = jump.passphrase;
-        } else if (isKeyEncrypted(jump.privateKey)) {
+      } else if (effectivePrivateKey) {
+        connOpts.privateKey = effectivePrivateKey;
+        if (effectivePassphrase) {
+          connOpts.passphrase = effectivePassphrase;
+        } else if (jump.privateKey && isKeyEncrypted(jump.privateKey)) {
           // Key is encrypted but no passphrase provided — prompt the user
           console.log(`[Chain] Hop ${i + 1}: key is encrypted, requesting passphrase`);
           sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
@@ -494,7 +541,9 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
             sender,
             `SSH key for ${keyLabel}`,
             keyLabel,
-            hopLabel
+            hopLabel,
+            false,
+            { signal: options._passphraseSignal }
           );
           if (result?.passphrase) {
             connOpts.passphrase = result.passphrase;
@@ -503,42 +552,8 @@ async function connectThroughChain(event, options, jumpHosts, targetHost, target
             // key so buildAuthHandler won't try it and stall auth.
             delete connOpts.privateKey;
             if (result?.cancelled) {
-              throw new Error(`Passphrase entry cancelled for ${hopLabel}`);
+              throw new PassphraseCancelledError(hopLabel);
             }
-          }
-        }
-      }
-
-      // Read identity files from local paths (e.g. from SSH config IdentityFile)
-      if (!connOpts.privateKey && !connOpts.agent && jump.identityFilePaths?.length > 0) {
-        for (const keyPath of jump.identityFilePaths) {
-          try {
-            const resolvedPath = keyPath.startsWith("~/")
-              ? path.join(os.homedir(), keyPath.slice(2))
-              : keyPath;
-            const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-            connOpts.privateKey = keyContent;
-            if (isKeyEncrypted(keyContent)) {
-              console.log(`[Chain] Hop ${i + 1}: identity file ${resolvedPath} is encrypted, requesting passphrase`);
-              sendProgress(i + 1, totalHops + 1, hopLabel, 'auth-attempt', 'passphrase required');
-              const result = await passphraseHandler.requestPassphrase(
-                sender,
-                resolvedPath,
-                path.basename(resolvedPath),
-                hopLabel
-              );
-              if (result?.passphrase) {
-                connOpts.passphrase = result.passphrase;
-              } else {
-                // Cancelled/skipped/timeout — clear encrypted key, try next file
-                delete connOpts.privateKey;
-                continue;
-              }
-            }
-            console.log(`[Chain] Hop ${i + 1}: loaded identity file ${resolvedPath}`);
-            break;
-          } catch (err) {
-            console.warn(`[Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
           }
         }
       }
@@ -709,6 +724,12 @@ async function startSSHSession(event, options) {
     const conn = new SSHClient();
     let chainConnections = [];
     let connectionSocket = null;
+    // Token returned by sessionLogStreamManager.startStream when (and if)
+    // a real-time log stream is opened. Captured here so every close /
+    // error / timeout handler below can pass it back to stopStream and
+    // avoid tearing down a stream that a subsequent reconnect on the same
+    // sessionId may have already started (issue #916).
+    let logStreamToken = null;
 
     // Determine if we have jump hosts
     const jumpHosts = options.jumpHosts || [];
@@ -723,14 +744,23 @@ async function startSSHSession(event, options) {
       username: options.username || "root",
       // `readyTimeout` covers the entire connection + authentication flow in ssh2.
       readyTimeout: 20000, // Fast failure for non-interactive auth
-      // Use user-configured keepalive interval (in seconds -> convert to ms)
-      // 0 = disabled (no keepalive packets sent)
+      // Resolved keepalive (caller decides whether host override or global
+      // applies). interval is in seconds; 0 means truly disabled, so
+      // countMax also goes to 0 to skip ssh2's dead-connection check.
       keepaliveInterval: options.keepaliveInterval > 0 ? options.keepaliveInterval * 1000 : 0,
-      keepaliveCountMax: options.keepaliveInterval > 0 ? 3 : 0,
+      keepaliveCountMax: options.keepaliveInterval > 0 ? (options.keepaliveCountMax ?? 10) : 0,
       // Enable keyboard-interactive authentication (required for 2FA/MFA)
       tryKeyboard: true,
       algorithms: buildAlgorithms(options.legacyAlgorithms),
     };
+
+    connectOpts.hostVerifier = hostKeyVerifier.createHostVerifier({
+      sender,
+      sessionId,
+      hostname: options.hostname,
+      port: options.port || 22,
+      knownHosts: options.knownHosts,
+    });
 
     // Authentication for final target
     const hasCertificate = typeof options.certificate === "string" && options.certificate.trim().length > 0;
@@ -753,6 +783,35 @@ async function startSSHSession(event, options) {
     });
 
     let authAgent = null;
+    const identityFile = !options.privateKey
+      ? await loadFirstIdentityFileForAuth({
+        sender,
+        identityFilePaths: options.identityFilePaths,
+        hostname: options.hostname,
+        initialPassphrase: options.passphrase,
+        logPrefix: "[SSH]",
+        onLoaded: (loaded) => {
+          log("Loaded identity file", { keyPath: loaded.keyPath, encrypted: !!loaded.passphrase });
+        },
+        onError: (err, keyPath) => {
+          log("Failed to read identity file", { keyPath, error: err.message });
+        },
+      })
+      : null;
+    const inlineKey = options.privateKey
+      ? await preparePrivateKeyForAuth({
+        sender,
+        privateKey: options.privateKey,
+        keyId: options.keyId,
+        keyName: options.keyId || options.username,
+        hostname: options.hostname,
+        initialPassphrase: effectivePassphrase,
+        logPrefix: "[SSH]",
+      })
+      : null;
+    const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+    const effectiveIdentityPassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
     if (hasCertificate) {
       authAgent = new NetcattyAgent({
         mode: "certificate",
@@ -760,50 +819,15 @@ async function startSSHSession(event, options) {
         meta: {
           label: options.keyId || options.username || "",
           certificate: options.certificate,
-          privateKey: options.privateKey,
-          passphrase: effectivePassphrase,
+          privateKey: effectivePrivateKey,
+          passphrase: effectiveIdentityPassphrase,
         },
       });
       connectOpts.agent = authAgent;
-    } else if (options.privateKey) {
-      connectOpts.privateKey = options.privateKey;
-      if (effectivePassphrase) {
-        connectOpts.passphrase = effectivePassphrase;
-      }
-    }
-
-    // Read identity files from local paths (e.g. from SSH config IdentityFile)
-    // Only if no explicit key was already configured
-    if (!connectOpts.privateKey && !connectOpts.agent && options.identityFilePaths?.length > 0) {
-      for (const keyPath of options.identityFilePaths) {
-        try {
-          const resolvedPath = keyPath.startsWith("~/")
-            ? path.join(os.homedir(), keyPath.slice(2))
-            : keyPath;
-          const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-          connectOpts.privateKey = keyContent;
-          // Check if key is encrypted — if so, prompt for passphrase
-          if (isKeyEncrypted(keyContent)) {
-            log("Identity file is encrypted, requesting passphrase", { keyPath: resolvedPath });
-            const result = await passphraseHandler.requestPassphrase(
-              sender,
-              resolvedPath,
-              path.basename(resolvedPath),
-              options.hostname
-            );
-            if (result?.passphrase) {
-              connectOpts.passphrase = result.passphrase;
-            } else {
-              // Cancelled/skipped/timeout — clear encrypted key, try next file
-              delete connectOpts.privateKey;
-              continue;
-            }
-          }
-          log("Loaded identity file", { keyPath: resolvedPath, encrypted: isKeyEncrypted(keyContent) });
-          break; // Use the first successfully loaded key
-        } catch (err) {
-          log("Failed to read identity file", { keyPath, error: err.message });
-        }
+    } else if (effectivePrivateKey) {
+      connectOpts.privateKey = effectivePrivateKey;
+      if (effectiveIdentityPassphrase) {
+        connectOpts.passphrase = effectiveIdentityPassphrase;
       }
     }
 
@@ -1291,7 +1315,7 @@ async function startSSHSession(event, options) {
 
             // Start real-time session log stream if configured
             if (options.sessionLog?.enabled && options.sessionLog?.directory) {
-              sessionLogStreamManager.startStream(sessionId, {
+              logStreamToken = sessionLogStreamManager.startStream(sessionId, {
                 hostLabel: options.hostLabel || options.hostname || '',
                 hostname: options.hostname || '',
                 directory: options.sessionLog.directory,
@@ -1385,7 +1409,7 @@ async function startSSHSession(event, options) {
                 clearTimeout(flushTimeout);
               }
               flushBuffer();
-              sessionLogStreamManager.stopStream(sessionId);
+              sessionLogStreamManager.stopStream(sessionId, logStreamToken);
               if (detachX11Forwarding) {
                 detachX11Forwarding();
                 detachX11Forwarding = null;
@@ -1471,7 +1495,7 @@ async function startSSHSession(event, options) {
 
         sendProgress(totalHops, totalHops, options.hostname, 'error', err.message);
         safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "error" });
-        sessionLogStreamManager.stopStream(sessionId);
+        sessionLogStreamManager.stopStream(sessionId, logStreamToken);
         if (detachX11Forwarding) {
           detachX11Forwarding();
           detachX11Forwarding = null;
@@ -1496,7 +1520,7 @@ async function startSSHSession(event, options) {
         const contents = event.sender;
         sendProgress(totalHops, totalHops, options.hostname, 'error', err.message);
         safeSend(contents, "netcatty:exit", { sessionId, exitCode: 1, error: err.message, reason: "timeout" });
-        sessionLogStreamManager.stopStream(sessionId);
+        sessionLogStreamManager.stopStream(sessionId, logStreamToken);
         sessions.get(sessionId)?.zmodemSentry?.cancel();
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);
@@ -1527,7 +1551,7 @@ async function startSSHSession(event, options) {
             safeSend(contents, "netcatty:exit", { sessionId, exitCode: 0, reason: "closed" });
           }
         }
-        sessionLogStreamManager.stopStream(sessionId);
+        sessionLogStreamManager.stopStream(sessionId, logStreamToken);
         sessions.get(sessionId)?.zmodemSentry?.cancel();
         sessions.delete(sessionId);
         sessionEncodings.delete(sessionId);
@@ -1643,6 +1667,44 @@ async function execCommand(event, payload) {
   const sender = event.sender;
   const sessionId = payload.sessionId || randomUUID();
   const defaultKeys = enableKeyboardInteractive ? await findAllDefaultPrivateKeysFromHelper() : [];
+  let identityFilePrivateKey = null;
+  let identityFilePassphrase = null;
+  const inlineKey = payload.privateKey
+    ? await preparePrivateKeyForAuth({
+      sender,
+      privateKey: payload.privateKey,
+      keyId: payload.keyId,
+      keyName: payload.keyId || payload.username,
+      hostname: payload.hostname,
+      initialPassphrase: payload.passphrase,
+      logPrefix: "[SSH Exec]",
+    })
+    : null;
+
+  if (!payload.privateKey && payload.identityFilePaths?.length > 0) {
+    for (const keyPath of payload.identityFilePaths) {
+      try {
+        const identityFile = await loadIdentityFileForAuth({
+          sender,
+          keyPath,
+          hostname: payload.hostname,
+          initialPassphrase: payload.passphrase,
+          logPrefix: "[SSH Exec]",
+        });
+        if (!identityFile) {
+          continue;
+        }
+        identityFilePrivateKey = identityFile.privateKey;
+        identityFilePassphrase = identityFile.passphrase || null;
+        break;
+      } catch (err) {
+        if (isPassphraseCancelledError(err)) {
+          throw err;
+        }
+        console.warn("[SSH Exec] Failed to read identity file:", err?.message || err);
+      }
+    }
+  }
 
   return new Promise((resolve, reject) => {
     const conn = new SSHClient();
@@ -1710,6 +1772,8 @@ async function execCommand(event, payload) {
     };
 
     let authAgent = null;
+    const effectivePrivateKey = inlineKey?.privateKey || identityFilePrivateKey;
+    const effectivePassphrase = inlineKey?.passphrase || identityFilePassphrase;
     if (hasCertificate) {
       authAgent = new NetcattyAgent({
         mode: "certificate",
@@ -1717,14 +1781,16 @@ async function execCommand(event, payload) {
         meta: {
           label: payload.keyId || payload.username || "",
           certificate: payload.certificate,
-          privateKey: payload.privateKey,
-          passphrase: payload.passphrase,
+          privateKey: effectivePrivateKey,
+          passphrase: effectivePassphrase,
         },
       });
       connectOpts.agent = authAgent;
-    } else if (payload.privateKey) {
-      connectOpts.privateKey = payload.privateKey;
-      if (payload.passphrase) connectOpts.passphrase = payload.passphrase;
+    } else if (effectivePrivateKey) {
+      connectOpts.privateKey = effectivePrivateKey;
+      if (effectivePassphrase) {
+        connectOpts.passphrase = effectivePassphrase;
+      }
     }
 
     if (payload.password) connectOpts.password = payload.password;
@@ -1856,6 +1922,19 @@ async function startSSHSessionWrapper(event, options) {
                 _unlockedEncryptedKeys: passphraseResult.keys,
               });
             } catch (retryErr) {
+              // Only purge cached passphrases if the error is specifically
+              // a passphrase/key-parsing failure, not a generic auth rejection.
+              const retryMsg = (retryErr.message || '').toLowerCase();
+              const isPassphraseError = retryMsg.includes('bad passphrase') ||
+                retryMsg.includes('integrity check failed') ||
+                retryMsg.includes('cannot parse privatekey');
+              if (isPassphraseError) {
+                try {
+                  const failedKeyPaths = passphraseResult.keys.map(k => k.keyPath);
+                  event.sender.send('netcatty:passphrase-auth-failed', { keyPaths: failedKeyPaths });
+                } catch (_) { /* sender may be destroyed */ }
+              }
+
               // Re-wrap retry errors the same way as initial errors
               const isRetryAuthError = retryErr.message?.toLowerCase().includes('authentication') ||
                 retryErr.message?.toLowerCase().includes('auth') ||
@@ -2650,6 +2729,8 @@ function registerHandlers(ipcMain) {
   keyboardInteractiveHandler.registerHandler(ipcMain);
   // Register the passphrase response handler
   passphraseHandler.registerHandler(ipcMain);
+  // Register the SSH host key verification response handler
+  hostKeyVerifier.registerHandler(ipcMain);
 }
 
 module.exports = {

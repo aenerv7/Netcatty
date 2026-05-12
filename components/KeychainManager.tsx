@@ -3,6 +3,9 @@ import {
   ChevronDown,
   ChevronRight,
   Edit2,
+  Eye,
+  EyeOff,
+  FileKey,
   Info,
   Key,
   LayoutGrid,
@@ -18,7 +21,8 @@ import {
 import React, { useCallback, useMemo, useState } from "react";
 import { useI18n } from "../application/i18n/I18nProvider";
 import { useStoredViewMode } from "../application/state/useStoredViewMode";
-import { resolveHostAuth } from "../domain/sshAuth";
+import { sanitizeCredentialValue } from "../domain/credentials";
+import { resolveBridgeKeyAuth, resolveHostAuth } from "../domain/sshAuth";
 import { STORAGE_KEY_VAULT_KEYS_VIEW_MODE } from "../infrastructure/config/storageKeys";
 import { logger } from "../lib/logger";
 import { cn } from "../lib/utils";
@@ -175,7 +179,7 @@ echo $3 >> "$FILE"`);
     switch (activeFilter) {
       case "key":
         result = result.filter(
-          (k) => k.source === "generated" || k.source === "imported",
+          (k) => k.source === "generated" || k.source === "imported" || k.source === "reference",
         );
         break;
       case "certificate":
@@ -1029,15 +1033,25 @@ echo $3 >> "$FILE"`);
                         keys,
                         identities,
                       });
+                      const exportKeyAuth = resolveBridgeKeyAuth({
+                        key: exportAuth.key,
+                        fallbackIdentityFilePaths: exportAuth.authMethod === "password" || exportAuth.keyId
+                          ? undefined
+                          : exportHost.identityFilePaths,
+                        passphrase: exportAuth.passphrase,
+                      });
+                      const exportPassword = sanitizeCredentialValue(exportAuth.password);
 
                       // Need either password or a usable key to run remote command.
-                      if (!exportAuth.password && !exportAuth.key?.privateKey) {
+                      if (
+                        !exportPassword &&
+                        !exportKeyAuth.privateKey &&
+                        !exportKeyAuth.identityFilePaths?.length
+                      ) {
                         throw new Error(
                           t("keychain.export.missingCredentials"),
                         );
                       }
-
-                      const hostPrivateKey = exportAuth.key?.privateKey;
 
                       // Escape the public key for shell (single quotes, escape existing quotes)
                       const escapedPublicKey = panel.key.publicKey.replace(
@@ -1059,8 +1073,14 @@ echo $3 >> "$FILE"`);
                         hostname: exportHost.hostname,
                         username: exportAuth.username,
                         port: exportHost.port || 22,
-                        password: exportAuth.password,
-                        privateKey: hostPrivateKey,
+                        password: exportPassword,
+                        privateKey: exportKeyAuth.privateKey,
+                        certificate: exportAuth.key?.certificate,
+                        publicKey: exportAuth.key?.publicKey,
+                        keyId: exportAuth.keyId,
+                        keySource: exportAuth.key?.source,
+                        passphrase: exportKeyAuth.passphrase,
+                        identityFilePaths: exportKeyAuth.identityFilePaths,
                         command,
                         timeout: 30000,
                         enableKeyboardInteractive: true,
@@ -1140,71 +1160,134 @@ echo $3 >> "$FILE"`);
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-destructive">
-                    {t("keychain.edit.privateKeyRequired")}
-                  </Label>
-                  <Textarea
-                    value={draftKey.privateKey || ""}
-                    onChange={(e) =>
-                      setDraftKey({ ...draftKey, privateKey: e.target.value })
-                    }
-                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                    className="min-h-[180px] font-mono text-xs"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">
-                    {t("keychain.edit.publicKey")}
-                  </Label>
-                  <Textarea
-                    value={draftKey.publicKey || ""}
-                    onChange={(e) =>
-                      setDraftKey({ ...draftKey, publicKey: e.target.value })
-                    }
-                    placeholder="ssh-ed25519 AAAA..."
-                    className="min-h-[80px] font-mono text-xs"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground">
-                    {t("keychain.edit.certificate")}
-                  </Label>
-                  <Textarea
-                    value={draftKey.certificate || ""}
-                    onChange={(e) =>
-                      setDraftKey({ ...draftKey, certificate: e.target.value })
-                    }
-                    placeholder={t("keychain.edit.certificatePlaceholder")}
-                    className="min-h-[60px] font-mono text-xs"
-                  />
-                </div>
-
-                {/* Key Export section */}
-                <div className="pt-4 mt-4 border-t border-border/60">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-sm font-medium">
-                      {t("keychain.edit.keyExport")}
-                    </span>
-                    <div className="h-4 w-4 rounded-full bg-muted flex items-center justify-center">
-                      <Info size={10} className="text-muted-foreground" />
+                {/* Reference key: show file path read-only */}
+                {draftKey.source === 'reference' && draftKey.filePath && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">
+                      {t("keychain.edit.filePath")}
+                    </Label>
+                    <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/50 border border-border/60">
+                      <FileKey size={14} className="text-primary shrink-0" />
+                      <span className="text-xs font-mono truncate" title={draftKey.filePath}>
+                        {draftKey.filePath}
+                      </span>
                     </div>
                   </div>
-                  <Button
-                    className="w-full h-11"
-                    onClick={() => openKeyExport(panel.key)}
-                  >
-                    {t("keychain.edit.exportToHost")}
-                  </Button>
+                )}
+
+                {/* Managed key: show private key editor */}
+                {draftKey.source !== 'reference' && (
+                  <div className="space-y-2">
+                    <Label className="text-destructive">
+                      {t("keychain.edit.privateKeyRequired")}
+                    </Label>
+                    <Textarea
+                      value={draftKey.privateKey || ""}
+                      onChange={(e) =>
+                        setDraftKey({ ...draftKey, privateKey: e.target.value })
+                      }
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      className="min-h-[180px] font-mono text-xs"
+                    />
+                  </div>
+                )}
+
+                {draftKey.source !== 'reference' && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">
+                      {t("keychain.edit.publicKey")}
+                    </Label>
+                    <Textarea
+                      value={draftKey.publicKey || ""}
+                      onChange={(e) =>
+                        setDraftKey({ ...draftKey, publicKey: e.target.value })
+                      }
+                      placeholder="ssh-ed25519 AAAA..."
+                      className="min-h-[80px] font-mono text-xs"
+                    />
+                  </div>
+                )}
+
+                {draftKey.source !== 'reference' && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">
+                      {t("keychain.edit.certificate")}
+                    </Label>
+                    <Textarea
+                      value={draftKey.certificate || ""}
+                      onChange={(e) =>
+                        setDraftKey({ ...draftKey, certificate: e.target.value })
+                      }
+                      placeholder={t("keychain.edit.certificatePlaceholder")}
+                      className="min-h-[60px] font-mono text-xs"
+                    />
+                  </div>
+                )}
+
+                {/* Passphrase section */}
+                <div className="space-y-2">
+                  <Label>{t('terminal.auth.passphrase')}</Label>
+                  <div className="relative">
+                    <Input
+                      type={showPassphrase ? 'text' : 'password'}
+                      value={draftKey.passphrase || ''}
+                      onChange={(e) =>
+                        setDraftKey({ ...draftKey, passphrase: e.target.value })
+                      }
+                      placeholder={t('keychain.generate.passphrasePlaceholder')}
+                      className="pr-10"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
+                      onClick={() => setShowPassphrase(!showPassphrase)}
+                    >
+                      {showPassphrase ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="editSavePassphrase"
+                      checked={draftKey.savePassphrase || false}
+                      onChange={(e) =>
+                        setDraftKey({ ...draftKey, savePassphrase: e.target.checked })
+                      }
+                      className="h-4 w-4 rounded border-border"
+                    />
+                    <Label htmlFor="editSavePassphrase" className="text-sm font-normal cursor-pointer">
+                      {t('keychain.generate.savePassphrase')}
+                    </Label>
+                  </div>
                 </div>
+
+                {/* Key Export section - only for managed keys */}
+                {draftKey.source !== 'reference' && (
+                  <div className="pt-4 mt-4 border-t border-border/60">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-medium">
+                        {t("keychain.edit.keyExport")}
+                      </span>
+                      <div className="h-4 w-4 rounded-full bg-muted flex items-center justify-center">
+                        <Info size={10} className="text-muted-foreground" />
+                      </div>
+                    </div>
+                    <Button
+                      className="w-full h-11"
+                      onClick={() => openKeyExport(panel.key)}
+                    >
+                      {t("keychain.edit.exportToHost")}
+                    </Button>
+                  </div>
+                )}
 
                 {/* Save button */}
                 <Button
                   className="w-full h-11 mt-4"
                   disabled={
-                    !draftKey.label?.trim() || !draftKey.privateKey?.trim()
+                    !draftKey.label?.trim() ||
+                    (draftKey.source !== 'reference' && !draftKey.privateKey?.trim())
                   }
                   onClick={() => {
                     if (draftKey.id) {

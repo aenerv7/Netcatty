@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
@@ -47,6 +48,13 @@ import { sftpTreeSelectionStore, useSftpTreeSelectionState } from './hooks/useSf
 import { sftpKeyboardSelectionStore, sftpTreeEnterStore } from './hooks/useSftpKeyboardShortcuts';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { isKnownBinaryFile } from '../../lib/sftpFileUtils';
+import {
+  getSftpTreeUploadFilesTargetPath,
+  getSftpUploadFilesLabelKey,
+  getSftpUploadFolderLabelKey,
+  shouldShowSftpUploadFolderMenu,
+  shouldShowSftpUploadFilesMenu,
+} from './sftpUploadMenu';
 
 type NodeDescriptor =
   | { type: 'node'; entry: SftpFileEntry; entryPath: string; depth: number; isExpanded: boolean; isLoading: boolean }
@@ -76,6 +84,8 @@ interface SftpPaneTreeViewProps {
   openNewFolderDialog: (targetPath: string) => void;
   openNewFileDialog: (targetPath: string) => void;
   onUploadExternalFiles?: (dataTransfer: DataTransfer, targetPath?: string) => Promise<void>;
+  onUploadExternalFileList?: (fileList: FileList, targetPath?: string) => Promise<void>;
+  onUploadExternalFolder?: (targetPath?: string) => Promise<void>;
   columnWidths: ColumnWidths;
   handleSort: (field: SortField) => void;
   handleResizeStart: (field: keyof ColumnWidths, e: React.MouseEvent) => void;
@@ -281,6 +291,8 @@ export const SftpPaneTreeView = React.memo<SftpPaneTreeViewProps>(({
   openNewFolderDialog,
   openNewFileDialog,
   onUploadExternalFiles,
+  onUploadExternalFileList,
+  onUploadExternalFolder,
   columnWidths,
   handleSort,
   handleResizeStart,
@@ -297,6 +309,38 @@ export const SftpPaneTreeView = React.memo<SftpPaneTreeViewProps>(({
   const [dragOverNodePath, setDragOverNodePath] = useState<string | null>(null);
   const onUploadExternalFilesRef = useRef(onUploadExternalFiles);
   onUploadExternalFilesRef.current = onUploadExternalFiles;
+  const onUploadExternalFileListRef = useRef(onUploadExternalFileList);
+  onUploadExternalFileListRef.current = onUploadExternalFileList;
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetPathRef = useRef<string | undefined>(undefined);
+  const uploadEnabled = shouldShowSftpUploadFilesMenu({
+    isLocal: !!pane.connection?.isLocal,
+    hasFileListUpload: !!onUploadExternalFileList,
+  });
+  const folderUploadEnabled = shouldShowSftpUploadFolderMenu({
+    isLocal: !!pane.connection?.isLocal,
+    hasFolderUpload: !!onUploadExternalFolder,
+  });
+
+  const triggerUploadPicker = useCallback((targetPath?: string) => {
+    if (!uploadEnabled) return;
+    const input = uploadInputRef.current;
+    if (!input) return;
+    uploadTargetPathRef.current = targetPath;
+    input.value = '';
+    input.click();
+  }, [uploadEnabled]);
+
+  const handleUploadInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      uploadTargetPathRef.current = undefined;
+      return;
+    }
+    const targetPath = uploadTargetPathRef.current;
+    uploadTargetPathRef.current = undefined;
+    void onUploadExternalFileListRef.current?.(files, targetPath);
+  }, []);
 
   // ── Virtual scrolling state ──────────────────────────────────────
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1303,6 +1347,24 @@ export const SftpPaneTreeView = React.memo<SftpPaneTreeViewProps>(({
         <ContextMenuItem onClick={() => openNewFileDialogRef.current(isDir ? entryPath : getParentPath(entryPath))}>
           <FilePlus size={14} className="mr-2" />{tRef.current('sftp.newFile')}
         </ContextMenuItem>
+        {uploadEnabled && (
+          <ContextMenuItem
+            onClick={() => {
+              triggerUploadPicker(getSftpTreeUploadFilesTargetPath(entry, entryPath));
+            }}
+          >
+            <Upload size={14} className="mr-2" />{tRef.current(getSftpUploadFilesLabelKey(entry))}
+          </ContextMenuItem>
+        )}
+        {folderUploadEnabled && (
+          <ContextMenuItem
+            onClick={() => {
+              void onUploadExternalFolder?.(getSftpTreeUploadFilesTargetPath(entry, entryPath));
+            }}
+          >
+            <Upload size={14} className="mr-2" />{tRef.current(getSftpUploadFolderLabelKey(entry))}
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     );
   }, [
@@ -1315,6 +1377,10 @@ export const SftpPaneTreeView = React.memo<SftpPaneTreeViewProps>(({
     getActionPaths,
     toTransferSources,
     executeMoveAction,
+    triggerUploadPicker,
+    uploadEnabled,
+    folderUploadEnabled,
+    onUploadExternalFolder,
   ]);
 
   return (
@@ -1411,6 +1477,16 @@ export const SftpPaneTreeView = React.memo<SftpPaneTreeViewProps>(({
         </ContextMenuTrigger>
         {contextMenuContent}
       </ContextMenu>
+
+      {uploadEnabled && (
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleUploadInputChange}
+        />
+      )}
 
       {pane.loading && !pane.reconnecting && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/40 backdrop-blur-[1px] z-10 pointer-events-none">

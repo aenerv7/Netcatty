@@ -50,7 +50,7 @@ import {
 } from '../../domain/customKeyBindings';
 import { applyCustomAccentToTerminalTheme, getTerminalThemeForUiTheme } from '../../domain/terminalAppearance';
 import { customThemeStore, useCustomThemes } from '../state/customThemeStore';
-import { DEFAULT_FONT_SIZE } from '../../infrastructure/config/fonts';
+import { DEFAULT_FONT_SIZE, isDeprecatedPrimaryFontId } from '../../infrastructure/config/fonts';
 import { DARK_UI_THEMES, LIGHT_UI_THEMES, UiThemeTokens, getUiThemeById } from '../../infrastructure/config/uiThemes';
 import { UI_FONTS, DEFAULT_UI_FONT_ID } from '../../infrastructure/config/uiFonts';
 import { uiFontStore, useUIFontsLoaded } from './uiFontStore';
@@ -71,6 +71,28 @@ const DEFAULT_ACCENT_MODE: 'theme' | 'custom' = 'theme';
 const DEFAULT_CUSTOM_ACCENT = '221.2 83.2% 53.3%';
 const DEFAULT_TERMINAL_THEME = 'netcatty-dark';
 const DEFAULT_FONT_FAMILY = 'jetbrains-mono';
+
+/**
+ * Migrate any terminal font id arriving from storage / IPC / sync to a
+ * safe value. If `raw` is a deprecated proportional id (pingfang-sc,
+ * microsoft-yahei, comic-sans-ms), persist the rewrite back to
+ * localStorage so subsequent ingest paths and cloud-sync uploads stop
+ * carrying it. Used by every place that reads STORAGE_KEY_TERM_FONT_FAMILY
+ * — initial useState init, rehydrateAllFromStorage, IPC notifySettings
+ * change listener, and cross-window storage event listener — so a
+ * single point of truth keeps deprecated ids from re-entering state.
+ *
+ * Returns null when there's nothing to apply (raw is empty); callers
+ * fall back to DEFAULT_FONT_FAMILY in that case.
+ */
+function migrateIncomingTerminalFontId(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (isDeprecatedPrimaryFontId(raw)) {
+    localStorageAdapter.writeString(STORAGE_KEY_TERM_FONT_FAMILY, DEFAULT_FONT_FAMILY);
+    return DEFAULT_FONT_FAMILY;
+  }
+  return raw;
+}
 // Auto-detect default hotkey scheme based on platform
 const DEFAULT_HOTKEY_SCHEME: HotkeyScheme =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
@@ -232,7 +254,10 @@ export const useSettingsState = () => {
     const isUpgrade = !!localStorageAdapter.readString(STORAGE_KEY_TERM_THEME);
     return !isUpgrade;
   });
-  const [terminalFontFamilyId, setTerminalFontFamilyId] = useState<string>(() => localStorageAdapter.readString(STORAGE_KEY_TERM_FONT_FAMILY) || DEFAULT_FONT_FAMILY);
+  const [terminalFontFamilyId, setTerminalFontFamilyId] = useState<string>(() => {
+    const stored = localStorageAdapter.readString(STORAGE_KEY_TERM_FONT_FAMILY);
+    return migrateIncomingTerminalFontId(stored) ?? DEFAULT_FONT_FAMILY;
+  });
   const [terminalFontSize, setTerminalFontSize] = useState<number>(() => localStorageAdapter.readNumber(STORAGE_KEY_TERM_FONT_SIZE) || DEFAULT_FONT_SIZE);
   const [uiLanguage, setUiLanguage] = useState<UILanguage>(() => {
     const stored = readStoredString(STORAGE_KEY_UI_LANGUAGE);
@@ -506,10 +531,11 @@ export const useSettingsState = () => {
     const storedTermTheme = readStoredString(STORAGE_KEY_TERM_THEME);
     if (storedTermTheme) setTerminalThemeId(storedTermTheme);
     const storedTermFont = readStoredString(STORAGE_KEY_TERM_FONT_FAMILY);
-    if (storedTermFont) {
+    const migratedTermFont = migrateIncomingTerminalFontId(storedTermFont);
+    if (migratedTermFont) {
       // If the synced font is not installed locally, fall back to default
-      if (fontStore.isFontAvailable(storedTermFont)) {
-        setTerminalFontFamilyId(storedTermFont);
+      if (fontStore.isFontAvailable(migratedTermFont)) {
+        setTerminalFontFamilyId(migratedTermFont);
       } else {
         setTerminalFontFamilyId(DEFAULT_FONT_FAMILY);
         localStorageAdapter.writeString(STORAGE_KEY_TERM_FONT_FAMILY, DEFAULT_FONT_FAMILY);
@@ -648,7 +674,8 @@ export const useSettingsState = () => {
         setFollowAppTerminalThemeState((prev) => (prev === next ? prev : next));
       }
       if (key === STORAGE_KEY_TERM_FONT_FAMILY && typeof value === 'string') {
-        setTerminalFontFamilyId(value);
+        const migrated = migrateIncomingTerminalFontId(value);
+        if (migrated) setTerminalFontFamilyId(migrated);
       }
       if (key === STORAGE_KEY_TERM_FONT_SIZE && typeof value === 'number') {
         setTerminalFontSize(value);
@@ -841,8 +868,9 @@ export const useSettingsState = () => {
       }
       // Sync terminal font family from other windows
       if (e.key === STORAGE_KEY_TERM_FONT_FAMILY && e.newValue) {
-        if (e.newValue !== s.terminalFontFamilyId) {
-          setTerminalFontFamilyId(e.newValue);
+        const migrated = migrateIncomingTerminalFontId(e.newValue);
+        if (migrated && migrated !== s.terminalFontFamilyId) {
+          setTerminalFontFamilyId(migrated);
         }
       }
       // Sync terminal font size from other windows

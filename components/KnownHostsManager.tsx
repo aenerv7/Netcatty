@@ -84,7 +84,7 @@ const parseKnownHostsFile = (content: string): KnownHost[] => {
         hostname,
         port,
         keyType,
-        publicKey: publicKey.slice(0, 64) + "...",
+        publicKey: `${keyType} ${publicKey}`,
         discoveredAt: Date.now(),
       });
     } catch {

@@ -1,4 +1,15 @@
 import type { GroupConfig, Host } from './models';
+import { migrateDeprecatedFontOverride } from '../infrastructure/config/fonts';
+
+/**
+ * Migrate deprecated primary-font ids out of a GroupConfig's
+ * font-override fields. Symmetrical to sanitizeHost; both run on load
+ * to keep the same proportional-font protection working for group
+ * defaults too.
+ */
+export function sanitizeGroupConfig(config: GroupConfig): GroupConfig {
+  return migrateDeprecatedFontOverride(config);
+}
 
 export interface ApplyGroupDefaultsOptions {
   validProxyProfileIds?: ReadonlySet<string>;

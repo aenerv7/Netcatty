@@ -22,6 +22,7 @@ import { Label } from "../../ui/label";
 import { SectionHeader, Select, SettingsTabContent, SettingRow, Toggle } from "../settings-ui";
 import { ThemeSelectModal } from "../ThemeSelectModal";
 import { TerminalFontSelect } from "../TerminalFontSelect";
+import { TerminalCjkFontSelect } from "../TerminalCjkFontSelect";
 import { CustomThemeModal } from "../../terminal/CustomThemeModal";
 import type { TerminalTheme } from "../../../domain/models";
 
@@ -602,6 +603,17 @@ export default function SettingsTerminalTab(props: {
         </SettingRow>
 
         <SettingRow
+          label={t("settings.terminal.font.cjk")}
+          description={t("settings.terminal.font.cjk.desc")}
+        >
+          <TerminalCjkFontSelect
+            value={terminalSettings.fallbackFont ?? ""}
+            onChange={(next) => updateTerminalSetting("fallbackFont", next)}
+            className="w-48"
+          />
+        </SettingRow>
+
+        <SettingRow
           label={t("settings.terminal.font.size")}
           description={t("settings.terminal.font.size.desc")}
         >
@@ -1015,6 +1027,24 @@ export default function SettingsTerminalTab(props: {
               const val = parseInt(e.target.value) || 0;
               if (val >= 0 && val <= 3600) {
                 updateTerminalSetting("keepaliveInterval", val);
+              }
+            }}
+            className="w-24"
+          />
+        </SettingRow>
+        <SettingRow
+          label={t("settings.terminal.connection.keepaliveCountMax")}
+          description={t("settings.terminal.connection.keepaliveCountMax.desc")}
+        >
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={terminalSettings.keepaliveCountMax}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 1;
+              if (val >= 1 && val <= 100) {
+                updateTerminalSetting("keepaliveCountMax", val);
               }
             }}
             className="w-24"

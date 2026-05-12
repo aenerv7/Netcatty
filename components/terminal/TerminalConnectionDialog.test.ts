@@ -1,0 +1,134 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { I18nProvider } from "../../application/i18n/I18nProvider.tsx";
+import type { Host } from "../../types.ts";
+import { TerminalConnectionDialog } from "./TerminalConnectionDialog.tsx";
+
+const host: Host = {
+  id: "host-1",
+  label: "10.2.0.32",
+  hostname: "10.2.0.32",
+  port: 22,
+  username: "root",
+  tags: [],
+  os: "linux",
+  protocol: "ssh",
+};
+
+const renderDialog = (
+  props: Partial<React.ComponentProps<typeof TerminalConnectionDialog>> = {},
+) => renderToStaticMarkup(
+  React.createElement(
+    I18nProvider,
+    { locale: "en" },
+    React.createElement(TerminalConnectionDialog, {
+      host,
+      status: "connecting",
+      error: null,
+      progressValue: 55,
+      chainProgress: null,
+      needsAuth: false,
+      showLogs: false,
+      _setShowLogs: () => {},
+      keys: [],
+      authProps: {
+        authMethod: "password",
+        setAuthMethod: () => {},
+        authUsername: "root",
+        setAuthUsername: () => {},
+        authPassword: "",
+        setAuthPassword: () => {},
+        authKeyId: null,
+        setAuthKeyId: () => {},
+        authPassphrase: "",
+        setAuthPassphrase: () => {},
+        showAuthPassphrase: false,
+        setShowAuthPassphrase: () => {},
+        showAuthPassword: false,
+        setShowAuthPassword: () => {},
+        authRetryMessage: null,
+        onSubmit: () => {},
+        onCancel: () => {},
+        isValid: true,
+      },
+      progressProps: {
+        timeLeft: 20,
+        isCancelling: false,
+        progressLogs: ["Host key verification required for 10.2.0.32."],
+        onCancelConnect: () => {},
+        onCloseSession: () => {},
+        onRetry: () => {},
+      },
+      ...props,
+    }),
+  ),
+);
+
+test("renders host key confirmation inside the connection dialog", () => {
+  const markup = renderDialog({
+    showLogs: true,
+    hostKeyVerification: {
+      hostKeyInfo: {
+        hostname: "10.2.0.32",
+        port: 22,
+        keyType: "ssh-ed25519",
+        fingerprint: "abc123",
+        status: "unknown",
+      },
+      onClose: () => {},
+      onContinue: () => {},
+      onAddAndContinue: () => {},
+    },
+  });
+
+  assert.match(markup, /Confirm this host key/);
+  assert.match(markup, /abc123/);
+  assert.match(markup, /Add and continue/);
+  assert.match(markup, /Host key verification required for 10\.2\.0\.32\./);
+  assert.equal(markup.includes("Timeout in"), false);
+});
+
+test("renders changed host key warning in the same connection dialog", () => {
+  const markup = renderDialog({
+    hostKeyVerification: {
+      hostKeyInfo: {
+        hostname: "10.2.0.32",
+        port: 22,
+        keyType: "ssh-ed25519",
+        fingerprint: "new-fingerprint",
+        knownFingerprint: "old-fingerprint",
+        status: "changed",
+      },
+      onClose: () => {},
+      onContinue: () => {},
+      onAddAndContinue: () => {},
+    },
+  });
+
+  assert.match(markup, /Host key changed/);
+  assert.match(markup, /new-fingerprint/);
+  assert.match(markup, /Saved fingerprint/);
+  assert.match(markup, /old-fingerprint/);
+  assert.match(markup, /Update and continue/);
+});
+
+test("keeps the second progress segment parked until the first segment finishes", () => {
+  const markup = renderDialog({ progressValue: 75 });
+
+  assert.match(markup, /style="width:100%"/);
+  assert.match(markup, /style="width:0%"/);
+});
+
+test("fills both progress segments for disconnected states", () => {
+  const markup = renderDialog({
+    status: "disconnected",
+    error: "Connection timed out.",
+    progressValue: 5,
+  });
+
+  const fullSegments = markup.match(/style="width:100%"/g) ?? [];
+  assert.equal(fullSegments.length >= 2, true);
+});

@@ -17,8 +17,11 @@ const telnetAutoLoginCancelledListeners = new Map();
 const languageChangeListeners = new Set();
 const fullscreenChangeListeners = new Set();
 const keyboardInteractiveListeners = new Set();
+const hostKeyVerificationListeners = new Set();
 const passphraseListeners = new Set();
 const passphraseTimeoutListeners = new Set();
+const passphraseCancelledListeners = new Set();
+const passphraseAuthFailedListeners = new Set();
 const updateDownloadProgressListeners = new Set();
 const updateDownloadedListeners = new Set();
 const updateAvailableListeners = new Set();
@@ -285,6 +288,16 @@ ipcRenderer.on("netcatty:keyboard-interactive", (_event, payload) => {
   });
 });
 
+ipcRenderer.on("netcatty:host-key:verify", (_event, payload) => {
+  hostKeyVerificationListeners.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (err) {
+      console.error("Host key verification callback failed", err);
+    }
+  });
+});
+
 // Passphrase request events for encrypted SSH keys
 ipcRenderer.on("netcatty:passphrase-request", (_event, payload) => {
   passphraseListeners.forEach((cb) => {
@@ -303,6 +316,28 @@ ipcRenderer.on("netcatty:passphrase-timeout", (_event, payload) => {
       cb(payload);
     } catch (err) {
       console.error("Passphrase timeout callback failed", err);
+    }
+  });
+});
+
+// Passphrase cancelled events (request ended because the owning operation stopped)
+ipcRenderer.on("netcatty:passphrase-cancelled", (_event, payload) => {
+  passphraseCancelledListeners.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (err) {
+      console.error("Passphrase cancelled callback failed", err);
+    }
+  });
+});
+
+// Passphrase auth failed events (saved passphrase was wrong)
+ipcRenderer.on("netcatty:passphrase-auth-failed", (_event, payload) => {
+  passphraseAuthFailedListeners.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (err) {
+      console.error("Passphrase auth-failed callback failed", err);
     }
   });
 });
@@ -681,6 +716,17 @@ const api = {
       cancelled,
     });
   },
+  onHostKeyVerification: (cb) => {
+    hostKeyVerificationListeners.add(cb);
+    return () => hostKeyVerificationListeners.delete(cb);
+  },
+  respondHostKeyVerification: async (requestId, accept, addToKnownHosts = false) => {
+    return ipcRenderer.invoke("netcatty:host-key:respond", {
+      requestId,
+      accept,
+      addToKnownHosts,
+    });
+  },
   // Passphrase request for encrypted SSH keys
   onPassphraseRequest: (cb) => {
     passphraseListeners.add(cb);
@@ -703,6 +749,14 @@ const api = {
   onPassphraseTimeout: (cb) => {
     passphraseTimeoutListeners.add(cb);
     return () => passphraseTimeoutListeners.delete(cb);
+  },
+  onPassphraseCancelled: (cb) => {
+    passphraseCancelledListeners.add(cb);
+    return () => passphraseCancelledListeners.delete(cb);
+  },
+  onPassphraseAuthFailed: (cb) => {
+    passphraseAuthFailedListeners.add(cb);
+    return () => passphraseAuthFailedListeners.delete(cb);
   },
   openSftp: async (options) => {
     const result = await ipcRenderer.invoke("netcatty:sftp:open", options);
@@ -829,6 +883,9 @@ const api = {
   },
   statLocal: async (path) => {
     return ipcRenderer.invoke("netcatty:local:stat", { path });
+  },
+  listLocalTree: async (path) => {
+    return ipcRenderer.invoke("netcatty:local:tree", { path });
   },
   getHomeDir: async () => {
     return ipcRenderer.invoke("netcatty:local:homedir");

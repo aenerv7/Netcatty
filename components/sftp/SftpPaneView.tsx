@@ -279,6 +279,22 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
     }
   }, [callbacks, pane.connection?.currentPath, requestTreeReload]);
 
+  const handleUploadExternalFileList = useCallback(async (fileList: FileList, targetPath?: string) => {
+    await callbacks.onUploadExternalFileList?.(fileList, targetPath);
+    const affectedPath = targetPath ?? pane.connection?.currentPath;
+    if (affectedPath && affectedPath !== pane.connection?.currentPath) {
+      requestTreeReload([affectedPath]);
+    }
+  }, [callbacks, pane.connection?.currentPath, requestTreeReload]);
+
+  const handleUploadExternalFolder = useCallback(async (targetPath?: string) => {
+    await callbacks.onUploadExternalFolder?.(targetPath);
+    const affectedPath = targetPath ?? pane.connection?.currentPath;
+    if (affectedPath && affectedPath !== pane.connection?.currentPath) {
+      requestTreeReload([affectedPath]);
+    }
+  }, [callbacks, pane.connection?.currentPath, requestTreeReload]);
+
   const handleMoveEntriesToPath = useCallback(async (sourcePaths: string[], targetPath: string) => {
     await callbacks.onMoveEntriesToPath(sourcePaths, targetPath);
   }, [callbacks]);
@@ -524,6 +540,8 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
             openNewFolderDialog={openNewFolderDialogAtPath}
             openNewFileDialog={openNewFileDialogAtPath}
             onUploadExternalFiles={handleUploadExternalFiles}
+            onUploadExternalFileList={handleUploadExternalFileList}
+            onUploadExternalFolder={handleUploadExternalFolder}
             columnWidths={columnWidths}
             handleSort={handleSortWithTransition}
             handleResizeStart={handleResizeStart}
@@ -574,6 +592,9 @@ const SftpPaneViewInner: React.FC<SftpPaneViewProps> = ({
         onDownloadFile={callbacks.onDownloadFile}
         onDownloadFiles={callbacks.onDownloadFiles}
         onEditPermissions={callbacks.onEditPermissions}
+        onUploadExternalFileList={handleUploadExternalFileList}
+        onUploadExternalFolder={handleUploadExternalFolder}
+        isLocal={!!pane.connection?.isLocal}
         openRenameDialog={openRenameDialog}
         openDeleteConfirm={openDeleteConfirm}
         rowHeight={rowHeight}

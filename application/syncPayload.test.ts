@@ -43,6 +43,7 @@ const {
   buildSyncPayload,
   hasMeaningfulCloudSyncData,
 } = await import("./syncPayload.ts");
+const storageKeys = await import("../infrastructure/config/storageKeys.ts");
 
 const knownHost = (id = "kh-1"): KnownHost => ({
   id,
@@ -91,6 +92,333 @@ test("buildSyncPayload includes reusable proxy profiles", () => {
   } as SyncableVaultData & { proxyProfiles: typeof proxyProfiles });
 
   assert.deepEqual(payload.proxyProfiles, proxyProfiles);
+});
+
+test("buildSyncPayload includes AI configuration settings", () => {
+  const providers = [{
+    id: "openai-main",
+    providerId: "openai",
+    name: "OpenAI",
+    apiKey: "enc:v1:test",
+    defaultModel: "gpt-test",
+    enabled: true,
+  }];
+  const webSearch = {
+    providerId: "tavily",
+    apiKey: "enc:v1:web",
+    enabled: true,
+    maxResults: 7,
+  };
+
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PROVIDERS, JSON.stringify(providers));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_ACTIVE_PROVIDER, "openai-main");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_ACTIVE_MODEL, "gpt-test");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PERMISSION_MODE, "autonomous");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_TOOL_INTEGRATION_MODE, "skills");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_DEFAULT_AGENT, "codex");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_COMMAND_BLOCKLIST, JSON.stringify(["rm -rf"]));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_COMMAND_TIMEOUT, "120");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_MAX_ITERATIONS, "10");
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_AGENT_MODEL_MAP, JSON.stringify({ codex: "gpt-test" }));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH, JSON.stringify(webSearch));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.deepEqual(payload.settings?.ai, {
+    providers,
+    activeProviderId: "openai-main",
+    activeModelId: "gpt-test",
+    globalPermissionMode: "autonomous",
+    toolIntegrationMode: "skills",
+    defaultAgentId: "codex",
+    commandBlocklist: ["rm -rf"],
+    commandTimeout: 120,
+    maxIterations: 10,
+    agentModelMap: { codex: "gpt-test" },
+    webSearchConfig: webSearch,
+  });
+});
+
+test("buildSyncPayload excludes externalAgents (device-local OS-bound config)", () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_EXTERNAL_AGENTS, JSON.stringify([
+    { id: "codex", name: "Codex", command: "/opt/homebrew/bin/codex", enabled: true },
+  ]));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.equal("ai" in (payload.settings ?? {}), false);
+});
+
+test("buildSyncPayload omits device-bound encrypted AI API keys", () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PROVIDERS, JSON.stringify([{
+    id: "openai-main",
+    providerId: "openai",
+    name: "OpenAI",
+    apiKey: "enc:v1:djEwAAAA",
+    enabled: true,
+  }]));
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH, JSON.stringify({
+    providerId: "tavily",
+    apiKey: "enc:v1:djEwAAAA",
+    enabled: true,
+  }));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.equal("apiKey" in (payload.settings?.ai?.providers?.[0] ?? {}), false);
+  assert.equal("apiKey" in (payload.settings?.ai?.webSearchConfig ?? {}), false);
+});
+
+test("applySyncPayload restores AI configuration settings", async () => {
+  const providers = [{
+    id: "anthropic-main",
+    providerId: "anthropic",
+    name: "Anthropic",
+    apiKey: "enc:v1:test",
+    enabled: true,
+  }];
+  const webSearch = {
+    providerId: "exa",
+    apiKey: "enc:v1:web",
+    enabled: true,
+  };
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: {
+      ai: {
+        providers,
+        activeProviderId: "anthropic-main",
+        activeModelId: "claude-test",
+        globalPermissionMode: "observer",
+        toolIntegrationMode: "mcp",
+        defaultAgentId: "claude",
+        commandBlocklist: ["shutdown"],
+        commandTimeout: 30,
+        maxIterations: 5,
+        agentModelMap: { claude: "claude-test" },
+        webSearchConfig: webSearch,
+      },
+    },
+    syncedAt: 1,
+  } as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_PROVIDERS)!), providers);
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_ACTIVE_PROVIDER), "anthropic-main");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_ACTIVE_MODEL), "claude-test");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_PERMISSION_MODE), "observer");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_TOOL_INTEGRATION_MODE), "mcp");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_DEFAULT_AGENT), "claude");
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_COMMAND_BLOCKLIST)!), ["shutdown"]);
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_COMMAND_TIMEOUT), "30");
+  assert.equal(localStorage.getItem(storageKeys.STORAGE_KEY_AI_MAX_ITERATIONS), "5");
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_AGENT_MODEL_MAP)!), { claude: "claude-test" });
+  assert.deepEqual(JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH)!), webSearch);
+});
+
+test("applySyncPayload preserves local externalAgents and ignores legacy payload field", async () => {
+  const localAgents = [
+    { id: "codex", name: "Codex", command: "/usr/local/bin/codex", enabled: true },
+  ];
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_EXTERNAL_AGENTS, JSON.stringify(localAgents));
+
+  const payload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: {
+      ai: {
+        // Legacy snapshot still carries externalAgents; current code must ignore it.
+        externalAgents: [
+          { id: "claude", name: "Claude", command: "C:\\Tools\\claude.exe", enabled: true },
+        ],
+      },
+    },
+    syncedAt: 1,
+  } as unknown as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_EXTERNAL_AGENTS)!),
+    localAgents,
+  );
+});
+
+test("applySyncPayload preserves local AI provider apiKeys when synced payload omits them", async () => {
+  const localProviders = [
+    {
+      id: "openai-main",
+      providerId: "openai",
+      name: "OpenAI",
+      apiKey: "enc:v1:djEwLOCAL",
+      enabled: true,
+    },
+    {
+      id: "anthropic-main",
+      providerId: "anthropic",
+      name: "Anthropic",
+      apiKey: "enc:v1:djEwANTHROPIC",
+      enabled: true,
+    },
+  ];
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PROVIDERS, JSON.stringify(localProviders));
+
+  // Synced payload mirrors what `collectSyncableSettings` produces on another device:
+  // metadata is preserved but encrypted device-bound apiKeys are stripped.
+  const syncedProviders = [
+    { id: "openai-main", providerId: "openai", name: "OpenAI (renamed)", enabled: true },
+    { id: "anthropic-main", providerId: "anthropic", name: "Anthropic", enabled: false },
+  ];
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: { ai: { providers: syncedProviders } },
+    syncedAt: 1,
+  } as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  const stored = JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_PROVIDERS)!);
+  assert.deepEqual(stored, [
+    {
+      id: "openai-main",
+      providerId: "openai",
+      name: "OpenAI (renamed)",
+      apiKey: "enc:v1:djEwLOCAL",
+      enabled: true,
+    },
+    {
+      id: "anthropic-main",
+      providerId: "anthropic",
+      name: "Anthropic",
+      apiKey: "enc:v1:djEwANTHROPIC",
+      enabled: false,
+    },
+  ]);
+});
+
+test("applySyncPayload prefers explicit synced apiKey over local apiKey", async () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_PROVIDERS, JSON.stringify([
+    { id: "openai-main", providerId: "openai", name: "OpenAI", apiKey: "enc:v1:djEwLOCAL", enabled: true },
+  ]));
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: {
+      ai: {
+        providers: [
+          { id: "openai-main", providerId: "openai", name: "OpenAI", apiKey: "plaintext-from-other-device", enabled: true },
+        ],
+      },
+    },
+    syncedAt: 1,
+  } as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  const stored = JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_PROVIDERS)!);
+  assert.equal(stored[0].apiKey, "plaintext-from-other-device");
+});
+
+test("applySyncPayload preserves local web-search apiKey when synced config omits it", async () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH, JSON.stringify({
+    providerId: "tavily",
+    apiKey: "enc:v1:djEwWEB",
+    enabled: true,
+    maxResults: 7,
+  }));
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: {
+      ai: {
+        webSearchConfig: { providerId: "tavily", enabled: false, maxResults: 12 },
+      },
+    },
+    syncedAt: 1,
+  } as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  const stored = JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH)!);
+  assert.deepEqual(stored, {
+    providerId: "tavily",
+    apiKey: "enc:v1:djEwWEB",
+    enabled: false,
+    maxResults: 12,
+  });
+});
+
+test("applySyncPayload drops local web-search apiKey when synced config switches provider", async () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH, JSON.stringify({
+    providerId: "tavily",
+    apiKey: "enc:v1:djEwWEB",
+    enabled: true,
+  }));
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    settings: {
+      ai: {
+        webSearchConfig: { providerId: "exa", enabled: true },
+      },
+    },
+    syncedAt: 1,
+  } as SyncPayload;
+
+  await applySyncPayload(payload, { importVaultData: () => {} });
+
+  const stored = JSON.parse(localStorage.getItem(storageKeys.STORAGE_KEY_AI_WEB_SEARCH)!);
+  assert.equal("apiKey" in stored, false);
+  assert.equal(stored.providerId, "exa");
+});
+
+test("buildSyncPayload includes syncable terminal options from settings", () => {
+  localStorage.setItem(storageKeys.STORAGE_KEY_TERM_FOLLOW_APP_THEME, "true");
+  localStorage.setItem(storageKeys.STORAGE_KEY_TERM_SETTINGS, JSON.stringify({
+    terminalEmulationType: "vt100",
+    altAsMeta: true,
+    showServerStats: false,
+    serverStatsRefreshInterval: 12,
+    rendererType: "dom",
+    localShell: "/bin/zsh",
+  }));
+
+  const payload = buildSyncPayload(vault([]));
+
+  assert.equal(payload.settings?.followAppTerminalTheme, true);
+  assert.deepEqual(payload.settings?.terminalSettings, {
+    terminalEmulationType: "vt100",
+    altAsMeta: true,
+    showServerStats: false,
+    serverStatsRefreshInterval: 12,
+    rendererType: "dom",
+  });
 });
 
 test("hasMeaningfulCloudSyncData ignores legacy cloud known hosts", () => {
@@ -231,6 +559,75 @@ test("applySyncPayload waits for async vault imports", async () => {
   assert.equal(finished, false);
   await promise;
   assert.equal(finished, true);
+});
+
+test("buildSyncPayload includes fallbackFont when present in TERM_SETTINGS", () => {
+  localStorage.setItem(
+    storageKeys.STORAGE_KEY_TERM_SETTINGS,
+    JSON.stringify({ scrollback: 5000, fallbackFont: "PingFang SC", fontLigatures: true }),
+  );
+
+  const payload = buildSyncPayload(vault());
+  const termSettings = (payload.settings?.terminalSettings ?? {}) as Record<string, unknown>;
+  assert.equal(termSettings.fallbackFont, "PingFang SC");
+});
+
+test("buildSyncPayload omits fallbackFont when TERM_SETTINGS does not set it", () => {
+  localStorage.setItem(
+    storageKeys.STORAGE_KEY_TERM_SETTINGS,
+    JSON.stringify({ scrollback: 5000, fontLigatures: true }),
+  );
+
+  const payload = buildSyncPayload(vault());
+  const termSettings = (payload.settings?.terminalSettings ?? {}) as Record<string, unknown>;
+  assert.equal("fallbackFont" in termSettings, false);
+});
+
+test("applySyncPayload writes incoming fallbackFont into local TERM_SETTINGS", async () => {
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    syncedAt: 1,
+    settings: { terminalSettings: { fallbackFont: "Sarasa Mono SC" } },
+  };
+
+  await applySyncPayload(payload, {
+    importVaultData: () => {},
+  });
+
+  const raw = localStorage.getItem(storageKeys.STORAGE_KEY_TERM_SETTINGS);
+  assert.ok(raw, "TERM_SETTINGS should be written");
+  const parsed = JSON.parse(raw!);
+  assert.equal(parsed.fallbackFont, "Sarasa Mono SC");
+});
+
+test("applySyncPayload from legacy client (no fallbackFont) preserves local value", async () => {
+  localStorage.setItem(
+    storageKeys.STORAGE_KEY_TERM_SETTINGS,
+    JSON.stringify({ scrollback: 5000, fallbackFont: "Microsoft YaHei UI" }),
+  );
+
+  const payload: SyncPayload = {
+    hosts: [],
+    keys: [],
+    identities: [],
+    snippets: [],
+    customGroups: [],
+    syncedAt: 1,
+    settings: { terminalSettings: { scrollback: 9999 } },
+  };
+
+  await applySyncPayload(payload, {
+    importVaultData: () => {},
+  });
+
+  const raw = localStorage.getItem(storageKeys.STORAGE_KEY_TERM_SETTINGS);
+  const parsed = JSON.parse(raw!);
+  assert.equal(parsed.fallbackFont, "Microsoft YaHei UI", "legacy payload must not wipe local fallbackFont");
+  assert.equal(parsed.scrollback, 9999);
 });
 
 test("applyLocalVaultPayload restores known hosts from local backups", async () => {

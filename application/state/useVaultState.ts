@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeDistroId, sanitizeHost } from "../../domain/host";
+import { sanitizeGroupConfig } from "../../domain/groupConfig";
 import {
   ConnectionLog,
   GroupConfig,
@@ -66,7 +67,7 @@ const migrateKey = (key: Partial<SSHKey>): SSHKey => {
   const label = key.label ?? `Key ${id.slice(0, 8)}`;
 
   const source =
-    key.source === "generated" || key.source === "imported"
+    key.source === "generated" || key.source === "imported" || key.source === "reference"
       ? key.source
       : key.privateKey
         ? "imported"
@@ -86,6 +87,7 @@ const migrateKey = (key: Partial<SSHKey>): SSHKey => {
       key.category ||
       ((key.certificate ? "certificate" : "key") as KeyCategory),
     created: key.created || Date.now(),
+    filePath: key.filePath,
   };
 };
 
@@ -159,6 +161,42 @@ export const useVaultState = () => {
     });
   }, []);
 
+  const importOrReuseKey = useCallback((draft: Partial<SSHKey>): SSHKey => {
+    const existing = keys.find((k) => {
+      if (draft.source === 'reference' && draft.filePath) {
+        return k.source === 'reference' && k.filePath === draft.filePath;
+      }
+      if (draft.privateKey) {
+        return k.privateKey === draft.privateKey;
+      }
+      return false;
+    });
+    if (existing) return existing;
+
+    const newKey: SSHKey = {
+      id: crypto.randomUUID(),
+      label: draft.label || 'Imported Key',
+      type: draft.type || 'ED25519',
+      privateKey: draft.privateKey || '',
+      publicKey: draft.publicKey,
+      certificate: draft.certificate,
+      passphrase: draft.passphrase,
+      savePassphrase: draft.savePassphrase,
+      source: draft.source || 'imported',
+      category: (draft.category || 'key') as KeyCategory,
+      created: Date.now(),
+      filePath: draft.filePath,
+    };
+    const updated = [...keys, newKey];
+    setKeys(updated);
+    const ver = ++keysWriteVersion.current;
+    void encryptKeys(updated).then((enc) => {
+      if (ver === keysWriteVersion.current)
+        localStorageAdapter.write(STORAGE_KEY_KEYS, enc);
+    });
+    return newKey;
+  }, [keys]);
+
   const updateIdentities = useCallback((data: Identity[]) => {
     setIdentities(data);
     const ver = ++identitiesWriteVersion.current;
@@ -203,9 +241,15 @@ export const useVaultState = () => {
   }, []);
 
   const updateGroupConfigs = useCallback((data: GroupConfig[]) => {
-    setGroupConfigs(data);
+    // Sanitize on the write path too — applySyncPayload / importVaultData
+    // route legacy payloads through here, and without this step a saved
+    // pingfang-sc / comic-sans-ms override from an older client would
+    // sit in memory and re-persist with `fontFamilyOverride: true` until
+    // the next reload. Mirrors updateHosts → sanitizeHost.
+    const cleaned = data.map(sanitizeGroupConfig);
+    setGroupConfigs(cleaned);
     const ver = ++groupConfigsWriteVersion.current;
-    return encryptGroupConfigs(data).then((enc) => {
+    return encryptGroupConfigs(cleaned).then((enc) => {
       if (ver === groupConfigsWriteVersion.current)
         localStorageAdapter.write(STORAGE_KEY_GROUP_CONFIGS, enc);
     });
@@ -491,8 +535,9 @@ export const useVaultState = () => {
           const gcVer = ++groupConfigsWriteVersion.current;
           const decryptedGC = await decryptGroupConfigs(savedGroupConfigs);
           if (gcVer === groupConfigsWriteVersion.current) {
-            setGroupConfigs(decryptedGC);
-            encryptGroupConfigs(decryptedGC).then((enc) => {
+            const sanitizedGC = decryptedGC.map(sanitizeGroupConfig);
+            setGroupConfigs(sanitizedGC);
+            encryptGroupConfigs(sanitizedGC).then((enc) => {
               if (gcVer === groupConfigsWriteVersion.current)
                 localStorageAdapter.write(STORAGE_KEY_GROUP_CONFIGS, enc);
             });
@@ -622,7 +667,7 @@ export const useVaultState = () => {
         const writeAtStart = groupConfigsWriteVersion.current;
         decryptGroupConfigs(next).then((dec) => {
           if (seq === groupConfigsReadSeq.current && writeAtStart === groupConfigsWriteVersion.current)
-            setGroupConfigs(dec);
+            setGroupConfigs(dec.map(sanitizeGroupConfig));
         });
         return;
       }
@@ -727,6 +772,7 @@ export const useVaultState = () => {
     groupConfigs,
     updateHosts,
     updateKeys,
+    importOrReuseKey,
     updateIdentities,
     updateProxyProfiles,
     updateSnippets,

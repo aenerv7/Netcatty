@@ -10,6 +10,7 @@ export const terminalLayerAreEqual = (
   prev.snippetPackages === next.snippetPackages &&
   prev.sessions === next.sessions &&
   prev.workspaces === next.workspaces &&
+  prev.knownHosts === next.knownHosts &&
   prev.draggingSessionId === next.draggingSessionId &&
   prev.terminalTheme === next.terminalTheme &&
   prev.accentMode === next.accentMode &&
@@ -28,6 +29,7 @@ export const terminalLayerAreEqual = (
   prev.setEditorWordWrap === next.setEditorWordWrap &&
   prev.onHotkeyAction === next.onHotkeyAction &&
   prev.onUpdateHost === next.onUpdateHost &&
+  prev.onAddKnownHost === next.onAddKnownHost &&
   prev.onToggleWorkspaceViewMode === next.onToggleWorkspaceViewMode &&
   prev.onSetWorkspaceFocusedSession === next.onSetWorkspaceFocusedSession &&
   prev.onSplitSession === next.onSplitSession &&

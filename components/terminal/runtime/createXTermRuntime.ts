@@ -37,6 +37,11 @@ import {
   isEraseScrollbackSequence,
   preserveTerminalViewportInScrollback,
 } from "../clearTerminalViewport";
+import {
+  createKittyKeyboardModeState,
+  encodeKittyControlKey,
+} from "./kittyKeyboardProtocol";
+import { installKittyKeyboardProtocolHandlers } from "./kittyKeyboardRuntime";
 import { installUserCursorPreferenceGuard } from "./cursorPreference";
 import type {
   Host,
@@ -200,6 +205,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
   const wordSeparator = settings?.wordSeparators ?? " ()[]{}'\"";
   const keywordHighlightRules = settings?.keywordHighlightRules ?? [];
   const keywordHighlightEnabled = settings?.keywordHighlightEnabled ?? false;
+  const kittyKeyboardMode = createKittyKeyboardModeState();
 
   const resolvedFontWeightBold = (() => {
     if (typeof document === "undefined" || !document.fonts?.check) {
@@ -281,7 +287,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     };
   };
 
-  const logRenderer = (attempt = 0) => {
+  const trackRenderer = (attempt = 0) => {
     const introspected = term as IntrospectableTerminal;
     const renderer = introspected._core?._renderService?._renderer;
     const candidates = [
@@ -299,11 +305,10 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
           ? "canvas"
           : rendererName
       : "unknown";
-    logger.info(`[XTerm] renderer=${normalized}`);
     const scopedWindow = window as Window & { __xtermRenderer?: string };
     scopedWindow.__xtermRenderer = normalized;
     if (normalized === "unknown" && attempt < 3) {
-      setTimeout(() => logRenderer(attempt + 1), 150);
+      setTimeout(() => trackRenderer(attempt + 1), 150);
     }
   };
 
@@ -391,7 +396,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
   term.loadAddon(unicodeGraphemes);
   term.unicode.activeVersion = '15-graphemes';
 
-  logRenderer();
+  trackRenderer();
 
   const appLevelActions = getAppLevelActions();
   const terminalActions = getTerminalPassthroughActions();
@@ -499,71 +504,82 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     }
 
     const currentBindings = ctx.keyBindingsRef.current;
-    if (currentScheme === "disabled" || currentBindings.length === 0) {
-      return true;
-    }
+    if (currentScheme !== "disabled" && currentBindings.length > 0) {
+      const matched = checkAppShortcut(e, currentBindings, isMac);
+      if (matched) {
+        const { action } = matched;
 
-    const matched = checkAppShortcut(e, currentBindings, isMac);
-    if (!matched) return true;
-
-    const { action } = matched;
-
-    if (appLevelActions.has(action)) {
-      return true; // Let app-level handler process it
-    }
-
-    if (terminalActions.has(action)) {
-      e.preventDefault();
-      e.stopPropagation();
-      switch (action) {
-        case "copy": {
-          const selection = term.getSelection();
-          if (selection) navigator.clipboard.writeText(selection);
-          break;
+        if (appLevelActions.has(action)) {
+          return true; // Let app-level handler process it
         }
-        case "paste": {
-          navigator.clipboard.readText().then((text) => {
-            const id = ctx.sessionRef.current;
-            if (id) {
-              const rawData = normalizeLineEndings(text);
-              const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
-                ? wrapBracketedPaste(rawData)
-                : rawData;
-              // Notify autocomplete with the final bytes so bracketed
-              // pastes preserve their inner newlines as literal input.
-              ctx.terminalBackend.writeToSession(id, data);
-              scrollToBottomAfterPaste();
+        if (terminalActions.has(action)) {
+          e.preventDefault();
+          e.stopPropagation();
+          switch (action) {
+            case "copy": {
+              const selection = term.getSelection();
+              if (selection) navigator.clipboard.writeText(selection);
+              break;
             }
-          });
-          break;
-        }
-        case "pasteSelection": {
-          const selection = term.getSelection();
-          const id = ctx.sessionRef.current;
-          if (selection && id) {
-            const rawData = normalizeLineEndings(selection);
-            const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
-              ? wrapBracketedPaste(rawData)
-              : rawData;
-            ctx.terminalBackend.writeToSession(id, data);
-            scrollToBottomAfterPaste();
+            case "paste": {
+              navigator.clipboard.readText().then((text) => {
+                const id = ctx.sessionRef.current;
+                if (id) {
+                  const rawData = normalizeLineEndings(text);
+                  const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
+                    ? wrapBracketedPaste(rawData)
+                    : rawData;
+                  ctx.terminalBackend.writeToSession(id, data);
+                  scrollToBottomAfterPaste();
+                }
+              });
+              break;
+            }
+            case "pasteSelection": {
+              const selection = term.getSelection();
+              const id = ctx.sessionRef.current;
+              if (selection && id) {
+                const rawData = normalizeLineEndings(selection);
+                const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
+                  ? wrapBracketedPaste(rawData)
+                  : rawData;
+                ctx.terminalBackend.writeToSession(id, data);
+                scrollToBottomAfterPaste();
+              }
+              break;
+            }
+            case "selectAll": {
+              term.selectAll();
+              break;
+            }
+            case "clearBuffer": {
+              clearTerminalViewport(term);
+              break;
+            }
+            case "searchTerminal": {
+              ctx.setIsSearchOpen(true);
+              break;
+            }
           }
-          break;
-        }
-        case "selectAll": {
-          term.selectAll();
-          break;
-        }
-        case "clearBuffer": {
-          clearTerminalViewport(term);
-          break;
-        }
-        case "searchTerminal": {
-          ctx.setIsSearchOpen(true);
-          break;
+          return false;
         }
       }
-      return false;
+    }
+
+    const kittyControlSequence = encodeKittyControlKey(kittyKeyboardMode, e);
+    if (kittyControlSequence) {
+      const id = ctx.sessionRef.current;
+      if (id) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.onAutocompleteInput?.(kittyControlSequence);
+        ctx.terminalBackend.writeToSession(id, kittyControlSequence);
+        if (ctx.isBroadcastEnabledRef.current && ctx.onBroadcastInputRef.current) {
+          ctx.onBroadcastInputRef.current(kittyControlSequence, ctx.sessionId);
+        }
+        scrollToBottomAfterInput(kittyControlSequence);
+        return false;
+      }
     }
 
     return true;
@@ -713,6 +729,18 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     return !wipeAllowed;
   });
 
+  const writeKittyKeyboardReply = (payload: string) => {
+    const id = ctx.sessionRef.current;
+    if (!id) return;
+    ctx.terminalBackend.writeToSession(id, payload);
+  };
+
+  const kittyKeyboardDisposable = installKittyKeyboardProtocolHandlers(
+    term.parser,
+    kittyKeyboardMode,
+    writeKittyKeyboardReply,
+  );
+
   // Register OSC 7 handler using xterm.js parser
   // OSC 7 is the standard way for shells to report the current working directory
   const osc7Disposable = term.parser.registerOscHandler(7, (data) => {
@@ -838,6 +866,7 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       cleanupMiddleClick?.();
       keywordHighlighter.dispose();
       eraseScrollbackDisposable.dispose();
+      kittyKeyboardDisposable.dispose();
       osc7Disposable.dispose();
       osc52Disposable.dispose();
       cursorPreferenceDisposable?.dispose();

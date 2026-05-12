@@ -103,6 +103,7 @@ export interface SyncPayload {
     uiLanguage?: string;
     customCSS?: string;
     terminalTheme?: string;
+    followAppTerminalTheme?: boolean;
     terminalFontFamily?: string;
     terminalFontSize?: number;
     terminalSettings?: Record<string, unknown>;
@@ -118,6 +119,25 @@ export interface SyncPayload {
     showRecentHosts?: boolean;
     showOnlyUngroupedHostsInRoot?: boolean;
     showSftpTab?: boolean;
+    // Workspace focus indicator style
+    workspaceFocusStyle?: 'dim' | 'border';
+    // AI configuration
+    ai?: {
+      providers?: Array<Record<string, unknown>>;
+      activeProviderId?: string;
+      activeModelId?: string;
+      globalPermissionMode?: 'observer' | 'confirm' | 'autonomous';
+      toolIntegrationMode?: 'mcp' | 'skills';
+      hostPermissions?: Array<Record<string, unknown>>;
+      // externalAgents intentionally omitted: command/args/env are device-local
+      // (binary paths, OS-specific values) and don't survive cross-device sync.
+      defaultAgentId?: string;
+      commandBlocklist?: string[];
+      commandTimeout?: number;
+      maxIterations?: number;
+      agentModelMap?: Record<string, string>;
+      webSearchConfig?: Record<string, unknown> | null;
+    };
   };
 
   // Sync metadata

@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import type { Host } from "./models.ts";
 import {
   normalizePrimaryTelnetState,
+  resolveHostKeepalive,
   resolveTelnetPort,
   resolveTelnetPassword,
   resolveTelnetUsername,
+  sanitizeHost,
   upsertHostById,
 } from "./host.ts";
 
@@ -129,4 +131,84 @@ test("resolveTelnetPort uses primary telnet port fallback", () => {
     port: 2325,
     telnetPort: undefined,
   })), 2325);
+});
+
+test("sanitizeHost migrates a deprecated fontFamily and clears the override flag", () => {
+  // Regression guard for codex P2 review on PR #940: hosts saved with
+  // pingfang-sc / microsoft-yahei / comic-sans-ms in fontFamily must
+  // have the override dropped so they fall back to the global default
+  // instead of silently rendering the wrong font while still claiming
+  // an override is active.
+  const before = makeHost({
+    fontFamily: "comic-sans-ms",
+    fontFamilyOverride: true,
+  });
+  const after = sanitizeHost(before);
+  assert.equal(after.fontFamily, undefined);
+  assert.equal(after.fontFamilyOverride, false);
+});
+
+test("sanitizeHost keeps a still-valid fontFamily untouched", () => {
+  const before = makeHost({
+    fontFamily: "fira-code",
+    fontFamilyOverride: true,
+  });
+  const after = sanitizeHost(before);
+  assert.equal(after.fontFamily, "fira-code");
+  assert.equal(after.fontFamilyOverride, true);
+});
+
+const GLOBAL_KEEPALIVE = { keepaliveInterval: 30, keepaliveCountMax: 10 };
+
+test("resolveHostKeepalive falls back to global when override is not set", () => {
+  const host = makeHost();
+  assert.deepEqual(
+    resolveHostKeepalive(host, GLOBAL_KEEPALIVE),
+    { interval: 30, countMax: 10, source: "global" },
+  );
+});
+
+test("resolveHostKeepalive falls back to global when override is explicitly false", () => {
+  const host = makeHost({
+    keepaliveOverride: false,
+    keepaliveInterval: 0,
+    keepaliveCountMax: 3,
+  });
+  // Override flag is the gate; the host's stored values stay parked and
+  // unused so toggling the flag back on later restores them.
+  assert.deepEqual(
+    resolveHostKeepalive(host, GLOBAL_KEEPALIVE),
+    { interval: 30, countMax: 10, source: "global" },
+  );
+});
+
+test("resolveHostKeepalive uses host values when override is true", () => {
+  const host = makeHost({
+    keepaliveOverride: true,
+    keepaliveInterval: 0,
+    keepaliveCountMax: 3,
+  });
+  assert.deepEqual(
+    resolveHostKeepalive(host, GLOBAL_KEEPALIVE),
+    { interval: 0, countMax: 3, source: "host" },
+  );
+});
+
+test("resolveHostKeepalive lets each field fall back independently", () => {
+  // Override on, but only `interval` set on the host: inherit global countMax.
+  assert.deepEqual(
+    resolveHostKeepalive(
+      makeHost({ keepaliveOverride: true, keepaliveInterval: 5 }),
+      GLOBAL_KEEPALIVE,
+    ),
+    { interval: 5, countMax: 10, source: "host" },
+  );
+  // Override on, but only countMax set: inherit global interval.
+  assert.deepEqual(
+    resolveHostKeepalive(
+      makeHost({ keepaliveOverride: true, keepaliveCountMax: 50 }),
+      GLOBAL_KEEPALIVE,
+    ),
+    { interval: 30, countMax: 50, source: "host" },
+  );
 });

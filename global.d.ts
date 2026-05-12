@@ -43,10 +43,14 @@ declare global {
     passphrase?: string;
     publicKey?: string;
     keyId?: string;
-    keySource?: 'generated' | 'imported';
+    keySource?: 'generated' | 'imported' | 'reference';
     label?: string; // Display label for UI
     proxy?: NetcattyProxyConfig;
     identityFilePaths?: string[];
+    // Resolved keepalive for THIS hop (caller has already applied host
+    // override / global fallback). interval in seconds, 0 = disabled.
+    keepaliveInterval?: number;
+    keepaliveCountMax?: number;
   }
 
   // Host key information for verification
@@ -71,7 +75,7 @@ declare global {
     certificate?: string;
     publicKey?: string; // OpenSSH public key line
     keyId?: string;
-    keySource?: 'generated' | 'imported';
+    keySource?: 'generated' | 'imported' | 'reference';
     agentForwarding?: boolean;
     x11Forwarding?: boolean;
     x11Display?: string;
@@ -81,6 +85,7 @@ declare global {
     extraArgs?: string[];
     startupCommand?: string;
     passphrase?: string;
+    knownHosts?: import("./domain/models").KnownHost[];
     // Environment variables to set in the remote shell
     env?: Record<string, string>;
     // Proxy configuration
@@ -89,6 +94,8 @@ declare global {
     jumpHosts?: NetcattyJumpHost[];
     // SSH-level keepalive interval in seconds (0 = disabled)
     keepaliveInterval?: number;
+    // Unanswered keepalives before ssh2 declares the connection dead
+    keepaliveCountMax?: number;
     // Enable legacy SSH algorithms for older network equipment
     legacyAlgorithms?: boolean;
     // Use sudo for SFTP server
@@ -120,6 +127,7 @@ declare global {
 
   // Port Forwarding Types
   interface PortForwardOptions {
+    ruleId?: string;
     tunnelId: string;
     type: 'local' | 'remote' | 'dynamic';
     localPort: number;
@@ -139,6 +147,10 @@ declare global {
     jumpHosts?: NetcattyJumpHost[];
     identityFilePaths?: string[];
     legacyAlgorithms?: boolean;
+    // Resolved keepalive for the target connection (caller has already
+    // applied host override / global fallback). interval in seconds.
+    keepaliveInterval?: number;
+    keepaliveCountMax?: number;
   }
 
   interface PortForwardResult {
@@ -233,6 +245,11 @@ declare global {
       port?: number;
       password?: string;
       privateKey?: string;
+      certificate?: string;
+      publicKey?: string;
+      keyId?: string;
+      keySource?: 'generated' | 'imported' | 'reference';
+      identityFilePaths?: string[];
       passphrase?: string;
       command: string;
       timeout?: number;
@@ -362,6 +379,26 @@ declare global {
       cancelled?: boolean
     ): Promise<{ success: boolean; error?: string }>;
 
+    onHostKeyVerification?(
+      cb: (request: {
+        requestId: string;
+        sessionId: string;
+        hostname: string;
+        port: number;
+        status: 'unknown' | 'changed';
+        keyType: string;
+        fingerprint: string;
+        publicKey?: string;
+        knownHostId?: string;
+        knownFingerprint?: string;
+      }) => void
+    ): () => void;
+    respondHostKeyVerification?(
+      requestId: string,
+      accept: boolean,
+      addToKnownHosts?: boolean
+    ): Promise<{ success: boolean; error?: string }>;
+
     // Passphrase request for encrypted SSH keys
     onPassphraseRequest?(
       cb: (request: {
@@ -369,6 +406,7 @@ declare global {
         keyPath: string;
         keyName: string;
         hostname?: string;
+        passphraseInvalid?: boolean;
       }) => void
     ): () => void;
     respondPassphrase?(
@@ -381,6 +419,12 @@ declare global {
     ): Promise<{ success: boolean; error?: string }>;
     onPassphraseTimeout?(
       cb: (event: { requestId: string }) => void
+    ): () => void;
+    onPassphraseCancelled?(
+      cb: (event: { requestId: string; reason?: string }) => void
+    ): () => void;
+    onPassphraseAuthFailed?(
+      cb: (event: { keyPaths: string[]; keyIds?: string[] }) => void
     ): () => void;
 
     // SFTP operations
@@ -470,6 +514,13 @@ declare global {
     renameLocalFile?(oldPath: string, newPath: string): Promise<void>;
     mkdirLocal?(path: string): Promise<void>;
     statLocal?(path: string): Promise<SftpStatResult>;
+    listLocalTree?(path: string): Promise<Array<{
+      localPath: string;
+      relativePath: string;
+      type: 'file' | 'directory';
+      size: number;
+      lastModified: number;
+    }>>;
     getHomeDir?(): Promise<string>;
     getSystemInfo?(): Promise<{ username: string; hostname: string }>;
 

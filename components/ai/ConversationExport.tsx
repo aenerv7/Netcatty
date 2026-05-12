@@ -49,7 +49,7 @@ const ConversationExport: React.FC<ConversationExportProps> = ({
         <Button
           variant="ghost"
           size="icon"
-          className={className ?? 'h-7 w-7 rounded-md text-muted-foreground/62 hover:bg-white/[0.05] hover:text-foreground'}
+          className={className ?? 'h-7 w-7 rounded-md text-muted-foreground/70 hover:bg-accent/60 hover:text-foreground'}
           disabled={!hasMessages}
           title={t('ai.chat.exportConversation')}
         >
@@ -59,18 +59,18 @@ const ConversationExport: React.FC<ConversationExportProps> = ({
       <DropdownContent
         align="end"
         sideOffset={6}
-        className="w-40 rounded-xl border border-border/45 bg-[#111111]/98 p-1.5 text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.48)] supports-[backdrop-filter]:bg-[#111111]/92 supports-[backdrop-filter]:backdrop-blur-sm"
+        className="w-40 rounded-xl border border-border/60 bg-popover p-1.5 text-popover-foreground shadow-lg supports-[backdrop-filter]:bg-popover/95 supports-[backdrop-filter]:backdrop-blur-sm"
       >
-        <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/48">
+        <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
           {t('ai.chat.exportAs')}
         </div>
         {EXPORT_OPTIONS.map(({ format, labelKey, icon: Icon }) => (
           <button
             key={format}
             onClick={() => handleExport(format)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-[13px] rounded-lg transition-colors cursor-pointer hover:bg-white/[0.04]"
+            className="w-full flex items-center gap-2 px-2 py-1.5 text-[13px] rounded-lg transition-colors cursor-pointer hover:bg-accent hover:text-accent-foreground"
           >
-            <Icon size={13} className="shrink-0 text-muted-foreground/70" />
+            <Icon size={13} className="shrink-0 text-muted-foreground" />
             <span>{t(labelKey)}</span>
           </button>
         ))}

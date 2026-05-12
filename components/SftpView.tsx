@@ -68,6 +68,7 @@ interface SftpViewProps {
   setEditorWordWrap: (enabled: boolean) => void;
   /** When true, remote connections use SCP mode (SSH exec) instead of SFTP subsystem. */
   scpMode?: boolean;
+  terminalSettings?: { keepaliveInterval: number; keepaliveCountMax: number };
 }
 
 const SftpViewInner: React.FC<SftpViewProps> = ({
@@ -87,6 +88,7 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
   editorWordWrap,
   setEditorWordWrap,
   scpMode,
+  terminalSettings,
 }) => {
   const { t } = useI18n();
   const isSftpTabActive = useIsSftpActive();
@@ -115,7 +117,8 @@ const SftpViewInner: React.FC<SftpViewProps> = ({
     useCompressedUpload: sftpUseCompressedUpload,
     defaultShowHiddenFiles: sftpShowHiddenFiles,
     useScp: scpMode,
-  }), [fileWatchHandlers, sftpUseCompressedUpload, sftpShowHiddenFiles, scpMode]);
+    terminalSettings,
+  }), [fileWatchHandlers, sftpUseCompressedUpload, sftpShowHiddenFiles, scpMode, terminalSettings]);
 
   // Pre-resolve group defaults so SFTP connections inherit group config
   const effectiveHosts = useMemo(() => {
@@ -546,7 +549,12 @@ const sftpViewAreEqual = (prev: SftpViewProps, next: SftpViewProps): boolean =>
   prev.keyBindings === next.keyBindings &&
   prev.editorWordWrap === next.editorWordWrap &&
   prev.setEditorWordWrap === next.setEditorWordWrap &&
-  prev.scpMode === next.scpMode;
+  prev.scpMode === next.scpMode &&
+  // Only the keepalive fields of terminalSettings affect SFTP connection
+  // resolution today; compare them directly rather than the whole object
+  // so unrelated terminal-setting changes don't tear the panel down.
+  prev.terminalSettings?.keepaliveInterval === next.terminalSettings?.keepaliveInterval &&
+  prev.terminalSettings?.keepaliveCountMax === next.terminalSettings?.keepaliveCountMax;
 
 export const SftpView = memo(SftpViewInner, sftpViewAreEqual);
 SftpView.displayName = "SftpView";

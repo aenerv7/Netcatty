@@ -476,7 +476,7 @@ const registerBridges = (win) => {
   });
 
   // Settings window handler
-  ipcMain.handle("netcatty:settings:open", async (_event, options) => {
+  ipcMain.handle("netcatty:settings:open", async (event, options) => {
     try {
       await getWindowManager().openSettingsWindow(electronModule, {
         preload,
@@ -485,6 +485,7 @@ const registerBridges = (win) => {
         appIcon,
         isMac,
         electronDir,
+        sourceWindow: BrowserWindow.fromWebContents(event.sender),
       });
       // If a specific tab was requested, notify the settings window
       const tab = options?.tab;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, ClipboardCopy, Copy, Download, Edit2, ExternalLink, FilePlus, Folder, FolderPlus, Loader2, Pencil, RefreshCw, Shield, Trash2, Unplug } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, ClipboardCopy, Copy, Download, Edit2, ExternalLink, FilePlus, Folder, FolderPlus, Loader2, Pencil, RefreshCw, Shield, Trash2, Unplug, Upload } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   ContextMenu,
@@ -18,6 +18,13 @@ import { buildSftpColumnTemplate, type ColumnWidths, type SortField, type SortOr
 import { isNavigableDirectory } from "./index";
 import { isKnownBinaryFile } from "../../lib/sftpFileUtils";
 import { SftpFileRow } from "./index";
+import {
+  getSftpListUploadFilesTargetPath,
+  getSftpUploadFilesLabelKey,
+  getSftpUploadFolderLabelKey,
+  shouldShowSftpUploadFolderMenu,
+  shouldShowSftpUploadFilesMenu,
+} from "./sftpUploadMenu";
 
 interface SftpPaneFileListProps {
   t: (key: string, params?: Record<string, unknown>) => string;
@@ -60,6 +67,11 @@ interface SftpPaneFileListProps {
   onDownloadFile?: (entry: SftpFileEntry) => void;
   onDownloadFiles?: (entries: SftpFileEntry[]) => void;
   onEditPermissions?: (entry: SftpFileEntry) => void;
+  onUploadExternalFileList?: (fileList: FileList, targetPath?: string) => Promise<void> | void;
+  onUploadExternalFolder?: (targetPath?: string) => Promise<void> | void;
+  // Whether this pane is rendering a local filesystem. Upload menu items only
+  // make sense for remote (SFTP) panes, so they are suppressed when isLocal.
+  isLocal?: boolean;
   openRenameDialog: (name: string) => void;
   openDeleteConfirm: (targets: string[]) => void;
   rowHeight: number;
@@ -146,6 +158,9 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
   onDownloadFile,
   onDownloadFiles,
   onEditPermissions,
+  onUploadExternalFileList,
+  onUploadExternalFolder,
+  isLocal = false,
   openRenameDialog,
   openDeleteConfirm,
   rowHeight,
@@ -191,6 +206,45 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
     if (pane.selectedFiles.size === 0) return;
     onClearSelection();
   }, [onClearSelection, pane.selectedFiles.size]);
+
+  // Hidden file input backing the "Upload File(s)" context menu item. It sends
+  // the original FileList through uploadFromFileList so Electron can still
+  // resolve local paths for stream uploads.
+  const uploadEnabled = shouldShowSftpUploadFilesMenu({
+    isLocal,
+    hasFileListUpload: !!onUploadExternalFileList,
+  });
+  const folderUploadEnabled = shouldShowSftpUploadFolderMenu({
+    isLocal,
+    hasFolderUpload: !!onUploadExternalFolder,
+  });
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetPathRef = useRef<string | undefined>(undefined);
+
+  const triggerUploadPicker = useCallback((targetPath?: string) => {
+    if (isLocal || !onUploadExternalFileList) return;
+    const input = uploadInputRef.current;
+    if (!input) return;
+    uploadTargetPathRef.current = targetPath;
+    // Reset value so selecting the same files twice still fires onChange.
+    input.value = "";
+    input.click();
+  }, [isLocal, onUploadExternalFileList]);
+
+  const handleUploadInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      uploadTargetPathRef.current = undefined;
+      return;
+    }
+    if (!onUploadExternalFileList) {
+      uploadTargetPathRef.current = undefined;
+      return;
+    }
+    const targetPath = uploadTargetPathRef.current;
+    uploadTargetPathRef.current = undefined;
+    void onUploadExternalFileList(files, targetPath);
+  }, [onUploadExternalFileList]);
 
   const renderRow = useCallback(
     (entry: SftpFileEntry, index: number) => (
@@ -349,6 +403,28 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
             <ContextMenuItem onClick={() => setShowNewFileDialog(true)}>
               <FilePlus size={14} className="mr-2" /> {t("sftp.newFile")}
             </ContextMenuItem>
+            {uploadEnabled && onUploadExternalFileList && (
+              <ContextMenuItem
+                onClick={() => {
+                  const target = getSftpListUploadFilesTargetPath(entry, pane.connection?.currentPath ?? "");
+                  triggerUploadPicker(target);
+                }}
+              >
+                <Upload size={14} className="mr-2" />{" "}
+                {t(getSftpUploadFilesLabelKey(entry))}
+              </ContextMenuItem>
+            )}
+            {folderUploadEnabled && onUploadExternalFolder && (
+              <ContextMenuItem
+                onClick={() => {
+                  const target = getSftpListUploadFilesTargetPath(entry, pane.connection?.currentPath ?? "");
+                  void onUploadExternalFolder(target);
+                }}
+              >
+                <Upload size={14} className="mr-2" />{" "}
+                {t(getSftpUploadFolderLabelKey(entry))}
+              </ContextMenuItem>
+            )}
           </ContextMenuContent>
         )}
       </ContextMenu>
@@ -374,6 +450,10 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
       onNavigateTo,
       onOpenFileWith,
       onRefresh,
+      onUploadExternalFileList,
+      onUploadExternalFolder,
+      uploadEnabled,
+      folderUploadEnabled,
       openDeleteConfirm,
       openRenameDialog,
       pane.connection,
@@ -381,6 +461,7 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
       setShowNewFolderDialog,
       setShowNewFileDialog,
       t,
+      triggerUploadPicker,
     ],
   );
 
@@ -552,8 +633,29 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
         }}>
           <FilePlus size={14} className="mr-2" />{t("sftp.newFile")}
         </ContextMenuItem>
+        {uploadEnabled && onUploadExternalFileList && (
+          <ContextMenuItem onClick={() => triggerUploadPicker(undefined)}>
+            <Upload size={14} className="mr-2" />{t("sftp.context.uploadFiles")}
+          </ContextMenuItem>
+        )}
+        {folderUploadEnabled && onUploadExternalFolder && (
+          <ContextMenuItem onClick={() => void onUploadExternalFolder(undefined)}>
+            <Upload size={14} className="mr-2" />{t("sftp.context.uploadFolder")}
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
+
+    {/* Hidden file input backing the "Upload File(s)" context menu item. */}
+    {uploadEnabled && onUploadExternalFileList && (
+      <input
+        ref={uploadInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleUploadInputChange}
+      />
+    )}
 
     {/* Footer */}
     <div className="h-9 shrink-0 px-4 flex items-center justify-between text-[11px] text-muted-foreground border-t border-border/40 bg-secondary/30">

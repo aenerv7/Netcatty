@@ -20,6 +20,35 @@ export interface TerminalConnectionProgressProps {
     onRetry: () => void;
 }
 
+export interface TerminalConnectionLogListProps {
+    progressLogs: string[];
+    error?: string | null;
+}
+
+export const TerminalConnectionLogList: React.FC<TerminalConnectionLogListProps> = ({
+    progressLogs,
+    error,
+}) => (
+    <div className="rounded-md border border-border/35 bg-background/40">
+        <ScrollArea className="max-h-44 p-2.5">
+            <div className="space-y-1 text-xs text-foreground/90">
+                {progressLogs.map((line, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                        <div className="mt-[0.4rem] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
+                        <div className="min-w-0 break-words leading-5">{line}</div>
+                    </div>
+                ))}
+                {error && (
+                    <div className="flex items-start gap-2 text-destructive">
+                        <div className="mt-[0.4rem] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-destructive" />
+                        <div className="min-w-0 break-words leading-5">{error}</div>
+                    </div>
+                )}
+            </div>
+        </ScrollArea>
+    </div>
+);
+
 export const TerminalConnectionProgress: React.FC<TerminalConnectionProgressProps> = ({
     status,
     error,
@@ -56,24 +85,7 @@ export const TerminalConnectionProgress: React.FC<TerminalConnectionProgressProp
             </div>
 
             {showLogs && (
-                <div className="rounded-md border border-border/35 bg-background/40">
-                    <ScrollArea className="max-h-44 p-2.5">
-                        <div className="space-y-1 text-xs text-foreground/90">
-                            {progressLogs.map((line, idx) => (
-                                <div key={idx} className="flex items-start gap-2">
-                                    <div className="mt-[0.4rem] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
-                                    <div className="min-w-0 break-words leading-5">{line}</div>
-                                </div>
-                            ))}
-                            {error && (
-                                <div className="flex items-start gap-2 text-destructive">
-                                    <div className="mt-[0.4rem] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-destructive" />
-                                    <div className="min-w-0 break-words leading-5">{error}</div>
-                                </div>
-                            )}
-                        </div>
-                    </ScrollArea>
-                </div>
+                <TerminalConnectionLogList progressLogs={progressLogs} error={error} />
             )}
 
             <div className="flex justify-end gap-2">

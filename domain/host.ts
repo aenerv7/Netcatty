@@ -1,4 +1,5 @@
-import { Host } from './models';
+import { Host, TerminalSettings } from './models';
+import { migrateDeprecatedFontOverride } from '../infrastructure/config/fonts';
 
 export const LINUX_DISTRO_OPTIONS = [
   'linux',
@@ -189,6 +190,40 @@ export const upsertHostById = (hosts: Host[], host: Host): Host[] => {
     : [...hosts, host];
 };
 
+export interface ResolvedKeepalive {
+  interval: number; // Seconds; 0 = disabled
+  countMax: number; // Unanswered keepalives before declaring dead
+  source: 'host' | 'global';
+}
+
+/**
+ * Decide which SSH keepalive values to apply to a connection. A host can opt
+ * into its own values via `keepaliveOverride === true` — useful when a
+ * specific device (older router / switch / NOKIA / ALCATEL SSH stack) doesn't
+ * reply to keepalive@openssh.com and the global aggressive setting would
+ * cause the session to be declared dead after a handful of unanswered probes.
+ * When the override is off (the default), the host inherits the global
+ * TerminalSettings values which are tuned for cloud / NAT'd hosts.
+ *
+ * Each field falls back independently: a host can override only the interval
+ * while still inheriting the global countMax, and vice versa.
+ */
+export const resolveHostKeepalive = (
+  host: Pick<Host, 'keepaliveOverride' | 'keepaliveInterval' | 'keepaliveCountMax'>,
+  globalSettings: Pick<TerminalSettings, 'keepaliveInterval' | 'keepaliveCountMax'>,
+): ResolvedKeepalive => {
+  const globalInterval = globalSettings.keepaliveInterval;
+  const globalCountMax = globalSettings.keepaliveCountMax;
+  if (host.keepaliveOverride !== true) {
+    return { interval: globalInterval, countMax: globalCountMax, source: 'global' };
+  }
+  return {
+    interval: host.keepaliveInterval ?? globalInterval,
+    countMax: host.keepaliveCountMax ?? globalCountMax,
+    source: 'host',
+  };
+};
+
 export const sanitizeHost = (host: Host): Host => {
   const cleanHostname = (host.hostname || '').split(/\s+/)[0];
   const cleanDistro = normalizeDistroId(host.distro);
@@ -199,8 +234,9 @@ export const sanitizeHost = (host: Host): Host => {
       : host.distroMode === 'auto'
         ? 'auto'
         : undefined;
+  const migrated = migrateDeprecatedFontOverride(host);
   return {
-    ...host,
+    ...migrated,
     hostname: cleanHostname,
     distro: cleanDistro,
     distroMode: cleanDistroMode,

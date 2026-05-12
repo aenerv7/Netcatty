@@ -5,7 +5,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const os = require("node:os");
 const { randomUUID } = require("node:crypto");
 const { pipeline } = require("node:stream/promises");
 const { TextDecoder } = require("node:util");
@@ -34,6 +33,8 @@ const {
   isKeyEncrypted,
   findAllDefaultPrivateKeys: findAllDefaultPrivateKeysFromHelper,
   getAvailableAgentSocket,
+  preparePrivateKeyForAuth,
+  loadFirstIdentityFileForAuth,
 } = require("./sshAuthHelper.cjs");
 
 // SFTP clients storage - shared reference passed from main
@@ -1136,6 +1137,13 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
   const sender = event.sender;
   const connections = [];
   let currentSocket = null;
+  let activeConn = null;
+
+  const cleanupSocket = (socket) => {
+    if (!socket) return;
+    try { socket.end?.(); } catch { /* ignore */ }
+    try { socket.destroy?.(); } catch { /* ignore */ }
+  };
 
   try {
     // Connect through each jump host
@@ -1149,18 +1157,38 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
       sendSftpProgress(sender, connId, hopLabel, 'connecting');
 
       const conn = new SSHClient();
+      activeConn = conn;
       // Increase max listeners to prevent Node.js warning
       // Set to 0 (unlimited) since complex operations add many temp listeners
       conn.setMaxListeners(0);
 
+      // Per-hop keepalive. The renderer's resolver returns either a positive
+      // number (use it) or 0 (the host explicitly opted out, e.g. a router
+      // whose SSH stack doesn't reply to keepalive@openssh.com). Only when
+      // BOTH the per-hop and the target-call fields are undefined do we
+      // fall back to 10s/3 — that path exists for older serializers that
+      // pre-date per-host plumbing, preserving the #669 idle-NAT protection
+      // for callers that haven't yet been updated.
+      const hopInterval = jump.keepaliveInterval != null
+        ? jump.keepaliveInterval
+        : options.keepaliveInterval;
+      const hopCountMax = jump.keepaliveCountMax != null
+        ? jump.keepaliveCountMax
+        : options.keepaliveCountMax;
+      const hopIntervalMs = hopInterval == null
+        ? 10000
+        : (hopInterval > 0 ? hopInterval * 1000 : 0);
+      const hopCountMaxEffective = hopInterval == null
+        ? 3
+        : (hopInterval > 0 ? (hopCountMax ?? 3) : 0);
       // Build connection options
       const connOpts = {
         host: jump.hostname,
         port: jump.port || 22,
         username: jump.username || 'root',
         readyTimeout: 120000, // 2 minutes to allow for keyboard-interactive (2FA/MFA)
-        keepaliveInterval: 10000,
-        keepaliveCountMax: 3,
+        keepaliveInterval: hopIntervalMs,
+        keepaliveCountMax: hopCountMaxEffective,
         // Enable keyboard-interactive authentication (required for 2FA/MFA)
         tryKeyboard: true,
         algorithms: buildSftpAlgorithms(options.legacyAlgorithms),
@@ -1170,6 +1198,35 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
       const hasCertificate =
         typeof jump.certificate === "string" && jump.certificate.trim().length > 0;
 
+      const identityFile = !jump.privateKey
+        ? await loadFirstIdentityFileForAuth({
+          sender,
+          identityFilePaths: jump.identityFilePaths,
+          hostname: hopLabel,
+          initialPassphrase: jump.passphrase,
+          logPrefix: `[SFTP Chain] Hop ${i + 1}:`,
+          onLoaded: (loaded) => {
+            console.log(`[SFTP Chain] Hop ${i + 1}: loaded identity file ${loaded.keyPath}`);
+          },
+          onError: (err, keyPath) => {
+            console.warn(`[SFTP Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
+          },
+        })
+        : null;
+      const inlineKey = jump.privateKey
+        ? await preparePrivateKeyForAuth({
+          sender,
+          privateKey: jump.privateKey,
+          keyId: jump.keyId,
+          keyName: jump.keyId || jump.label || jump.username,
+          hostname: hopLabel,
+          initialPassphrase: jump.passphrase,
+          logPrefix: `[SFTP Chain] Hop ${i + 1}:`,
+        })
+        : null;
+      const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+      const effectivePassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
       let authAgent = null;
       if (hasCertificate) {
         authAgent = new NetcattyAgent({
@@ -1178,16 +1235,16 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
           meta: {
             label: jump.keyId || jump.username || "",
             certificate: jump.certificate,
-            privateKey: jump.privateKey,
-            passphrase: jump.passphrase,
+            privateKey: effectivePrivateKey,
+            passphrase: effectivePassphrase,
           },
         });
         connOpts.agent = authAgent;
-      } else if (jump.privateKey) {
-        connOpts.privateKey = jump.privateKey;
-        if (jump.passphrase) {
-          connOpts.passphrase = jump.passphrase;
-        } else if (isKeyEncrypted(jump.privateKey)) {
+      } else if (effectivePrivateKey) {
+        connOpts.privateKey = effectivePrivateKey;
+        if (effectivePassphrase) {
+          connOpts.passphrase = effectivePassphrase;
+        } else if (jump.privateKey && isKeyEncrypted(jump.privateKey)) {
           // Key is encrypted but no passphrase provided — prompt the user
           console.log(`[SFTP Chain] Hop ${i + 1}: key is encrypted, requesting passphrase`);
           const keyLabel = jump.label || hopLabel;
@@ -1204,38 +1261,6 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
             if (result?.cancelled) {
               throw new Error(`Passphrase entry cancelled for ${hopLabel}`);
             }
-          }
-        }
-      }
-
-      // Read identity files from local paths (e.g. from SSH config IdentityFile)
-      if (!connOpts.privateKey && !connOpts.agent && jump.identityFilePaths?.length > 0) {
-        for (const keyPath of jump.identityFilePaths) {
-          try {
-            const resolvedPath = keyPath.startsWith("~/")
-              ? path.join(os.homedir(), keyPath.slice(2))
-              : keyPath;
-            const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-            connOpts.privateKey = keyContent;
-            if (isKeyEncrypted(keyContent)) {
-              console.log(`[SFTP Chain] Hop ${i + 1}: identity file ${resolvedPath} is encrypted, requesting passphrase`);
-              const result = await passphraseHandler.requestPassphrase(
-                sender,
-                resolvedPath,
-                path.basename(resolvedPath),
-                hopLabel
-              );
-              if (result?.passphrase) {
-                connOpts.passphrase = result.passphrase;
-              } else {
-                delete connOpts.privateKey;
-                continue;
-              }
-            }
-            console.log(`[SFTP Chain] Hop ${i + 1}: loaded identity file ${resolvedPath}`);
-            break;
-          } catch (err) {
-            console.warn(`[SFTP Chain] Hop ${i + 1}: failed to read identity file ${keyPath}:`, err.message);
           }
         }
       }
@@ -1324,6 +1349,7 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
       });
 
       connections.push(conn);
+      activeConn = null;
 
       // Determine next target
       let nextHost, nextPort;
@@ -1360,6 +1386,10 @@ async function connectThroughChainForSftp(event, options, jumpHosts, targetHost,
     };
   } catch (err) {
     // Cleanup on error
+    if (activeConn && !connections.includes(activeConn)) {
+      try { activeConn.end(); } catch (cleanupErr) { console.warn('[SFTP Chain] Cleanup error:', cleanupErr.message); }
+    }
+    cleanupSocket(currentSocket);
     for (const conn of connections) {
       try { conn.end(); } catch (cleanupErr) { console.warn('[SFTP Chain] Cleanup error:', cleanupErr.message); }
     }
@@ -1697,6 +1727,15 @@ async function openSftp(event, options) {
 
   let chainConnections = [];
   let connectionSocket = null;
+  const cleanupPendingConnection = () => {
+    for (const conn of chainConnections) {
+      try { conn.end(); } catch (cleanupErr) { console.warn('[SFTP] Cleanup error on connect failure:', cleanupErr.message); }
+    }
+    if (connectionSocket) {
+      try { connectionSocket.end?.(); } catch { /* ignore */ }
+      try { connectionSocket.destroy?.(); } catch { /* ignore */ }
+    }
+  };
 
   // Pre-fetch agent socket (async check for Windows SSH Agent service)
   // This is used by both jump host chain auth and final host auth
@@ -1736,14 +1775,20 @@ async function openSftp(event, options) {
     // Enable keyboard-interactive authentication (required for 2FA/MFA)
     tryKeyboard: true,
     readyTimeout: 120000, // 2 minutes for 2FA input
-    // Keep SFTP sessions alive while the panel is idle. Without SSH-level
-    // keepalive packets the connection sits with zero data flow while the
-    // user is just browsing files, and NAT/firewall state tables drop the
-    // idle TCP connection after ~30-60s (the exact symptom of #669).
-    // Honor an explicitly configured positive keepaliveInterval (seconds);
-    // otherwise default to 10s, matching the SFTP jump host path below.
-    keepaliveInterval: options.keepaliveInterval > 0 ? options.keepaliveInterval * 1000 : 10000,
-    keepaliveCountMax: 3,
+    // Keepalive policy:
+    //   - positive value: honor it (in seconds, convert to ms)
+    //   - explicit 0: truly disabled (host opted out via per-host override —
+    //     critical for routers/switches that don't reply to keepalive
+    //     @openssh.com and would otherwise be killed by ssh2 after countMax
+    //     unanswered probes)
+    //   - undefined: legacy caller path, fall back to 10s/3 so an idle SFTP
+    //     browse over a NAT doesn't drop (the original #669 protection)
+    keepaliveInterval: options.keepaliveInterval == null
+      ? 10000
+      : (options.keepaliveInterval > 0 ? options.keepaliveInterval * 1000 : 0),
+    keepaliveCountMax: options.keepaliveInterval == null
+      ? 3
+      : (options.keepaliveInterval > 0 ? (options.keepaliveCountMax ?? 3) : 0),
     algorithms: buildSftpAlgorithms(options.legacyAlgorithms),
   };
 
@@ -1757,6 +1802,42 @@ async function openSftp(event, options) {
 
   const hasCertificate = typeof options.certificate === "string" && options.certificate.trim().length > 0;
 
+  let identityFile = null;
+  let inlineKey = null;
+  try {
+    identityFile = !options.privateKey
+      ? await loadFirstIdentityFileForAuth({
+        sender: event.sender,
+        identityFilePaths: options.identityFilePaths,
+        hostname: options.hostname,
+        initialPassphrase: options.passphrase,
+        logPrefix: "[SFTP]",
+        onLoaded: (loaded) => {
+          console.log(`[SFTP] Loaded identity file ${loaded.keyPath}`);
+        },
+        onError: (err, keyPath) => {
+          console.warn(`[SFTP] Failed to read identity file ${keyPath}:`, err.message);
+        },
+      })
+      : null;
+    inlineKey = options.privateKey
+      ? await preparePrivateKeyForAuth({
+        sender: event.sender,
+        privateKey: options.privateKey,
+        keyId: options.keyId,
+        keyName: options.keyId || options.username,
+        hostname: options.hostname,
+        initialPassphrase: options.passphrase,
+        logPrefix: "[SFTP]",
+      })
+      : null;
+  } catch (err) {
+    cleanupPendingConnection();
+    throw err;
+  }
+  const effectivePrivateKey = inlineKey?.privateKey || identityFile?.privateKey;
+  const effectivePassphrase = inlineKey?.passphrase || identityFile?.passphrase;
+
   let authAgent = null;
   if (hasCertificate) {
     authAgent = new NetcattyAgent({
@@ -1765,16 +1846,16 @@ async function openSftp(event, options) {
       meta: {
         label: options.keyId || options.username || "",
         certificate: options.certificate,
-        privateKey: options.privateKey,
-        passphrase: options.passphrase,
+        privateKey: effectivePrivateKey,
+        passphrase: effectivePassphrase,
       },
     });
     connectOpts.agent = authAgent;
-  } else if (options.privateKey) {
-    connectOpts.privateKey = options.privateKey;
-    if (options.passphrase) {
-      connectOpts.passphrase = options.passphrase;
-    } else if (isKeyEncrypted(options.privateKey)) {
+  } else if (effectivePrivateKey) {
+    connectOpts.privateKey = effectivePrivateKey;
+    if (effectivePassphrase) {
+      connectOpts.passphrase = effectivePassphrase;
+    } else if (options.privateKey && isKeyEncrypted(options.privateKey)) {
       // Key is encrypted but no passphrase provided — prompt the user
       console.log(`[SFTP] Key is encrypted, requesting passphrase for ${options.hostname}`);
       const result = await passphraseHandler.requestPassphrase(
@@ -1801,38 +1882,6 @@ async function openSftp(event, options) {
           err.level = 'client-authentication';
           throw err;
         }
-      }
-    }
-  }
-
-  // Read identity files from local paths (e.g. from SSH config IdentityFile)
-  if (!connectOpts.privateKey && !connectOpts.agent && options.identityFilePaths?.length > 0) {
-    for (const keyPath of options.identityFilePaths) {
-      try {
-        const resolvedPath = keyPath.startsWith("~/")
-          ? path.join(os.homedir(), keyPath.slice(2))
-          : keyPath;
-        const keyContent = await fs.promises.readFile(resolvedPath, "utf8");
-        connectOpts.privateKey = keyContent;
-        if (isKeyEncrypted(keyContent)) {
-          console.log(`[SFTP] Identity file ${resolvedPath} is encrypted, requesting passphrase`);
-          const result = await passphraseHandler.requestPassphrase(
-            event.sender,
-            resolvedPath,
-            path.basename(resolvedPath),
-            options.hostname
-          );
-          if (result?.passphrase) {
-            connectOpts.passphrase = result.passphrase;
-          } else {
-            delete connectOpts.privateKey;
-            continue;
-          }
-        }
-        console.log(`[SFTP] Loaded identity file ${resolvedPath}`);
-        break;
-      } catch (err) {
-        console.warn(`[SFTP] Failed to read identity file ${keyPath}:`, err.message);
       }
     }
   }
@@ -2014,9 +2063,7 @@ async function openSftp(event, options) {
     return { sftpId: connId };
   } catch (err) {
     // Cleanup jump connections on error
-    for (const conn of chainConnections) {
-      try { conn.end(); } catch (cleanupErr) { console.warn('[SFTP] Cleanup error on connect failure:', cleanupErr.message); }
-    }
+    cleanupPendingConnection();
     throw err;
   }
 }

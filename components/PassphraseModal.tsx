@@ -25,7 +25,7 @@ export interface PassphraseRequest {
 
 interface PassphraseModalProps {
   request: PassphraseRequest | null;
-  onSubmit: (requestId: string, passphrase: string) => void;
+  onSubmit: (requestId: string, passphrase: string, remember: boolean) => void;
   onCancel: (requestId: string) => void;
   onSkip?: (requestId: string) => void;
 }
@@ -40,6 +40,7 @@ export const PassphraseModal: React.FC<PassphraseModalProps> = ({
   const [passphrase, setPassphrase] = useState("");
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rememberPassphrase, setRememberPassphrase] = useState(true);
 
   // Reset state when request changes
   useEffect(() => {
@@ -47,14 +48,15 @@ export const PassphraseModal: React.FC<PassphraseModalProps> = ({
       setPassphrase("");
       setShowPassphrase(false);
       setIsSubmitting(false);
+      setRememberPassphrase(true);
     }
   }, [request]);
 
   const handleSubmit = useCallback(() => {
     if (!request || isSubmitting || !passphrase) return;
     setIsSubmitting(true);
-    onSubmit(request.requestId, passphrase);
-  }, [request, passphrase, onSubmit, isSubmitting]);
+    onSubmit(request.requestId, passphrase, rememberPassphrase);
+  }, [request, passphrase, onSubmit, isSubmitting, rememberPassphrase]);
 
   const handleCancel = useCallback(() => {
     if (!request) return;
@@ -82,15 +84,15 @@ export const PassphraseModal: React.FC<PassphraseModalProps> = ({
 
   return (
     <Dialog open={!!request} onOpenChange={(open) => !open && handleCancel()}>
-      <DialogContent className="sm:max-w-[425px]" hideCloseButton>
+      <DialogContent className="sm:max-w-[500px]" hideCloseButton>
         <DialogHeader>
           <div className="flex items-center gap-3 mb-2">
             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
               <KeyRound className="h-5 w-5 text-primary" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <DialogTitle>{t("passphrase.title")}</DialogTitle>
-              <DialogDescription className="mt-1">
+              <DialogDescription className="mt-1 break-words">
                 {request.hostname
                   ? t("passphrase.descWithHost", { keyName: keyDisplayName, hostname: request.hostname })
                   : t("passphrase.desc", { keyName: keyDisplayName })}
@@ -125,9 +127,21 @@ export const PassphraseModal: React.FC<PassphraseModalProps> = ({
                 {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t("passphrase.keyPath")}: <code className="text-xs">{request.keyPath}</code>
+            <p className="text-xs text-muted-foreground break-all">
+              {t("passphrase.keyPath")}: <code className="text-xs break-all">{request.keyPath}</code>
             </p>
+            <label className="flex items-center gap-2 cursor-pointer select-none mt-2">
+              <input
+                type="checkbox"
+                checked={rememberPassphrase}
+                onChange={(e) => setRememberPassphrase(e.target.checked)}
+                disabled={isSubmitting}
+                className="accent-primary"
+              />
+              <span className="text-xs text-muted-foreground">
+                {t("passphrase.remember")}
+              </span>
+            </label>
           </div>
         </div>
 

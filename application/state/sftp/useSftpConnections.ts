@@ -11,6 +11,7 @@ interface UseSftpConnectionsParams {
   hosts: Host[];
   keys: SSHKey[];
   identities: Identity[];
+  terminalSettings?: { keepaliveInterval: number; keepaliveCountMax: number };
   leftTabsRef: MutableRefObject<{ tabs: SftpPane[]; activeTabId: string | null }>;
   rightTabsRef: MutableRefObject<{ tabs: SftpPane[]; activeTabId: string | null }>;
   leftTabs: { tabs: SftpPane[] };
@@ -46,6 +47,7 @@ export const useSftpConnections = ({
   hosts,
   keys,
   identities,
+  terminalSettings,
   leftTabsRef,
   rightTabsRef,
   leftTabs,
@@ -68,7 +70,7 @@ export const useSftpConnections = ({
   autoConnectLocalOnMount = true,
   useScp,
 }: UseSftpConnectionsParams): UseSftpConnectionsResult => {
-  const getHostCredentials = useSftpHostCredentials({ hosts, keys, identities });
+  const getHostCredentials = useSftpHostCredentials({ hosts, keys, identities, terminalSettings });
   const { listLocalFiles, listRemoteFiles } = useSftpDirectoryListing();
 
   const connect = useCallback(
@@ -284,7 +286,7 @@ export const useSftpConnections = ({
             );
           };
 
-          const hasKey = !!credentials.privateKey;
+          const hasKey = !!credentials.privateKey || !!credentials.identityFilePaths?.length;
           const hasPassword = !!credentials.password;
 
           let sftpId: string | undefined;
@@ -310,6 +312,7 @@ export const useSftpConnections = ({
                   keyId: undefined,
                   keySource: undefined,
                   useScp,
+                  identityFilePaths: undefined,
                 });
               } else {
                 throw err;

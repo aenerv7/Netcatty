@@ -2,9 +2,10 @@
 
 /* Bundled icon-only fallback so terminals show Nerd Font glyphs (powerline,
    devicons, etc.) regardless of which base font the user picks. The font is
-   referenced last in the fontFamily fallback chain (see withCjkFallback in
-   infrastructure/config/fonts.ts) — base text comes from the user's chosen
-   font, missing PUA glyphs fall through to this face.
+   referenced near the end of the fontFamily fallback chain composed by
+   composeFontFamilyStack() in infrastructure/config/cjkFonts.ts — base text
+   comes from the user's chosen font, missing PUA glyphs fall through to
+   this face.
 
    Source: https://github.com/ryanoasis/nerd-fonts (NerdFontsSymbolsOnly,
    v3.4.0). License: MIT — see public/fonts/SymbolsNerdFont-LICENSE.txt. */
@@ -18,6 +19,26 @@
   font-weight: normal;
   font-style: normal;
   font-display: block;
+}
+
+/* Bundled true-monospace CJK fallback. macOS ships only proportional CJK
+   fonts (PingFang, Hiragino) whose glyphs aren't designed to fit a
+   terminal's 2x cell grid — see #931. Sarasa Mono SC (Iosevka + Source
+   Han Sans, OFL-1.1) is a 2:1 metrically-correct CJK monospace and
+   becomes the per-OS default + per-Latin-font recommended pairing in
+   cjkFonts.ts. Subsetted woff2 (~4.8 MB) covers ASCII, CJK Unified
+   Ideographs (main block), Hiragana/Katakana, common punctuation and
+   symbols; rarer Ext-A/B characters fall through to the system fallback
+   stack.
+
+   Source: https://github.com/be5invis/Sarasa-Gothic (v1.0.37, OFL-1.1).
+   License: see public/fonts/SarasaMono-LICENSE.txt. */
+@font-face {
+  font-family: "Sarasa Mono SC";
+  src: url("/fonts/SarasaMonoSC-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
 }
 
 /* ============================================

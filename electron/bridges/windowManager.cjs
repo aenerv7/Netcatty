@@ -1334,12 +1334,58 @@ function showAndFocusWindow(win) {
   restoreWindowInputFocus(win, { show: true });
 }
 
+function isLiveWindow(win) {
+  return Boolean(win && typeof win.isDestroyed === "function" && !win.isDestroyed());
+}
+
+function resolveSettingsWindowBounds(
+  electronModule,
+  { sourceWindow, settingsWidth, settingsHeight } = {},
+) {
+  const { screen } = electronModule || {};
+  if (!screen || !isLiveWindow(sourceWindow)) return {};
+
+  try {
+    const sourceBounds = sourceWindow.getBounds();
+    const display = screen.getDisplayMatching(sourceBounds);
+    const { x: dx, y: dy, width: dw, height: dh } = display.workArea;
+    return {
+      x: Math.round(dx + (dw - settingsWidth) / 2),
+      y: Math.round(dy + (dh - settingsHeight) / 2),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function centerSettingsWindowOnSourceDisplay(win, electronModule, sourceWindow) {
+  if (!isLiveWindow(win)) return;
+  let bounds = { width: 980, height: 720 };
+  try {
+    bounds = win.getBounds();
+  } catch {
+    // keep defaults
+  }
+  const nextPosition = resolveSettingsWindowBounds(electronModule, {
+    sourceWindow,
+    settingsWidth: bounds.width,
+    settingsHeight: bounds.height,
+  });
+  if (nextPosition.x === undefined || nextPosition.y === undefined) return;
+  try {
+    win.setPosition(nextPosition.x, nextPosition.y);
+  } catch {
+    // ignore
+  }
+}
+
 async function openSettingsWindow(electronModule, options, { showOnLoad = true } = {}) {
   const { BrowserWindow, shell } = electronModule;
-  const { preload, devServerUrl, isDev, appIcon, isMac, electronDir } = options;
+  const { preload, devServerUrl, isDev, appIcon, isMac, electronDir, sourceWindow } = options;
 
   // If settings window already exists, show and focus it
   if (settingsWindow && !settingsWindow.isDestroyed()) {
+    centerSettingsWindowOnSourceDisplay(settingsWindow, electronModule, sourceWindow || mainWindow);
     showAndFocusWindow(settingsWindow);
     return settingsWindow;
   }
@@ -1353,15 +1399,11 @@ async function openSettingsWindow(electronModule, options, { showOnLoad = true }
   // Center the settings window on the same display as the main window
   const settingsWidth = 980;
   const settingsHeight = 720;
-  let settingsX, settingsY;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const { screen } = electronModule;
-    const mainBounds = mainWindow.getBounds();
-    const display = screen.getDisplayMatching(mainBounds);
-    const { x: dx, y: dy, width: dw, height: dh } = display.workArea;
-    settingsX = Math.round(dx + (dw - settingsWidth) / 2);
-    settingsY = Math.round(dy + (dh - settingsHeight) / 2);
-  }
+  const { x: settingsX, y: settingsY } = resolveSettingsWindowBounds(electronModule, {
+    sourceWindow: sourceWindow || mainWindow,
+    settingsWidth,
+    settingsHeight,
+  });
 
   const win = new BrowserWindow({
     title: "Netcatty Settings",
@@ -1806,5 +1848,6 @@ module.exports = {
   setIsQuitting,
   openFallbackBrowser,
   tryOpenExternalWithFallback,
+  resolveSettingsWindowBounds,
   THEME_COLORS,
 };

@@ -1,4 +1,4 @@
-import { Copy, FileCode, FileText, Folder, FolderLock, LayoutGrid, Minus, MoreHorizontal, Plus, Server, Square, TerminalSquare, Usb, X } from 'lucide-react';
+import { Bell, Copy, FileCode, FileText, Folder, FolderLock, LayoutGrid, Minus, Moon, MoreHorizontal, Plus, Server, Settings, Sparkles, Square, Sun, TerminalSquare, Usb, X } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activeTabStore, fromEditorTabId, isEditorTabId, useActiveTabId } from '../application/state/activeTabStore';
 import type { EditorTab } from '../application/state/editorTabStore';
@@ -1088,6 +1088,17 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
         {/* Fixed right controls */}
         <div className="flex-shrink-0 flex items-center gap-2 app-drag self-center" style={dragRegionStyle}>
           <SyncStatusButton onBuildPayload={onBuildPayload} onApplyPayload={onApplyPayload} />
+        </div>
+        {/* Settings gear button - sits to the left of WindowControls on win/linux, at the right edge on mac */}
+        <div className="self-stretch flex items-stretch">
+          <button
+            onClick={onOpenSettings}
+            className="h-full w-10 flex items-center justify-center transition-all duration-150 app-no-drag"
+            style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
+            title="Open Settings"
+          >
+            <Settings size={16} />
+          </button>
         </div>
         {/* Custom window controls for Windows/Linux */}
         {!isMacClient && <div className="self-stretch flex items-stretch"><WindowControls /></div>}

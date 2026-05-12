@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { TERMINAL_FONTS, type TerminalFont } from '../../infrastructure/config/fonts';
-import { getMonospaceFonts } from '../../lib/localFonts';
+import { getAllSystemFontFamilies, getMonospaceFonts } from '../../lib/localFonts';
+import { setSystemFamilies } from '../../lib/fontAvailability';
 
 /**
  * Font IDs that are bundled via @fontsource and always available
@@ -66,14 +67,22 @@ class FontStore {
     this.setState({ isLoading: true, error: null });
 
     try {
-      const localFonts = await getMonospaceFonts();
+      // Populate the authoritative installed-family set used by
+      // fontAvailability.isFontInstalled. Runs in parallel with the
+      // monospace-only query (both share an underlying cache).
+      const [localFonts, systemFamilies] = await Promise.all([
+        getMonospaceFonts(),
+        getAllSystemFontFamilies(),
+      ]);
+      setSystemFamilies(systemFamilies);
+      
+      // Combine default fonts with local fonts, deduplicate by id
+      const fontMap = new Map<string, TerminalFont>();
 
       // Index of built-in font metadata by lowercase name for enrichment
       const builtinByName = new Map(
         TERMINAL_FONTS.map(f => [f.name.toLowerCase(), f]),
       );
-
-      const fontMap = new Map<string, TerminalFont>();
 
       // 1. Always include bundled @fontsource fonts
       for (const font of TERMINAL_FONTS) {

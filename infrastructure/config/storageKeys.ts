@@ -130,6 +130,9 @@ export const STORAGE_KEY_WORKSPACE_FOCUS_SIDEBAR_WIDTH = 'netcatty_workspace_foc
 // Port Forwarding (transient cross-window broadcast key)
 export const STORAGE_KEY_PF_RECONNECT_CANCEL = '__netcatty_pf_cancel_reconnect';
 
+// Default SSH Key Passphrases (for ~/.ssh keys not managed in the vault)
+export const STORAGE_KEY_DEFAULT_KEY_PASSPHRASES = 'netcatty_default_key_passphrases_v1';
+
 // Debug Flags (no _v1 suffix — developer-only, not persisted data)
 export const STORAGE_KEY_DEBUG_HOTKEYS = 'debug.hotkeys';
 export const STORAGE_KEY_DEBUG_UPDATE_DEMO = 'debug.updateDemo';

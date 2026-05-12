@@ -10,13 +10,23 @@ import { useUpdateCheck } from './application/state/useUpdateCheck';
 import { useVaultState } from './application/state/useVaultState';
 import { useWindowControls } from './application/state/useWindowControls';
 import { useEditorTabs, editorTabStore } from './application/state/editorTabStore';
+import {
+  clearReferenceKeyPassphrases,
+  clearKeyPassphrasesByIds,
+  loadDefaultKeyPassphrase,
+  rememberKeyPassphrase,
+  removeDefaultKeyPassphrases,
+  shouldUpdateReferenceKeyPassphrase,
+} from './application/defaultKeyPassphrases';
 import { initializeFonts } from './application/state/fontStore';
 import { initializeUIFonts } from './application/state/uiFontStore';
 import { I18nProvider, useI18n } from './application/i18n/I18nProvider';
 import { matchesKeyBinding } from './domain/models';
 import { resolveGroupDefaults, applyGroupDefaults } from './domain/groupConfig';
+import { upsertKnownHost } from './domain/knownHosts';
 import { materializeHostProxyProfile } from './domain/proxyProfiles';
 import { resolveHostAuth } from './domain/sshAuth';
+import { isEncryptedCredentialPlaceholder } from './domain/credentials';
 import { applyCustomAccentToTerminalTheme, resolveHostTerminalThemeId } from './domain/terminalAppearance';
 import { collectSessionIds } from './domain/workspace';
 import { resolveCloseIntent } from './application/state/resolveCloseIntent';
@@ -47,7 +57,7 @@ import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal
 import { cn } from './lib/utils';
 import { classifyLocalShellType } from './lib/localShell';
 import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShells';
-import { ConnectionLog, Host, HostProtocol, SerialConfig, TerminalSession, TerminalTheme } from './types';
+import { ConnectionLog, Host, HostProtocol, KnownHost, SerialConfig, SSHKey, TerminalSession, TerminalTheme } from './types';
 import { LogView as LogViewType } from './application/state/useSessionState';
 import type { SftpView as SftpViewComponent } from './components/SftpView';
 import type { ScpView as ScpViewComponent } from './components/ScpView';
@@ -271,6 +281,7 @@ function App({ settings }: { settings: SettingsState }) {
     managedSources,
     updateHosts,
     updateKeys,
+    importOrReuseKey,
     updateIdentities,
     updateProxyProfiles,
     updateSnippets,
@@ -291,6 +302,11 @@ function App({ settings }: { settings: SettingsState }) {
     groupConfigs,
     updateGroupConfigs,
   } = useVaultState();
+
+  const keysRef = useRef(keys);
+  keysRef.current = keys;
+  const knownHostsRef = useRef(knownHosts);
+  knownHostsRef.current = knownHosts;
 
   const {
     sessions,
@@ -510,6 +526,7 @@ function App({ settings }: { settings: SettingsState }) {
 
   // Window controls - must be before update toast effect which uses openSettingsWindow
   const { openSettingsWindow } = useWindowControls();
+
   const _handleGlobalHotkeyKeyDown = useEffectEvent((e: KeyboardEvent) => {
     const isMac = hotkeyScheme === 'mac';
     const target = e.target as HTMLElement;
@@ -667,6 +684,7 @@ function App({ settings }: { settings: SettingsState }) {
     identities,
     proxyProfiles,
     groupConfigs,
+    terminalSettings,
   });
 
   // Quit guard: block app exit while any editor tab has unsaved changes.
@@ -763,8 +781,46 @@ function App({ settings }: { settings: SettingsState }) {
     const bridge = netcattyBridge.get();
     if (!bridge?.onPassphraseRequest) return;
 
-    const unsubscribe = bridge.onPassphraseRequest((request) => {
+    const unsubscribe = bridge.onPassphraseRequest(async (request) => {
       console.log('[App] Passphrase request received:', request);
+
+      // If the bridge already tried a passphrase and it was wrong, skip auto-respond
+      if (!request.passphraseInvalid) {
+        // Check if a reference key exists for this path — use its passphrase
+        const currentKeys = keysRef.current;
+        const refKey = currentKeys.find((k: SSHKey) => k.source === 'reference' && k.filePath === request.keyPath);
+        if (refKey?.passphrase && refKey.savePassphrase !== false && !isEncryptedCredentialPlaceholder(refKey.passphrase)) {
+          console.log('[App] Auto-responding with reference key passphrase for:', request.keyPath);
+          void bridge.respondPassphrase?.(request.requestId, refKey.passphrase, false);
+          return;
+        }
+
+        // Fallback: try old storage for passphrase
+        const saved = await loadDefaultKeyPassphrase(request.keyPath);
+        if (saved) {
+          console.log('[App] Auto-responding with saved passphrase for:', request.keyPath);
+          // Migrate to reference key if one exists
+          if (shouldUpdateReferenceKeyPassphrase(refKey)) {
+            try {
+              await rememberKeyPassphrase({
+                keyPath: request.keyPath,
+                passphrase: saved,
+                keys: currentKeys,
+                updateKeys,
+                setCurrentKeys: (updated) => {
+                  keysRef.current = updated;
+                },
+              });
+            } catch (err) {
+              console.warn('[App] Failed to migrate passphrase to reference key:', err);
+            }
+          }
+          void bridge.respondPassphrase?.(request.requestId, saved, false);
+          return;
+        }
+      }
+
+      // No saved passphrase or it was invalid, show modal
       setPassphraseQueue(prev => [...prev, {
         requestId: request.requestId,
         keyPath: request.keyPath,
@@ -776,16 +832,37 @@ function App({ settings }: { settings: SettingsState }) {
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [updateKeys]);
 
   // Handle passphrase submit
-  const handlePassphraseSubmit = useCallback((requestId: string, passphrase: string) => {
+  const handlePassphraseSubmit = useCallback(async (requestId: string, passphrase: string, remember: boolean) => {
     const bridge = netcattyBridge.get();
+    const request = passphraseQueue.find((r: PassphraseRequest) => r.requestId === requestId);
+
+    // Save passphrase if requested
+    if (remember && request?.keyPath) {
+      console.log('[App] Saving passphrase for:', request.keyPath);
+      try {
+        await rememberKeyPassphrase({
+          keyPath: request.keyPath,
+          passphrase,
+          keys: keysRef.current,
+          updateKeys,
+          setCurrentKeys: (updated) => {
+            keysRef.current = updated;
+          },
+        });
+      } catch (err) {
+        console.warn('[App] Failed to save passphrase:', err);
+      }
+    }
+
     if (bridge?.respondPassphrase) {
       void bridge.respondPassphrase(requestId, passphrase, false);
     }
+
     setPassphraseQueue(prev => prev.filter(r => r.requestId !== requestId));
-  }, []);
+  }, [passphraseQueue, updateKeys]);
 
   // Handle passphrase cancel
   const handlePassphraseCancel = useCallback((requestId: string) => {
@@ -828,6 +905,44 @@ function App({ settings }: { settings: SettingsState }) {
     };
   }, []);
 
+  // Handle passphrase cancellation (owning connection was stopped)
+  useEffect(() => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.onPassphraseCancelled) return;
+
+    const unsubscribe = bridge.onPassphraseCancelled((event) => {
+      console.log('[App] Passphrase request cancelled:', event.requestId);
+      setPassphraseQueue(prev => prev.filter(r => r.requestId !== event.requestId));
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Handle passphrase auth failure (saved passphrase was wrong, clear it)
+  useEffect(() => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.onPassphraseAuthFailed) return;
+
+    const unsubscribe = bridge.onPassphraseAuthFailed((event) => {
+      const keyPaths = event.keyPaths ?? [];
+      const keyIds = event.keyIds ?? [];
+      console.log('[App] Passphrase auth failed for keys:', { keyPaths, keyIds });
+      removeDefaultKeyPassphrases(keyPaths);
+      const withoutReferencePassphrases = clearReferenceKeyPassphrases(keysRef.current, keyPaths);
+      const updated = clearKeyPassphrasesByIds(withoutReferencePassphrases, keyIds);
+      if (updated !== keysRef.current) {
+        keysRef.current = updated;
+        void updateKeys(updated);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [updateKeys]);
+
   // Debounce ref for moveFocus to prevent double-triggering when focus switches
   const lastMoveFocusTimeRef = useRef<number>(0);
   const MOVE_FOCUS_DEBOUNCE_MS = 200;
@@ -838,6 +953,9 @@ function App({ settings }: { settings: SettingsState }) {
 
   const closeSidePanelRef = useRef<(() => void) | null>(null);
   const toggleScriptsSidePanelRef = useRef<(() => void) | null>(null);
+  // Populated below so the hotkey dispatcher can open the Settings window
+  // even though `handleOpenSettings` is declared further down in the file.
+  const handleOpenSettingsRef = useRef<() => void>(() => {});
   const activeSidePanelTabRef = useRef<string | null>(null);
   const closeTabInFlightRef = useRef(false);
   // Populated by UnsavedChangesProvider render-prop below so that the hotkey
@@ -1128,6 +1246,9 @@ function App({ settings }: { settings: SettingsState }) {
         }
         break;
       }
+      case 'openSettings':
+        handleOpenSettingsRef.current();
+        break;
       case 'splitHorizontal': {
         const currentId = activeTabStore.getActiveTabId();
         const activeSession = sessions.find(s => s.id === currentId);
@@ -1237,6 +1358,12 @@ function App({ settings }: { settings: SettingsState }) {
     if (!confirmed) return;
     updateHosts(hosts.filter(h => h.id !== hostId));
   }, [hosts, updateHosts, t]);
+
+  const handleAddKnownHost = useCallback((kh: KnownHost) => {
+    const nextKnownHosts = upsertKnownHost(knownHostsRef.current, kh);
+    knownHostsRef.current = nextKnownHosts;
+    updateKnownHosts(nextKnownHosts);
+  }, [updateKnownHosts]);
 
   // System info for connection logs
   const hostsRef = useRef(hosts);
@@ -1485,6 +1612,7 @@ function App({ settings }: { settings: SettingsState }) {
       if (!opened) toast.error(t('toast.settingsUnavailable'), t('common.settings'));
     })();
   }, [openSettingsWindow, t]);
+  handleOpenSettingsRef.current = handleOpenSettings;
 
   const handleOpenTerminalSettings = useCallback(() => {
     void (async () => {
@@ -1676,6 +1804,7 @@ function App({ settings }: { settings: SettingsState }) {
             onUpdateGroupConfigs={updateGroupConfigs}
             onUpdateHosts={updateHosts}
             onUpdateKeys={updateKeys}
+            onImportOrReuseKey={importOrReuseKey}
             onUpdateIdentities={updateIdentities}
             onUpdateProxyProfiles={updateProxyProfiles}
             onUpdateSnippets={updateSnippets}
@@ -1696,6 +1825,7 @@ function App({ settings }: { settings: SettingsState }) {
             showOnlyUngroupedHostsInRoot={settings.showOnlyUngroupedHostsInRoot}
             navigateToSection={navigateToSection}
             onNavigateToSectionHandled={() => setNavigateToSection(null)}
+            terminalSettings={terminalSettings}
           />
         </VaultViewContainer>
 
@@ -1715,6 +1845,7 @@ function App({ settings }: { settings: SettingsState }) {
           keyBindings={keyBindings}
           editorWordWrap={editorWordWrap}
           setEditorWordWrap={setEditorWordWrap}
+          terminalSettings={terminalSettings}
         />
 
         <ScpViewMount
@@ -1764,7 +1895,7 @@ function App({ settings }: { settings: SettingsState }) {
           onUpdateSessionStatus={handleSessionStatusChange}
           onUpdateHostDistro={updateHostDistro}
           onUpdateHost={(host) => updateHosts(hosts.map(h => h.id === host.id ? host : h))}
-          onAddKnownHost={(kh) => updateKnownHosts([...knownHosts, kh])}
+          onAddKnownHost={handleAddKnownHost}
           onCommandExecuted={(command, hostId, hostLabel, sessionId) => {
             addShellHistoryEntry({ command, hostId, hostLabel, sessionId });
           }}

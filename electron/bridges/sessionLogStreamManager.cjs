@@ -23,8 +23,19 @@ const MAX_BUFFER_SIZE = 64 * 1024;
 /**
  * Start a log stream for a session.
  * Creates the log file and opens a write stream.
+ *
+ * Returns a unique token identifying the started stream. Callers should pass
+ * this token to stopStream() so a late close handler from a previous
+ * incarnation of the same sessionId (e.g. SSH conn.once('close') firing
+ * after the user clicked "Restart" and a new stream is already running)
+ * cannot accidentally tear down the fresh stream. Without the token check,
+ * the same sessionId being recycled across reconnects would let stale stop
+ * calls kill the new log file. See issue #916.
+ *
  * @param {string} sessionId
  * @param {{ hostLabel: string, hostname: string, directory: string, format: string, startTime?: number }} opts
+ * @returns {symbol|null} Token identifying this stream, or null if no
+ *   stream was started (e.g. missing directory).
  */
 function startStream(sessionId, opts) {
   if (activeStreams.has(sessionId)) {
@@ -35,7 +46,7 @@ function startStream(sessionId, opts) {
   const { hostLabel, hostname, directory, format, startTime } = opts;
   if (!directory) {
     console.warn("[SessionLogStream] No directory specified, skipping");
-    return;
+    return null;
   }
 
   try {
@@ -69,6 +80,7 @@ function startStream(sessionId, opts) {
       });
     }
 
+    const startToken = Symbol("session-log-stream");
     const entry = {
       writeStream,
       filePath,
@@ -86,6 +98,7 @@ function startStream(sessionId, opts) {
       snapshotDirty: false,
       closing: false,
       disabled: false,
+      startToken,
     };
 
     // Start periodic flush
@@ -95,8 +108,10 @@ function startStream(sessionId, opts) {
 
     activeStreams.set(sessionId, entry);
     console.log(`[SessionLogStream] Started stream for ${sessionId} -> ${filePath}`);
+    return startToken;
   } catch (err) {
     console.error(`[SessionLogStream] Failed to start stream for ${sessionId}:`, err.message);
+    return null;
   }
 }
 
@@ -184,12 +199,28 @@ function appendData(sessionId, dataChunk) {
 /**
  * Stop the log stream for a session.
  * Flushes remaining data, closes the write stream, and finalizes the file.
+ *
+ * If `expectedToken` is provided, the stop is only honoured when it matches
+ * the active stream's start token. This protects against stale close
+ * handlers from a previous incarnation of the same sessionId (e.g. an SSH
+ * connection's `conn.once('close')` firing after the user has already
+ * clicked "Restart" and a fresh stream has been started). Without this
+ * guard, the stale handler would silently destroy the new session's log.
+ * See issue #916.
+ *
  * @param {string} sessionId
- * @returns {Promise<string|null>} The final file path, or null if no stream was active
+ * @param {symbol} [expectedToken] - Token returned by startStream()
+ * @returns {Promise<string|null>} The final file path, or null if no
+ *   matching stream was active.
  */
-async function stopStream(sessionId) {
+async function stopStream(sessionId, expectedToken) {
   const entry = activeStreams.get(sessionId);
   if (!entry) return null;
+  if (expectedToken && entry.startToken !== expectedToken) {
+    // Stale stop call from a previous session that reused this sessionId.
+    // The current stream belongs to a fresh incarnation; leave it alone.
+    return null;
+  }
   activeStreams.delete(sessionId);
   entry.closing = true;
 

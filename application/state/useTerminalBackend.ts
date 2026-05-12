@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { netcattyBridge } from "../../infrastructure/services/netcattyBridge";
 
 export const useTerminalBackend = () => {
@@ -111,6 +111,23 @@ export const useTerminalBackend = () => {
     return bridge?.onChainProgress?.(cb);
   }, []);
 
+  const onHostKeyVerification = useCallback((cb: Parameters<NonNullable<NetcattyBridge["onHostKeyVerification"]>>[0]) => {
+    const bridge = netcattyBridge.get();
+    return bridge?.onHostKeyVerification?.(cb);
+  }, []);
+
+  const respondHostKeyVerification = useCallback(async (
+    requestId: string,
+    accept: boolean,
+    addToKnownHosts?: boolean,
+  ) => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.respondHostKeyVerification) {
+      return { success: false, error: "respondHostKeyVerification unavailable" };
+    }
+    return bridge.respondHostKeyVerification(requestId, accept, addToKnownHosts);
+  }, []);
+
   const openExternal = useCallback(async (url: string) => {
     const bridge = netcattyBridge.get();
     await bridge?.openExternal?.(url);
@@ -160,34 +177,79 @@ export const useTerminalBackend = () => {
     return bridge.getServerStats(sessionId);
   }, []);
 
-  return {
-    backendAvailable,
-    telnetAvailable,
-    moshAvailable,
-    localAvailable,
-    serialAvailable,
-    execAvailable,
-    openExternalAvailable,
-    startSSHSession,
-    startTelnetSession,
-    startMoshSession,
-    startLocalSession,
-    startSerialSession,
-    listSerialPorts,
-    execCommand,
-    getSessionPwd,
-    getSessionRemoteInfo,
-    getSessionDistroInfo,
-    getServerStats,
-    writeToSession,
-    resizeSession,
-    closeSession,
-    setSessionEncoding,
-    onSessionData,
-    onSessionExit,
-    onTelnetAutoLoginComplete,
-    onTelnetAutoLoginCancelled,
-    onChainProgress,
-    openExternal,
-  };
+  // Memoize the returned object so its identity is stable across the
+  // hook's lifetime. Each method above is already useCallback([])-stable,
+  // so listing them as deps means useMemo recomputes once and then
+  // caches forever. Without this, every render produced a fresh object
+  // literal — making `terminalBackend` an unstable reference that
+  // forced consumers' useEffects (`}, [..., terminalBackend])`) to
+  // rerun on every parent render and forced lint to flag any deeper
+  // property dep (`}, [terminalBackend.onHostKeyVerification])`) it
+  // couldn't statically prove safe.
+  return useMemo(
+    () => ({
+      backendAvailable,
+      telnetAvailable,
+      moshAvailable,
+      localAvailable,
+      serialAvailable,
+      execAvailable,
+      openExternalAvailable,
+      startSSHSession,
+      startTelnetSession,
+      startMoshSession,
+      startLocalSession,
+      startSerialSession,
+      listSerialPorts,
+      execCommand,
+      getSessionPwd,
+      getSessionRemoteInfo,
+      getSessionDistroInfo,
+      getServerStats,
+      writeToSession,
+      resizeSession,
+      closeSession,
+      setSessionEncoding,
+      onSessionData,
+      onSessionExit,
+      onTelnetAutoLoginComplete,
+      onTelnetAutoLoginCancelled,
+      onChainProgress,
+      onHostKeyVerification,
+      respondHostKeyVerification,
+      openExternal,
+    }),
+    [
+      backendAvailable,
+      telnetAvailable,
+      moshAvailable,
+      localAvailable,
+      serialAvailable,
+      execAvailable,
+      openExternalAvailable,
+      startSSHSession,
+      startTelnetSession,
+      startMoshSession,
+      startLocalSession,
+      startSerialSession,
+      listSerialPorts,
+      execCommand,
+      getSessionPwd,
+      getSessionRemoteInfo,
+      getSessionDistroInfo,
+      getServerStats,
+      writeToSession,
+      resizeSession,
+      closeSession,
+      setSessionEncoding,
+      onSessionData,
+      onSessionExit,
+      onTelnetAutoLoginComplete,
+      onTelnetAutoLoginCancelled,
+      onChainProgress,
+      onHostKeyVerification,
+      respondHostKeyVerification,
+      openExternal,
+    ],
+  );
 };

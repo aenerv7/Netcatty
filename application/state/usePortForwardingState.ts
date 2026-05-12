@@ -68,6 +68,7 @@ export interface UsePortForwardingStateResult {
     identities: Identity[],
     onStatusChange?: (status: PortForwardingRule["status"], error?: string) => void,
     enableReconnect?: boolean,
+    terminalSettings?: { keepaliveInterval: number; keepaliveCountMax: number },
   ) => Promise<{ success: boolean; error?: string }>;
   stopTunnel: (
     ruleId: string,
@@ -387,11 +388,12 @@ export const usePortForwardingState = (): UsePortForwardingStateResult => {
         error?: string,
       ) => void,
       enableReconnect = false,
+      terminalSettings?: { keepaliveInterval: number; keepaliveCountMax: number },
     ) => {
       return startPortForward(rule, host, hosts, keys, identities, (status, error) => {
         setRuleStatus(rule.id, status, error);
         onStatusChange?.(status, error ?? undefined);
-      }, enableReconnect);
+      }, enableReconnect, terminalSettings);
     },
     [setRuleStatus],
   );
