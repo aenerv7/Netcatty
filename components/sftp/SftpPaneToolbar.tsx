@@ -55,6 +55,7 @@ interface SftpPaneToolbarProps {
   onGoToTerminalCwd?: () => void;
   viewMode: 'list' | 'tree';
   onSetViewMode: (mode: 'list' | 'tree') => void;
+  onListDrives?: () => Promise<string[]>;
 }
 
 // Prioritize breadcrumb path display. 6 action buttons need ~156px,
@@ -204,6 +205,7 @@ export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = React.memo(({
   onGoToTerminalCwd,
   viewMode,
   onSetViewMode,
+  onListDrives,
 }) => {
   const outerRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -574,20 +576,26 @@ export const SftpPaneToolbar: React.FC<SftpPaneToolbarProps> = React.memo(({
             )}
           </div>
         ) : (
-          <div
-            className="flex-1 min-w-0 cursor-text hover:bg-secondary/50 rounded px-1 transition-colors"
-            onDoubleClick={handlePathDoubleClick}
-            title={t("sftp.path.doubleClickToEdit")}
-          >
-            <SftpBreadcrumb
-              path={displayPath}
-              onNavigate={onNavigateTo}
-              onHome={() =>
-                pane.connection?.homeDir &&
-                onNavigateTo(pane.connection.homeDir)
-              }
-            />
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className="flex-1 min-w-0 cursor-text hover:bg-secondary/50 rounded px-1 transition-colors"
+                onDoubleClick={handlePathDoubleClick}
+              >
+                <SftpBreadcrumb
+                  path={displayPath}
+                  onNavigate={onNavigateTo}
+                  onHome={() =>
+                    pane.connection?.homeDir &&
+                    onNavigateTo(pane.connection.homeDir)
+                  }
+                  isLocal={!isRemote}
+                  onListDrives={onListDrives}
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{t("sftp.path.doubleClickToEdit")}</TooltipContent>
+          </Tooltip>
         )}
 
         {/* Bookmark button: left-click toggles, right-click opens list */}

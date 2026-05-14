@@ -1896,21 +1896,25 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 onChange={setSortMode}
                 className="h-10 w-10"
               />
-              <Button
-                variant={isMultiSelectMode ? "secondary" : "ghost"}
-                size="icon"
-                className="h-10 w-10"
-                onClick={() => {
-                  if (isMultiSelectMode) {
-                    clearHostSelection();
-                  } else {
-                    setIsMultiSelectMode(true);
-                  }
-                }}
-                title={t("vault.hosts.multiSelect")}
-              >
-                <CheckSquare size={16} />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={isMultiSelectMode ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-10 w-10"
+                    onClick={() => {
+                      if (isMultiSelectMode) {
+                        clearHostSelection();
+                      } else {
+                        setIsMultiSelectMode(true);
+                      }
+                    }}
+                  >
+                    <CheckSquare size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("vault.hosts.multiSelect")}</TooltipContent>
+              </Tooltip>
             </div>
             {/* New Host split button — collapses with an animation when the
                 host details / new-host aside panel is open, since the button
@@ -2209,6 +2213,12 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                 <ContextMenuItem onClick={() => handleEditHost(host)}>
                                   <Edit2 className="mr-2 h-4 w-4" /> {t('action.edit')}
                                 </ContextMenuItem>
+                                <ContextMenuItem onClick={() => handleDuplicateHost(host)}>
+                                  <Copy className="mr-2 h-4 w-4" /> {t('action.duplicate')}
+                                </ContextMenuItem>
+                                <ContextMenuItem onClick={() => handleCopyCredentials(host)}>
+                                  <ClipboardCopy className="mr-2 h-4 w-4" /> {t('vault.hosts.copyCredentials')}
+                                </ContextMenuItem>
                                 <ContextMenuItem onClick={() => toggleHostPinned(host.id)}>
                                   <Pin className="mr-2 h-4 w-4" /> {t('vault.hosts.unpin')}
                                 </ContextMenuItem>
@@ -2307,6 +2317,12 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                 </ContextMenuItem>
                                 <ContextMenuItem onClick={() => handleEditHost(host)}>
                                   <Edit2 className="mr-2 h-4 w-4" /> {t('action.edit')}
+                                </ContextMenuItem>
+                                <ContextMenuItem onClick={() => handleDuplicateHost(host)}>
+                                  <Copy className="mr-2 h-4 w-4" /> {t('action.duplicate')}
+                                </ContextMenuItem>
+                                <ContextMenuItem onClick={() => handleCopyCredentials(host)}>
+                                  <ClipboardCopy className="mr-2 h-4 w-4" /> {t('vault.hosts.copyCredentials')}
                                 </ContextMenuItem>
                                 <ContextMenuItem onClick={() => toggleHostPinned(host.id)}>
                                   <Pin className="mr-2 h-4 w-4" /> {host.pinned ? t('vault.hosts.unpin') : t('vault.hosts.pinToTop')}

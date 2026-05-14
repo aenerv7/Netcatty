@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { toast } from './ui/toast';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 // ============================================================================
 // Status Dot

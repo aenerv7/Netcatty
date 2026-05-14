@@ -43,6 +43,11 @@ import {
 } from "./kittyKeyboardProtocol";
 import { installKittyKeyboardProtocolHandlers } from "./kittyKeyboardRuntime";
 import { installUserCursorPreferenceGuard } from "./cursorPreference";
+import { handleSerialLineModeInput } from "./serialLineInput";
+import {
+  pasteTextIntoTerminal,
+  shouldSuppressTerminalInputScrollForUserPaste,
+} from "./terminalUserPaste";
 import type {
   Host,
   KeyBinding,
@@ -400,19 +405,6 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
 
   const appLevelActions = getAppLevelActions();
   const terminalActions = getTerminalPassthroughActions();
-  const scrollViewportToBottom = () => {
-    term.scrollToBottom();
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => {
-        term.scrollToBottom();
-      });
-    }
-  };
-  const scrollToBottomAfterPaste = () => {
-    if (shouldScrollOnTerminalPaste(ctx.terminalSettingsRef.current)) {
-      scrollViewportToBottom();
-    }
-  };
   const scrollToBottomAfterInput = (data: string) => {
     if (shouldScrollOnTerminalInput(ctx.terminalSettingsRef.current, data)) {
       term.scrollToBottom();
@@ -525,12 +517,9 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
               navigator.clipboard.readText().then((text) => {
                 const id = ctx.sessionRef.current;
                 if (id) {
-                  const rawData = normalizeLineEndings(text);
-                  const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
-                    ? wrapBracketedPaste(rawData)
-                    : rawData;
-                  ctx.terminalBackend.writeToSession(id, data);
-                  scrollToBottomAfterPaste();
+                  pasteTextIntoTerminal(term, text, {
+                    scrollOnPaste: shouldScrollOnTerminalPaste(ctx.terminalSettingsRef.current),
+                  });
                 }
               });
               break;
@@ -539,12 +528,9 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
               const selection = term.getSelection();
               const id = ctx.sessionRef.current;
               if (selection && id) {
-                const rawData = normalizeLineEndings(selection);
-                const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
-                  ? wrapBracketedPaste(rawData)
-                  : rawData;
-                ctx.terminalBackend.writeToSession(id, data);
-                scrollToBottomAfterPaste();
+                pasteTextIntoTerminal(term, selection, {
+                  scrollOnPaste: shouldScrollOnTerminalPaste(ctx.terminalSettingsRef.current),
+                });
               }
               break;
             }
@@ -593,12 +579,9 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       try {
         const text = await navigator.clipboard.readText();
         if (text && ctx.sessionRef.current) {
-          const rawData = normalizeLineEndings(text);
-          const data = term.modes.bracketedPasteMode && !ctx.terminalSettingsRef.current?.disableBracketedPaste
-            ? wrapBracketedPaste(rawData)
-            : rawData;
-          ctx.terminalBackend.writeToSession(ctx.sessionRef.current, data);
-          scrollToBottomAfterPaste();
+          pasteTextIntoTerminal(term, text, {
+            scrollOnPaste: shouldScrollOnTerminalPaste(ctx.terminalSettingsRef.current),
+          });
         }
       } catch (err) {
         logger.warn("[Terminal] Failed to paste from clipboard:", err);
@@ -618,45 +601,12 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     if (id) {
       // Serial line mode: buffer input and send on Enter
       if (ctx.host.protocol === "serial" && ctx.serialLineMode && ctx.serialLineBufferRef) {
-        if (data === "\r") {
-          // Enter key: send buffered line + CR
-          const line = ctx.serialLineBufferRef.current + "\r";
-          ctx.terminalBackend.writeToSession(id, line);
-          ctx.serialLineBufferRef.current = "";
-          // Local echo newline if enabled
-          if (ctx.serialLocalEcho) {
-            term.write("\r\n");
-          }
-        } else if (data === "\x7f" || data === "\b") {
-          // Backspace: remove last character from buffer
-          if (ctx.serialLineBufferRef.current.length > 0) {
-            ctx.serialLineBufferRef.current = ctx.serialLineBufferRef.current.slice(0, -1);
-            if (ctx.serialLocalEcho) {
-              term.write("\b \b");
-            }
-          }
-        } else if (data === "\x03") {
-          // Ctrl+C: clear buffer and send Ctrl+C
-          ctx.serialLineBufferRef.current = "";
-          ctx.terminalBackend.writeToSession(id, data);
-          if (ctx.serialLocalEcho) {
-            term.write("^C\r\n");
-          }
-        } else if (data === "\x15") {
-          // Ctrl+U: clear line buffer
-          if (ctx.serialLocalEcho && ctx.serialLineBufferRef.current.length > 0) {
-            // Erase the displayed line
-            const len = ctx.serialLineBufferRef.current.length;
-            term.write("\b \b".repeat(len));
-          }
-          ctx.serialLineBufferRef.current = "";
-        } else if (data.charCodeAt(0) >= 32 || data.length > 1) {
-          // Regular characters: add to buffer
-          ctx.serialLineBufferRef.current += data;
-          if (ctx.serialLocalEcho) {
-            term.write(data);
-          }
-        }
+        handleSerialLineModeInput(data, {
+          bufferRef: ctx.serialLineBufferRef,
+          localEcho: ctx.serialLocalEcho,
+          writeToSession: (nextData) => ctx.terminalBackend.writeToSession(id, nextData),
+          writeToTerminal: (nextData) => term.write(nextData),
+        });
       } else {
         // Character mode (default): send immediately
         // When backspaceBehavior is configured, remap the Backspace key output
@@ -686,7 +636,9 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
         ctx.onBroadcastInputRef.current(broadcastData, ctx.sessionId);
       }
 
-      scrollToBottomAfterInput(data);
+      if (!shouldSuppressTerminalInputScrollForUserPaste(term, data)) {
+        scrollToBottomAfterInput(data);
+      }
 
       // Notify autocomplete of input
 

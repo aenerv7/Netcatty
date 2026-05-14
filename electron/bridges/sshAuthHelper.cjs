@@ -717,18 +717,113 @@ function buildAuthHandler(options) {
   };
 }
 
+// OTP / MFA / token vocabulary. Matched FIRST — any hit here disqualifies the
+// challenge from auto-fill even if it also contains a "password" keyword.
+// Catches phrases like "One-time password", "动态密码", "动态口令",
+// "一次性密码", "Verification code", "Duo passcode", "two-factor", etc.
+// — all single-prompt shapes that look like password fields on the surface
+// but actually want an OTP. Submitting the saved password into any of these
+// burns an auth attempt and risks `pam_faillock` / `pam_tally2` lockout.
+// (#969 PR review, second round.)
+const OTP_PROMPT_PATTERN = new RegExp(
+  [
+    "one[\\s-]?time",
+    "\\botp\\b",
+    "verification",
+    "passcode",
+    "\\btoken\\b",
+    "2fa",
+    "two[\\s-]?factor",
+    "multi[\\s-]?factor",
+    "\\bmfa\\b",
+    "second\\s+factor",
+    "duo",
+    // CJK — no word boundaries; substring match is intentional
+    "动态",
+    "一次性",
+    "验证码",
+    "验证信息",
+    "令牌",
+    "双因素",
+    "多因素",
+    "短信验证",
+    "手机验证",
+  ].join("|"),
+  "i",
+);
+
+// Latin-script + CJK keywords for "this prompt is asking for a reusable
+// password". Only consulted AFTER OTP_PROMPT_PATTERN clears, so phrases like
+// "One-time password" or "动态密码" never reach this step.
+//
+// Custom-localized prompts that don't match these keywords fall through to
+// the modal, which is the same behavior as before the auto-fill optimization
+// — strictly no worse than the old "always prompt" baseline.
+const PASSWORD_PROMPT_PATTERN = /passw(or)?d|密\s*码|口\s*令/i;
+
+/**
+ * Decide whether a keyboard-interactive challenge is "just a PAM-wrapped
+ * password prompt" that we can answer with the saved host password without
+ * bothering the user. PAM-based Linux servers commonly advertise only
+ * `keyboard-interactive` (not `password`), so without this shortcut every
+ * connection pops a second password dialog even when the host already has a
+ * saved credential — see #969.
+ *
+ * Conservative criteria, matching OpenSSH and Tabby behavior:
+ *   - exactly one prompt (multi-prompt is almost certainly real 2FA / MFA)
+ *   - the prompt has `echo === false`
+ *   - the prompt text does NOT contain any OTP / MFA vocabulary
+ *   - the prompt text DOES contain a recognized password keyword (Latin
+ *     "password" / "passwd", CJK "密码" / "口令")
+ *   - we have a non-empty saved password
+ *
+ * Anything else falls through to the modal so the user can answer in person.
+ */
+function isAutoFillablePasswordChallenge(prompts, password) {
+  if (typeof password !== "string" || password.length === 0) return false;
+  if (!Array.isArray(prompts) || prompts.length !== 1) return false;
+  const prompt = prompts[0];
+  if (!prompt || prompt.echo !== false) return false;
+  const promptText = typeof prompt.prompt === "string" ? prompt.prompt : "";
+  if (OTP_PROMPT_PATTERN.test(promptText)) return false;
+  return PASSWORD_PROMPT_PATTERN.test(promptText);
+}
+
 /**
  * Create a keyboard-interactive event handler
  * @param {Object} options
  * @param {Object} options.sender - Electron webContents sender
  * @param {string} options.sessionId - Session/connection ID
  * @param {string} options.hostname - Host being connected to
- * @param {string} [options.password] - Saved password for fill button
+ * @param {string} [options.password] - Saved password; used both as the
+ *   one-click fill button payload and as the auto-fill for the single-
+ *   password-prompt fast path (#969).
  * @param {string} [options.logPrefix] - Log prefix for debugging
+ * @param {Function} [options.onAutoFill] - Called when the saved password is
+ *   auto-filled into the challenge (no modal shown). Lets callers emit a
+ *   different progress message than the user-prompt flow.
+ * @param {Function} [options.onPromptShown] - Called right before the modal
+ *   IPC is sent to the renderer.
+ * @param {Function} [options.onUserResponded] - Called when the renderer
+ *   sends a response back (after the modal closed).
  * @returns {Function} - Event handler for 'keyboard-interactive' event
  */
 function createKeyboardInteractiveHandler(options) {
-  const { sender, sessionId, hostname, password, logPrefix = "[SSH]" } = options;
+  const {
+    sender,
+    sessionId,
+    hostname,
+    password,
+    logPrefix = "[SSH]",
+    onAutoFill,
+    onPromptShown,
+    onUserResponded,
+  } = options;
+  // ssh2 may re-invoke the keyboard-interactive event on auth failure with a
+  // fresh challenge. If our first auto-fill attempt was wrong, falling back
+  // to the modal on the retry lets the user correct it — and prevents a
+  // tight loop where we keep submitting the same wrong password.
+  let autoFilledOnce = false;
 
   return (name, instructions, instructionsLang, prompts, finish) => {
     console.log(`${logPrefix} ${hostname} keyboard-interactive auth requested`, {
@@ -744,10 +839,19 @@ function createKeyboardInteractiveHandler(options) {
       return;
     }
 
+    if (!autoFilledOnce && isAutoFillablePasswordChallenge(prompts, password)) {
+      autoFilledOnce = true;
+      console.log(`${logPrefix} Auto-filling saved password into single keyboard-interactive prompt`);
+      try { onAutoFill?.(); } catch (err) { console.warn(`${logPrefix} onAutoFill callback threw`, err); }
+      finish([password]);
+      return;
+    }
+
     // Forward prompts to user via IPC
     const requestId = keyboardInteractiveHandler.generateRequestId('ssh');
     keyboardInteractiveHandler.storeRequest(requestId, (userResponses) => {
       console.log(`${logPrefix} Received user responses, finishing keyboard-interactive`);
+      try { onUserResponded?.(); } catch (err) { console.warn(`${logPrefix} onUserResponded callback threw`, err); }
       finish(userResponses);
     }, sender.id, sessionId);
 
@@ -757,6 +861,7 @@ function createKeyboardInteractiveHandler(options) {
     }));
 
     console.log(`${logPrefix} Showing modal for ${promptsData.length} prompts`);
+    try { onPromptShown?.(); } catch (err) { console.warn(`${logPrefix} onPromptShown callback threw`, err); }
 
     safeSend(sender, "netcatty:keyboard-interactive", {
       requestId,
@@ -861,6 +966,7 @@ module.exports = {
   getAvailableAgentSocket,
   buildAuthHandler,
   createKeyboardInteractiveHandler,
+  isAutoFillablePasswordChallenge,
   applyAuthToConnOpts,
   safeSend,
   requestPassphrasesForEncryptedKeys,

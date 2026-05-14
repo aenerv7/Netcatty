@@ -8,6 +8,8 @@ import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';
 import App from './App';
+import { ToastProvider } from './components/ui/toast';
+import { TooltipProvider } from './components/ui/tooltip';
 
 const LazySettingsPage = lazy(() => import('./components/SettingsPage'));
 
@@ -97,9 +99,13 @@ const renderApp = () => {
   const route = getRoute();
   if (route === 'settings') {
     root.render(
-      <Suspense fallback={<SettingsWindowFallback />}>
-        <LazySettingsPage />
-      </Suspense>
+      <ToastProvider>
+        <TooltipProvider delayDuration={300}>
+          <Suspense fallback={<SettingsWindowFallback />}>
+            <LazySettingsPage />
+          </Suspense>
+        </TooltipProvider>
+      </ToastProvider>
     );
   } else {
     root.render(<App />);

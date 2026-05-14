@@ -24,6 +24,7 @@ const { discoverShells } = require("./shellDiscovery.cjs");
 const moshHandshake = require("./moshHandshake.cjs");
 const tempDirBridge = require("./tempDirBridge.cjs");
 const { createTelnetAutoLogin } = require("./telnetAutoLogin.cjs");
+const telnetProtocol = require("./telnetProtocol.cjs");
 
 const execFileAsync = promisify(execFile);
 
@@ -547,121 +548,61 @@ async function startTelnetSession(event, options) {
       },
     });
 
-    // Telnet protocol constants
-    const TELNET = {
-      IAC: 255,
-      DONT: 254,
-      DO: 253,
-      WONT: 252,
-      WILL: 251,
-      SB: 250,
-      SE: 240,
-      ECHO: 1,
-      SUPPRESS_GO_AHEAD: 3,
-      STATUS: 5,
-      TERMINAL_TYPE: 24,
-      NAWS: 31,
-      TERMINAL_SPEED: 32,
-      LINEMODE: 34,
-      NEW_ENVIRON: 39,
+    // Telnet protocol state. Negotiation only activates once we see an IAC
+    // byte from the peer — if the remote never speaks the protocol (some
+    // legacy raw-TCP services on port 23), we fall back to passthrough so we
+    // do not corrupt their stream by misreading stray 0xFF bytes as IAC.
+    let telnetProtocolActive = false;
+    let telnetCleanData = Buffer.alloc(0);
+
+    const writeRawTelnetCommand = (cmd, opt) => {
+      if (socket.destroyed) return;
+      socket.write(Buffer.from([telnetProtocol.IAC, cmd, opt]));
     };
 
-    const sendWindowSize = () => {
-      const buf = Buffer.from([
-        TELNET.IAC, TELNET.SB, TELNET.NAWS,
-        (cols >> 8) & 0xff, cols & 0xff,
-        (rows >> 8) & 0xff, rows & 0xff,
-        TELNET.IAC, TELNET.SE
-      ]);
-      socket.write(buf);
+    const writeRawSubnegotiation = (opt, payload) => {
+      if (socket.destroyed) return;
+      socket.write(Buffer.concat([
+        Buffer.from([telnetProtocol.IAC, telnetProtocol.SB, opt]),
+        payload,
+        Buffer.from([telnetProtocol.IAC, telnetProtocol.SE]),
+      ]));
     };
 
-    const handleTelnetNegotiation = (data) => {
-      const output = [];
-      let i = 0;
+    const negotiator = telnetProtocol.createTelnetNegotiator({
+      writeCommand: writeRawTelnetCommand,
+      writeSubnegotiation: writeRawSubnegotiation,
+      getWindowSize: () => {
+        const session = sessions.get(sessionId);
+        return { cols: session?.cols ?? cols, rows: session?.rows ?? rows };
+      },
+    });
 
-      while (i < data.length) {
-        if (data[i] === TELNET.IAC) {
-          if (i + 1 >= data.length) break;
-          
-          const cmd = data[i + 1];
-          
-          if (cmd === TELNET.IAC) {
-            output.push(255);
-            i += 2;
-            continue;
-          }
+    const telnetParser = telnetProtocol.createTelnetParser({
+      onData: (clean) => {
+        if (clean.length === 0) return;
+        telnetCleanData = telnetCleanData.length === 0
+          ? clean
+          : Buffer.concat([telnetCleanData, clean]);
+      },
+      onCommand: (cmd, opt) => negotiator.handleCommand(cmd, opt),
+      onSubnegotiation: (opt, payload) => negotiator.handleSubnegotiation(opt, payload),
+    });
 
-          if (cmd === TELNET.DO || cmd === TELNET.DONT || cmd === TELNET.WILL || cmd === TELNET.WONT) {
-            if (i + 2 >= data.length) break;
-            
-            const opt = data[i + 2];
-            console.log(`[Telnet] Received: ${cmd === TELNET.DO ? 'DO' : cmd === TELNET.DONT ? 'DONT' : cmd === TELNET.WILL ? 'WILL' : 'WONT'} ${opt}`);
-
-            if (cmd === TELNET.DO) {
-              if (opt === TELNET.NAWS) {
-                socket.write(Buffer.from([TELNET.IAC, TELNET.WILL, opt]));
-                sendWindowSize();
-              } else if (opt === TELNET.TERMINAL_TYPE) {
-                socket.write(Buffer.from([TELNET.IAC, TELNET.WILL, opt]));
-              } else if (opt === TELNET.SUPPRESS_GO_AHEAD) {
-                socket.write(Buffer.from([TELNET.IAC, TELNET.WILL, opt]));
-              } else {
-                socket.write(Buffer.from([TELNET.IAC, TELNET.WONT, opt]));
-              }
-            } else if (cmd === TELNET.WILL) {
-              if (opt === TELNET.ECHO || opt === TELNET.SUPPRESS_GO_AHEAD) {
-                socket.write(Buffer.from([TELNET.IAC, TELNET.DO, opt]));
-              } else {
-                socket.write(Buffer.from([TELNET.IAC, TELNET.DONT, opt]));
-              }
-            } else if (cmd === TELNET.DONT) {
-              socket.write(Buffer.from([TELNET.IAC, TELNET.WONT, opt]));
-            } else if (cmd === TELNET.WONT) {
-              socket.write(Buffer.from([TELNET.IAC, TELNET.DONT, opt]));
-            }
-
-            i += 3;
-            continue;
-          }
-
-          if (cmd === TELNET.SB) {
-            let seIndex = i + 2;
-            while (seIndex < data.length - 1) {
-              if (data[seIndex] === TELNET.IAC && data[seIndex + 1] === TELNET.SE) {
-                break;
-              }
-              seIndex++;
-            }
-
-            if (seIndex < data.length - 1) {
-              const subOpt = data[i + 2];
-              console.log(`[Telnet] Sub-negotiation for option ${subOpt}`);
-              
-              if (subOpt === TELNET.TERMINAL_TYPE && data[i + 3] === 1) {
-                const termType = 'xterm-256color';
-                const response = Buffer.concat([
-                  Buffer.from([TELNET.IAC, TELNET.SB, TELNET.TERMINAL_TYPE, 0]),
-                  Buffer.from(termType),
-                  Buffer.from([TELNET.IAC, TELNET.SE])
-                ]);
-                socket.write(response);
-              }
-              
-              i = seIndex + 2;
-              continue;
-            }
-          }
-
-          i += 2;
-          continue;
-        }
-
-        output.push(data[i]);
-        i++;
+    const processIncomingTelnet = (data) => {
+      // Lazy protocol activation: only flip on once we see an IAC from the
+      // peer. Until then we just hand bytes back as-is so true raw-TCP-on-23
+      // services (the long tail of embedded devices) are not corrupted.
+      if (!telnetProtocolActive) {
+        if (data.indexOf(0xff) < 0) return data;
+        telnetProtocolActive = true;
+        negotiator.start();
       }
-
-      return Buffer.from(output);
+      telnetCleanData = Buffer.alloc(0);
+      telnetParser.feed(data);
+      const out = telnetCleanData;
+      telnetCleanData = Buffer.alloc(0);
+      return out;
     };
 
     const connectTimeout = setTimeout(() => {
@@ -690,6 +631,12 @@ async function startTelnetSession(event, options) {
         encoding: initialTelnetEncoding,
         decoderRef: telnetDecoderRef,
         autoLogin: telnetAutoLogin,
+        // Mirror of the closure-local `telnetProtocolActive` so the resize
+        // handler (which only sees the session record) can decide whether
+        // to push a NAWS subnegotiation.
+        get telnetProtocolActive() {
+          return telnetProtocolActive;
+        },
       };
       session.flushPendingData = flushTelnet;
       sessions.set(sessionId, session);
@@ -769,7 +716,7 @@ async function startTelnetSession(event, options) {
 
       // Always run Telnet negotiation — even during ZMODEM, the Telnet
       // layer still escapes 0xFF as IAC IAC and sends control sequences.
-      const cleanData = handleTelnetNegotiation(data);
+      const cleanData = processIncomingTelnet(data);
       if (cleanData.length > 0) {
         telnetZmodemSentry.consume(cleanData);
       }
@@ -1610,7 +1557,19 @@ function writeToSession(event, payload) {
     } else if (session.proc) {
       session.proc.write(payload.data);
     } else if (session.socket) {
-      session.socket.write(payload.data);
+      // Telnet only: any 0xFF byte going out the wire must be doubled, or
+      // the peer will treat it as the start of an IAC command sequence and
+      // eat the next byte (RFC 854 §"Data Stream"). UTF-8 keyboard input
+      // never produces 0xFF, but paste of binary content and some legacy
+      // encodings do. Cheap no-op when there is no 0xFF.
+      let outgoing = payload.data;
+      if (session.type === 'telnet-native' && session.telnetProtocolActive) {
+        if (typeof outgoing === 'string') {
+          outgoing = Buffer.from(outgoing, 'utf8');
+        }
+        outgoing = telnetProtocol.escapeIacForWire(outgoing);
+      }
+      session.socket.write(outgoing);
     } else if (session.serialPort) {
       session.serialPort.write(payload.data);
     }
@@ -1638,14 +1597,19 @@ function resizeSession(event, payload) {
     } else if (session.socket && session.type === 'telnet-native') {
       session.cols = payload.cols;
       session.rows = payload.rows;
-      const TELNET = { IAC: 255, SB: 250, SE: 240, NAWS: 31 };
-      const buf = Buffer.from([
-        TELNET.IAC, TELNET.SB, TELNET.NAWS,
-        (payload.cols >> 8) & 0xff, payload.cols & 0xff,
-        (payload.rows >> 8) & 0xff, payload.rows & 0xff,
-        TELNET.IAC, TELNET.SE
-      ]);
-      session.socket.write(buf);
+      // Only push a NAWS update once the peer has activated the protocol;
+      // sending an IAC sequence to a raw-TCP server would corrupt its stream.
+      if (session.telnetProtocolActive) {
+        const colsByte = Buffer.from([
+          (payload.cols >> 8) & 0xff, payload.cols & 0xff,
+          (payload.rows >> 8) & 0xff, payload.rows & 0xff,
+        ]);
+        session.socket.write(Buffer.concat([
+          Buffer.from([telnetProtocol.IAC, telnetProtocol.SB, telnetProtocol.OPT.NAWS]),
+          telnetProtocol.escapeIacForWire(colsByte),
+          Buffer.from([telnetProtocol.IAC, telnetProtocol.SE]),
+        ]));
+      }
     }
   } catch (err) {
     if (err.code !== 'EPIPE' && err.code !== 'ERR_STREAM_DESTROYED') {
